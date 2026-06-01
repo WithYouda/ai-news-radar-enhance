@@ -17,6 +17,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.worktrees/
 
 # Private source inputs
 feeds/follow.opml
