@@ -28,3 +28,13 @@ def test_category_view_contract_exists():
     assert 'id="categoryView"' in html
     assert "loadTaxonomy" in js
     assert "renderCategoryView" in js
+
+
+def test_verification_view_contract_exists():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert 'data-mobile-view="verification"' in html
+    assert 'id="verificationView"' in html
+    assert "loadVerificationSummary" in js
+    assert "renderVerificationView" in js
+    assert "deepVerifyItem" in js

@@ -36,6 +36,7 @@ const state = {
   waytoagiMode: "today",
   mobileView: "today",
   taxonomy: [],
+  verificationPayload: null,
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -71,6 +72,9 @@ const askAiButtonEl = document.getElementById("askAiButton");
 const categoryMetaEl = document.getElementById("categoryMeta");
 const categoryGridEl = document.getElementById("categoryGrid");
 const categoryDetailEl = document.getElementById("categoryDetail");
+const verificationMetaEl = document.getElementById("verificationMeta");
+const verificationSummaryEl = document.getElementById("verificationSummary");
+const verificationListEl = document.getElementById("verificationList");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -517,6 +521,112 @@ function renderCategoryView(taxonomy, items) {
   });
 }
 
+function itemIdentity(item) {
+  return item.item_id || item.id || item.url || itemTitleText(item);
+}
+
+async function loadVerificationSummary() {
+  if (!apiBaseUrl) return { items: [], unavailable: true };
+  try {
+    return await apiFetch("/api/verification/items");
+  } catch (err) {
+    return { items: [], unavailable: true, error: err.message };
+  }
+}
+
+async function deepVerifyItem(itemId, item = null) {
+  return apiFetch(`/api/verification/${encodeURIComponent(itemId)}/deep-verify`, {
+    method: "POST",
+    body: JSON.stringify(item ? { item } : {}),
+  });
+}
+
+function verifiedStatus(item) {
+  const score = Number(item.authority_score ?? -1);
+  if (score >= 85) return "一手来源";
+  if (score >= 70) return "可参考";
+  if (score >= 0) return "低可信";
+  return "待核验";
+}
+
+function renderVerificationMetric(label, value, tone = "") {
+  const node = document.createElement("div");
+  node.className = `verification-metric ${tone}`.trim();
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value;
+  node.append(labelEl, valueEl);
+  return node;
+}
+
+function renderVerificationView(payload) {
+  if (!verificationSummaryEl || !verificationListEl || !verificationMetaEl) return;
+  const backendItems = Array.isArray(payload?.items) ? payload.items : [];
+  const fallbackItems = backendItems.length ? backendItems : (state.itemsAi || []).slice(0, 12);
+  const unavailable = Boolean(payload?.unavailable);
+  const lowTrust = backendItems.filter((item) => Number(item.authority_score ?? 100) < 70);
+  const deepQueue = fallbackItems.filter((item) => !item.deep_verified).slice(0, 8);
+  const firstParty = backendItems.filter((item) => Number(item.authority_score ?? 0) >= 85);
+  const thirdParty = backendItems.filter((item) => Number(item.authority_score ?? -1) >= 0 && Number(item.authority_score ?? 0) < 85);
+
+  verificationMetaEl.textContent = unavailable
+    ? (payload?.error || "未连接后端")
+    : `${fmtNumber(backendItems.length)} 条核验记录`;
+
+  verificationSummaryEl.innerHTML = "";
+  verificationSummaryEl.append(
+    renderVerificationMetric("待核验", fmtNumber(deepQueue.length), "watch"),
+    renderVerificationMetric("低可信", fmtNumber(lowTrust.length), lowTrust.length ? "warn" : "ok"),
+    renderVerificationMetric("深度核验队列", fmtNumber(deepQueue.length)),
+    renderVerificationMetric("第三方信源评分", fmtNumber(thirdParty.length)),
+    renderVerificationMetric("一手来源覆盖", fmtNumber(firstParty.length), firstParty.length ? "ok" : "")
+  );
+
+  verificationListEl.innerHTML = "";
+  const sections = [
+    ["待核验", deepQueue],
+    ["低可信", lowTrust],
+    ["深度核验队列", deepQueue],
+    ["第三方信源评分", thirdParty],
+    ["一手来源覆盖", firstParty],
+  ];
+  sections.forEach(([title, items]) => {
+    const section = document.createElement("section");
+    section.className = "verification-section";
+    const head = document.createElement("div");
+    head.className = "verification-section-head";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const count = document.createElement("span");
+    count.textContent = `${fmtNumber(items.length)} 条`;
+    head.append(heading, count);
+    section.appendChild(head);
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "verification-empty";
+      empty.textContent = unavailable ? "连接后端后可查看。" : "暂无条目。";
+      section.appendChild(empty);
+    } else {
+      items.slice(0, 5).forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "verification-row";
+        const titleEl = document.createElement("a");
+        titleEl.href = item.url || "#";
+        titleEl.target = "_blank";
+        titleEl.rel = "noopener noreferrer";
+        titleEl.textContent = itemTitleText(item);
+        const meta = document.createElement("span");
+        meta.textContent = `${verifiedStatus(item)} · ${item.authority_score ?? "--"} 分`;
+        row.append(titleEl, meta);
+        section.appendChild(row);
+      });
+    }
+    verificationListEl.appendChild(section);
+  });
+}
+
 function getFilteredItems() {
   const q = state.query.trim().toLowerCase();
   return modeItems().filter((item) => {
@@ -820,6 +930,28 @@ function renderItemNode(item) {
     titleEl.textContent = item.title || zh || en;
   }
   titleEl.href = item.url;
+  const verifyBtn = document.createElement("button");
+  verifyBtn.type = "button";
+  verifyBtn.className = "card-action verify-action";
+  verifyBtn.textContent = "深度核验";
+  verifyBtn.disabled = !apiBaseUrl;
+  verifyBtn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = apiBaseUrl ? "核验中..." : "未配置";
+    if (!apiBaseUrl) return;
+    try {
+      const result = await deepVerifyItem(itemIdentity(item), item);
+      verifyBtn.textContent = "已核验";
+      state.verificationPayload = { items: [result, ...(state.verificationPayload?.items || [])] };
+      renderVerificationView(state.verificationPayload);
+    } catch (_) {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = "重试核验";
+    }
+  });
+  node.appendChild(verifyBtn);
   return node;
 }
 
@@ -1137,14 +1269,18 @@ async function loadSourceStatusData() {
 }
 
 async function init() {
-  const [newsResult, waytoagiResult, statusResult, taxonomyResult] = await Promise.allSettled([
+  const [newsResult, waytoagiResult, statusResult, taxonomyResult, verificationResult] = await Promise.allSettled([
     loadNewsData(),
     loadWaytoagiData(),
     loadSourceStatusData(),
     loadTaxonomy(),
+    loadVerificationSummary(),
   ]);
 
   state.taxonomy = taxonomyResult.status === "fulfilled" ? taxonomyResult.value : fallbackTaxonomy;
+  state.verificationPayload = verificationResult.status === "fulfilled"
+    ? verificationResult.value
+    : { items: [], unavailable: true, error: verificationResult.reason?.message || "核验数据加载失败" };
 
   if (newsResult.status === "fulfilled") {
     const payload = newsResult.value;
@@ -1190,6 +1326,7 @@ async function init() {
   }
 
   renderCategoryView(state.taxonomy, state.itemsAi);
+  renderVerificationView(state.verificationPayload);
 }
 
 searchInputEl.addEventListener("input", (e) => {

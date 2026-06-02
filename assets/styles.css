@@ -1178,6 +1178,105 @@ summary:focus-visible {
   background: var(--surface-soft);
 }
 
+.verification-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.verification-metric {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 11px;
+  background: var(--surface);
+}
+
+.verification-metric span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.verification-metric strong {
+  font-size: 20px;
+}
+
+.verification-metric.ok strong {
+  color: var(--good);
+}
+
+.verification-metric.warn strong {
+  color: var(--warn);
+}
+
+.verification-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.verification-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.verification-section-head,
+.verification-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.verification-section-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.verification-section-head span,
+.verification-row span,
+.verification-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.verification-row,
+.verification-empty {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.verification-row a {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.card-action {
+  justify-self: start;
+  margin-top: 10px;
+  border: 1px solid rgba(18, 106, 115, 0.35);
+  border-radius: var(--radius);
+  padding: 6px 9px;
+  color: var(--accent);
+  background: rgba(18, 106, 115, 0.06);
+  font-size: 12px;
+}
+
+.card-action:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
 .mobile-bottom-nav,
 .ask-ai-fab {
   display: none;
@@ -1299,6 +1398,16 @@ summary:focus-visible {
 
   .category-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .verification-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .verification-section-head,
+  .verification-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .mobile-bottom-nav {
