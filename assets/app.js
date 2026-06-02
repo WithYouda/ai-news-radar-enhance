@@ -1,3 +1,23 @@
+const appConfig = window.AI_NEWS_RADAR_CONFIG || {};
+const apiBaseUrl = String(appConfig.apiBaseUrl || "").replace(/\/$/, "");
+
+async function apiFetch(path, options = {}) {
+  if (!apiBaseUrl) throw new Error("AI 后端未配置");
+  const res = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API 请求失败: ${res.status}`);
+  }
+  return res.json();
+}
+
 const state = {
   itemsAi: [],
   itemsAll: [],
