@@ -1277,6 +1277,110 @@ summary:focus-visible {
   opacity: 0.58;
 }
 
+.ask-ai-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  justify-content: end;
+  align-items: stretch;
+  background: rgba(23, 23, 23, 0.22);
+}
+
+.ask-ai-sheet[hidden] {
+  display: none;
+}
+
+.ask-ai-panel {
+  width: min(420px, 100vw);
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: -12px 0 28px rgba(23, 23, 23, 0.14);
+}
+
+.ask-ai-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.ask-ai-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.ask-ai-head button,
+#askAiSubmit {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.ask-ai-context {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#askAiInput {
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  font: inherit;
+}
+
+#askAiSubmit {
+  justify-self: start;
+  border-color: rgba(18, 106, 115, 0.45);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+#askAiSubmit:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.ask-ai-answer {
+  min-height: 120px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.ask-ai-answer-text {
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.ask-ai-citations {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.ask-ai-citations a {
+  color: var(--accent);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .mobile-bottom-nav,
 .ask-ai-fab {
   display: none;
@@ -1408,6 +1512,21 @@ summary:focus-visible {
   .verification-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .ask-ai-sheet {
+    justify-content: stretch;
+    align-items: end;
+  }
+
+  .ask-ai-panel {
+    width: 100%;
+    min-height: 0;
+    max-height: calc(100vh - 72px);
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    padding: 16px 14px 88px;
+    box-shadow: 0 -12px 26px rgba(23, 23, 23, 0.14);
   }
 
   .mobile-bottom-nav {

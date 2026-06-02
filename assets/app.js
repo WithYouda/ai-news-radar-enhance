@@ -37,6 +37,7 @@ const state = {
   mobileView: "today",
   taxonomy: [],
   verificationPayload: null,
+  askContext: {},
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -75,6 +76,12 @@ const categoryDetailEl = document.getElementById("categoryDetail");
 const verificationMetaEl = document.getElementById("verificationMeta");
 const verificationSummaryEl = document.getElementById("verificationSummary");
 const verificationListEl = document.getElementById("verificationList");
+const askAiSheetEl = document.getElementById("askAiSheet");
+const askAiCloseEl = document.getElementById("askAiClose");
+const askAiContextEl = document.getElementById("askAiContext");
+const askAiInputEl = document.getElementById("askAiInput");
+const askAiSubmitEl = document.getElementById("askAiSubmit");
+const askAiAnswerEl = document.getElementById("askAiAnswer");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -202,6 +209,86 @@ function setMobileView(view) {
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === view);
   });
+}
+
+function currentAskScope() {
+  return { scope: state.mobileView || "today", ...state.askContext };
+}
+
+function askScopeLabel(scope) {
+  const labels = {
+    today: "今日",
+    categories: "分类",
+    verification: "核验",
+    settings: "设置",
+  };
+  return labels[scope] || "今日";
+}
+
+function openAskAi(extraContext = {}) {
+  if (!askAiSheetEl) return;
+  state.askContext = extraContext;
+  const scope = currentAskScope();
+  if (askAiContextEl) askAiContextEl.textContent = askScopeLabel(scope.scope);
+  if (askAiAnswerEl) {
+    askAiAnswerEl.innerHTML = "";
+    if (!apiBaseUrl) askAiAnswerEl.textContent = "AI 后端未配置。";
+  }
+  askAiSheetEl.hidden = false;
+  document.body.classList.add("ask-ai-open");
+  if (askAiInputEl) askAiInputEl.focus();
+}
+
+function closeAskAi() {
+  if (!askAiSheetEl) return;
+  askAiSheetEl.hidden = true;
+  document.body.classList.remove("ask-ai-open");
+}
+
+function renderAskAnswer(payload) {
+  if (!askAiAnswerEl) return;
+  askAiAnswerEl.innerHTML = "";
+  const answer = document.createElement("div");
+  answer.className = "ask-ai-answer-text";
+  answer.textContent = payload?.answer || "没有返回答案。";
+  askAiAnswerEl.appendChild(answer);
+
+  const citations = Array.isArray(payload?.citations) ? payload.citations : [];
+  if (!citations.length) return;
+  const list = document.createElement("div");
+  list.className = "ask-ai-citations";
+  citations.forEach((citation, index) => {
+    const link = document.createElement("a");
+    link.href = citation.url || "#";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = `${index + 1}. ${citation.title || citation.url || "引用"}`;
+    list.appendChild(link);
+  });
+  askAiAnswerEl.appendChild(list);
+}
+
+async function submitAskAi() {
+  if (!askAiInputEl || !askAiSubmitEl || !askAiAnswerEl) return;
+  const question = askAiInputEl.value.trim();
+  if (!question) return;
+  if (!apiBaseUrl) {
+    askAiAnswerEl.textContent = "AI 后端未配置。";
+    return;
+  }
+  askAiSubmitEl.disabled = true;
+  askAiAnswerEl.textContent = "正在请求...";
+  try {
+    const payload = await apiFetch("/api/ask", {
+      method: "POST",
+      body: JSON.stringify({ question, ...currentAskScope() }),
+    });
+    renderAskAnswer(payload);
+  } catch (err) {
+    askAiAnswerEl.textContent = err.message || "请求失败。";
+  } finally {
+    askAiSubmitEl.disabled = false;
+  }
 }
 
 function fmtTime(iso) {
@@ -1399,7 +1486,17 @@ document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
 
 if (askAiButtonEl) {
   askAiButtonEl.addEventListener("click", () => {
-    if (typeof openAskAi === "function") openAskAi();
+    openAskAi();
+  });
+}
+
+if (askAiCloseEl) askAiCloseEl.addEventListener("click", closeAskAi);
+if (askAiSubmitEl) askAiSubmitEl.addEventListener("click", submitAskAi);
+if (askAiInputEl) {
+  askAiInputEl.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      submitAskAi();
+    }
   });
 }
 

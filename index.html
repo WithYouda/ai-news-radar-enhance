@@ -142,6 +142,19 @@
 
     </main>
 
+    <section id="askAiSheet" class="ask-ai-sheet" hidden aria-label="问 AI">
+      <div class="ask-ai-panel">
+        <div class="ask-ai-head">
+          <h2>问 AI</h2>
+          <button id="askAiClose" type="button">关闭</button>
+        </div>
+        <div id="askAiContext" class="ask-ai-context">今日</div>
+        <textarea id="askAiInput" rows="3" placeholder="问今天的信息流..."></textarea>
+        <button id="askAiSubmit" type="button">发送</button>
+        <div id="askAiAnswer" class="ask-ai-answer"></div>
+      </div>
+    </section>
+
     <nav id="mobileBottomNav" class="mobile-bottom-nav" aria-label="移动端主导航">
       <button type="button" class="mobile-nav-btn active" data-view="today">今日</button>
       <button type="button" class="mobile-nav-btn" data-view="categories">分类</button>

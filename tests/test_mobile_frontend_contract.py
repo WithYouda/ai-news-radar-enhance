@@ -38,3 +38,12 @@ def test_verification_view_contract_exists():
     assert "loadVerificationSummary" in js
     assert "renderVerificationView" in js
     assert "deepVerifyItem" in js
+
+
+def test_ask_ai_sheet_contract_exists():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert 'id="askAiSheet"' in html
+    assert 'id="askAiInput"' in html
+    assert "openAskAi" in js
+    assert "submitAskAi" in js
