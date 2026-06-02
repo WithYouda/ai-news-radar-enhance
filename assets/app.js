@@ -82,6 +82,12 @@ const askAiContextEl = document.getElementById("askAiContext");
 const askAiInputEl = document.getElementById("askAiInput");
 const askAiSubmitEl = document.getElementById("askAiSubmit");
 const askAiAnswerEl = document.getElementById("askAiAnswer");
+const settingsStatusEl = document.getElementById("settingsStatus");
+const adminPasswordInputEl = document.getElementById("adminPasswordInput");
+const loginButtonEl = document.getElementById("loginButton");
+const deepVerificationToggleEl = document.getElementById("deepVerificationToggle");
+const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
+const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -288,6 +294,91 @@ async function submitAskAi() {
     askAiAnswerEl.textContent = err.message || "请求失败。";
   } finally {
     askAiSubmitEl.disabled = false;
+  }
+}
+
+function setSettingsStatus(text) {
+  if (settingsStatusEl) settingsStatusEl.textContent = text;
+}
+
+function applySettings(settings) {
+  if (!settings) return;
+  if (deepVerificationToggleEl) {
+    deepVerificationToggleEl.checked = Boolean(settings.deep_verification_enabled);
+  }
+  if (deepVerificationTopNEl) {
+    deepVerificationTopNEl.value = String(settings.deep_verification_top_n || 3);
+  }
+}
+
+async function loginAdmin() {
+  if (!adminPasswordInputEl) return;
+  if (!apiBaseUrl) {
+    setSettingsStatus("后端未配置");
+    return;
+  }
+  const password = adminPasswordInputEl.value.trim();
+  if (!password) {
+    setSettingsStatus("请输入密码");
+    return;
+  }
+  if (loginButtonEl) loginButtonEl.disabled = true;
+  setSettingsStatus("登录中...");
+  try {
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    adminPasswordInputEl.value = "";
+    setSettingsStatus("已登录");
+    await loadSettings();
+  } catch (err) {
+    setSettingsStatus(err.message || "登录失败");
+  } finally {
+    if (loginButtonEl) loginButtonEl.disabled = false;
+  }
+}
+
+async function loadSettings() {
+  if (!apiBaseUrl) {
+    setSettingsStatus("后端未配置");
+    return null;
+  }
+  try {
+    await apiFetch("/api/me");
+    const settings = await apiFetch("/api/settings");
+    applySettings(settings);
+    setSettingsStatus("已登录");
+    return settings;
+  } catch (_) {
+    setSettingsStatus("未登录");
+    return null;
+  }
+}
+
+async function saveSettings() {
+  if (!apiBaseUrl) {
+    setSettingsStatus("后端未配置");
+    return;
+  }
+  const topN = Math.max(1, Math.min(10, Number(deepVerificationTopNEl?.value || 3)));
+  if (saveSettingsButtonEl) saveSettingsButtonEl.disabled = true;
+  setSettingsStatus("保存中...");
+  try {
+    const settings = await apiFetch("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        deep_verification_enabled: Boolean(deepVerificationToggleEl?.checked),
+        deep_verification_scope: "bole_picks_and_topic_top_n",
+        deep_verification_top_n: topN,
+      }),
+    });
+    applySettings(settings);
+    setSettingsStatus("已保存");
+  } catch (err) {
+    setSettingsStatus(err.message || "保存失败");
+  } finally {
+    if (saveSettingsButtonEl) saveSettingsButtonEl.disabled = false;
   }
 }
 
@@ -1414,6 +1505,7 @@ async function init() {
 
   renderCategoryView(state.taxonomy, state.itemsAi);
   renderVerificationView(state.verificationPayload);
+  loadSettings();
 }
 
 searchInputEl.addEventListener("input", (e) => {
@@ -1497,6 +1589,14 @@ if (askAiInputEl) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       submitAskAi();
     }
+  });
+}
+
+if (loginButtonEl) loginButtonEl.addEventListener("click", loginAdmin);
+if (saveSettingsButtonEl) saveSettingsButtonEl.addEventListener("click", saveSettings);
+if (adminPasswordInputEl) {
+  adminPasswordInputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loginAdmin();
   });
 }
 

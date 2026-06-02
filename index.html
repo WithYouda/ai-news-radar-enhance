@@ -140,6 +140,26 @@
         <div id="verificationList" class="verification-list"></div>
       </section>
 
+      <section id="settingsView" class="mobile-view-panel" data-mobile-view="settings" hidden>
+        <div class="mobile-section-head">
+          <h2>设置</h2>
+          <span id="settingsStatus">未登录</span>
+        </div>
+        <div class="settings-panel">
+          <input id="adminPasswordInput" type="password" placeholder="管理员密码" />
+          <button id="loginButton" type="button">登录</button>
+          <label class="settings-toggle">
+            <input id="deepVerificationToggle" type="checkbox" />
+            <span>默认深度核验伯乐精选与分类 Top N</span>
+          </label>
+          <label class="field">
+            <span>Top N</span>
+            <input id="deepVerificationTopN" type="number" min="1" max="10" value="3" />
+          </label>
+          <button id="saveSettingsButton" type="button">保存设置</button>
+        </div>
+      </section>
+
     </main>
 
     <section id="askAiSheet" class="ask-ai-sheet" hidden aria-label="问 AI">
