@@ -1,4 +1,7 @@
-from server.ai_radar_api.assistant import build_ask_messages
+import anyio
+
+from server.ai_radar_api.assistant import answer_question, build_ask_messages
+from server.ai_radar_api.config import AppConfig
 
 
 def test_build_ask_messages_requires_citations():
@@ -16,3 +19,28 @@ def test_build_ask_messages_keeps_user_question():
     messages = build_ask_messages("这条有一手来源吗？", "[1] A | Source | https://a.com")
     assert messages[-1]["role"] == "user"
     assert "这条有一手来源吗" in messages[-1]["content"]
+
+
+def test_answer_question_citations_follow_context_ranking(tmp_path):
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    items = [
+        {"title": "Low signal", "url": "https://example.com/b", "ai_score": 0.1, "site_name": "Blog"},
+        {"title": "OpenAI ships model", "url": "https://example.com/a", "ai_score": 0.9, "site_name": "OpenAI"},
+    ]
+
+    class FakeProvider:
+        async def chat(self, messages, temperature=0.2):
+            return "answer"
+
+    result = anyio.run(answer_question, config, "OpenAI?", items, FakeProvider())
+
+    assert result["citations"][0]["url"] == "https://example.com/a"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .config import AppConfig
 from .provider import AIProvider
-from .radar_data import build_context
+from .radar_data import build_context, rank_context_items
 
 
 def build_ask_messages(question: str, context: str) -> list[dict]:
@@ -39,11 +39,12 @@ async def answer_question(
     provider: AIProvider | None = None,
 ) -> dict:
     provider = provider or AIProvider(config)
-    context = build_context(items, question=question, max_items=config.max_context_items)
+    ranked_items = rank_context_items(items, question)
+    context = build_context(ranked_items, question=question, max_items=config.max_context_items)
     messages = build_ask_messages(question, context)
     answer = await provider.chat(messages, temperature=0.2)
     return {
         "answer": answer,
-        "citations": _citations(items, config.max_context_items),
+        "citations": _citations(ranked_items, config.max_context_items),
         "model": config.ai_model,
     }

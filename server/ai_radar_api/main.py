@@ -16,7 +16,7 @@ from .config import AppConfig
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
-from .taxonomy import DEFAULT_TAXONOMY, seed_default_taxonomy
+from .taxonomy import list_taxonomy, seed_default_taxonomy
 from .provider import AIProviderUnavailable
 from .verification import fetch_and_verify
 
@@ -95,14 +95,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     def me(session: dict = Depends(require_session)) -> dict:
         return session
 
+    @app.get("/api/taxonomy")
+    def taxonomy() -> dict:
+        return {"categories": list_taxonomy(config.db_path)}
+
     @app.post("/api/classify")
     def classify(payload: ClassifyRequest, session: dict = Depends(require_session)) -> dict:
         del session
         response_items = []
         classified_at = datetime.now(UTC).isoformat()
+        taxonomy_rows = list_taxonomy(config.db_path)
         with connect_db(config.db_path) as conn:
             for item in payload.items:
-                result = classify_item(item, DEFAULT_TAXONOMY)
+                result = classify_item(item, taxonomy_rows)
                 item_id = item_identity(item)
                 title = str(item.get("title") or "")
                 url = normalize_public_url(str(item.get("url") or ""))
@@ -216,11 +221,35 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             )
         return {"item_id": item_id, **result}
 
+    def find_verification_item(item_id: str, payload: VerificationRequest | None) -> dict:
+        if payload and payload.item:
+            return payload.item
+        try:
+            items = load_latest_items(config)
+        except Exception:
+            items = []
+        for item in items:
+            if item_identity(item) == item_id or str(item.get("id") or "") == item_id:
+                return item
+        with connect_db(config.db_path) as conn:
+            row = conn.execute(
+                """
+                select url from verification_results where item_id = ? and coalesce(url, '') <> ''
+                union
+                select url from item_classifications where item_id = ? and coalesce(url, '') <> ''
+                limit 1
+                """,
+                (item_id, item_id),
+            ).fetchone()
+        if row and row["url"]:
+            return {"url": row["url"]}
+        raise HTTPException(status_code=404, detail="Item not found for verification")
+
     @app.post("/api/verification/{item_id}/verify")
     def verify_item(item_id: str, payload: VerificationRequest | None = None, session: dict = Depends(require_session)) -> dict:
         del session
-        item = (payload.item if payload and payload.item else None) or {"url": ""}
-        result = fetch_and_verify(item, deep=False) if item.get("url") else fetch_and_verify({"url": ""}, timeout_seconds=1)
+        item = find_verification_item(item_id, payload)
+        result = fetch_and_verify(item, deep=False)
         return store_verification_result(item_id, item, result)
 
     @app.post("/api/verification/{item_id}/deep-verify")
@@ -230,8 +259,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         session: dict = Depends(require_session),
     ) -> dict:
         del session
-        item = (payload.item if payload and payload.item else None) or {"url": ""}
-        result = fetch_and_verify(item, deep=True) if item.get("url") else fetch_and_verify({"url": ""}, timeout_seconds=1, deep=True)
+        item = find_verification_item(item_id, payload)
+        result = fetch_and_verify(item, deep=True)
         result["deep_verified"] = True
         return store_verification_result(item_id, item, result)
 

@@ -77,8 +77,38 @@ def _keyword_hits(text: str, keywords: tuple[str, ...]) -> list[str]:
     return hits
 
 
+def _allowed_taxonomy(taxonomy: list[dict]) -> dict[str, list[str]]:
+    if not taxonomy:
+        return {}
+    if any("children" in row for row in taxonomy):
+        return {
+            row["label"]: [child["label"] for child in row.get("children", []) if child.get("label")]
+            for row in taxonomy
+            if row.get("label")
+        }
+
+    id_to_label = {row.get("id"): row.get("label") for row in taxonomy if row.get("id") and row.get("label")}
+    allowed = {row["label"]: [] for row in taxonomy if row.get("parent_id") is None and row.get("label")}
+    for row in taxonomy:
+        parent_id = row.get("parent_id")
+        label = row.get("label")
+        parent_label = id_to_label.get(parent_id)
+        if parent_label in allowed and label:
+            allowed[parent_label].append(label)
+    return allowed
+
+
+def _taxonomy_fallback(allowed: dict[str, list[str]]) -> tuple[str, str | None]:
+    if not allowed:
+        return "开发者工具", "SDK / API 工具"
+    top_category = next(iter(allowed))
+    children = allowed.get(top_category) or []
+    return top_category, children[0] if children else None
+
+
 def classify_item(item: dict, taxonomy: list[dict]) -> dict:
     text = _text(item)
+    allowed = _allowed_taxonomy(taxonomy)
     best = ("开发者工具", "SDK / API 工具", 0, [])
     for top_category, sub_rules in RULES.items():
         for sub_category, keywords in sub_rules.items():
@@ -90,8 +120,12 @@ def classify_item(item: dict, taxonomy: list[dict]) -> dict:
                 best = (top_category, sub_category, score, hits)
 
     top_category, sub_category, score, hits = best
+    if allowed and (top_category not in allowed or sub_category not in allowed.get(top_category, [])):
+        top_category, sub_category = _taxonomy_fallback(allowed)
+        hits = ["taxonomy fallback"]
+        score = 0
     if score == 0:
-        hits = ["fallback"]
+        hits = hits or ["fallback"]
     confidence = min(0.95, 0.45 + 0.15 * max(score, 1))
     return {
         "top_category": top_category,

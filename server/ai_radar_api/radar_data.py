@@ -95,9 +95,13 @@ def _rank_item(item: dict, keywords: set[str]) -> tuple[int, float, float]:
     return (match_count, float(item.get("ai_score") or item.get("score") or 0), _timestamp(item))
 
 
-def build_context(items: list[dict], question: str, max_items: int = 40) -> str:
+def rank_context_items(items: list[dict], question: str) -> list[dict]:
     keywords = _question_keywords(question)
-    ranked = sorted(items, key=lambda item: _rank_item(item, keywords), reverse=True)
+    return sorted(items, key=lambda item: _rank_item(item, keywords), reverse=True)
+
+
+def build_context(items: list[dict], question: str, max_items: int = 40) -> str:
+    ranked = rank_context_items(items, question)
     lines = []
     for index, item in enumerate(ranked[:max_items], start=1):
         title = item.get("title") or item.get("title_zh") or item.get("title_en") or "Untitled"

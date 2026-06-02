@@ -27,3 +27,17 @@ def test_falls_back_to_developer_tools():
         DEFAULT_TAXONOMY,
     )
     assert result["top_category"] == "开发者工具"
+
+
+def test_classifier_does_not_emit_categories_outside_taxonomy():
+    taxonomy = [
+        {
+            "id": "research-evaluation",
+            "label": "研究与评测",
+            "children": [{"id": "research-evaluation/papers", "label": "论文"}],
+        }
+    ]
+    result = classify_item({"title": "OpenAI releases GPT-5 API", "source": "OpenAI News"}, taxonomy)
+
+    assert result["top_category"] == "研究与评测"
+    assert result["sub_category"] == "论文"

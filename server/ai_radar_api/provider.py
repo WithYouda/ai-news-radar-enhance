@@ -17,17 +17,20 @@ class AIProvider:
         if not self.config.ai_base_url or not self.config.ai_api_key:
             raise AIProviderUnavailable("AI_BASE_URL and AI_API_KEY are required")
 
-        async with httpx.AsyncClient(timeout=45) as client:
-            response = await client.post(
-                f"{self.config.ai_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.config.ai_api_key}"},
-                json={
-                    "model": self.config.ai_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                },
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=45) as client:
+                response = await client.post(
+                    f"{self.config.ai_base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.config.ai_api_key}"},
+                    json={
+                        "model": self.config.ai_model,
+                        "messages": messages,
+                        "temperature": temperature,
+                    },
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AIProviderUnavailable(f"AI provider request failed: {exc}") from exc
         payload = response.json()
         try:
             content = payload["choices"][0]["message"]["content"]
