@@ -21,6 +21,19 @@ def test_mobile_css_is_scoped_to_small_screens():
     assert "padding-bottom" in css
 
 
+def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "[hidden]" in css
+    assert "display: none !important" in css
+
+
+def test_mobile_fix_assets_are_cache_busted():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert "./assets/styles.css?v=mobile-fix-0602" in html
+    assert "./assets/config.js?v=mobile-fix-0602" in html
+    assert "./assets/app.js?v=mobile-fix-0602" in html
+
+
 def test_category_view_contract_exists():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
@@ -47,6 +60,7 @@ def test_ask_ai_sheet_contract_exists():
     assert 'id="askAiInput"' in html
     assert "openAskAi" in js
     assert "submitAskAi" in js
+    assert "无法连接 AI 后端" in js
 
 
 def test_settings_view_contract_exists():
