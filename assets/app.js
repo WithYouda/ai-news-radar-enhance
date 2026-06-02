@@ -292,8 +292,19 @@ function renderAskHistory(payload) {
   if (!askAiHistoryListEl) return;
   askAiHistoryListEl.innerHTML = "";
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  const head = document.createElement("div");
+  head.className = "ask-ai-history-head";
+  const title = document.createElement("strong");
+  title.textContent = "最近对话";
+  const count = document.createElement("span");
+  count.textContent = `${items.length} 条`;
+  head.append(title, count);
+  askAiHistoryListEl.appendChild(head);
   if (!items.length) {
-    askAiHistoryListEl.textContent = "暂无对话记录。";
+    const empty = document.createElement("div");
+    empty.className = "ask-ai-history-empty";
+    empty.textContent = "暂无对话记录。";
+    askAiHistoryListEl.appendChild(empty);
     return;
   }
   items.forEach((item) => {
@@ -312,12 +323,6 @@ function renderAskHistory(payload) {
     preview.textContent = item.answer_preview || "";
     button.appendChild(preview);
 
-    const meta = document.createElement("span");
-    meta.className = "ask-ai-history-meta";
-    const createdAt = item.created_at ? new Date(item.created_at).toLocaleString("zh-CN") : "";
-    meta.textContent = createdAt;
-    button.appendChild(meta);
-
     const labels = document.createElement("span");
     labels.className = "ask-ai-history-labels";
     (Array.isArray(item.labels) ? item.labels : []).forEach((label) => {
@@ -326,6 +331,12 @@ function renderAskHistory(payload) {
       labels.appendChild(pill);
     });
     button.appendChild(labels);
+
+    const meta = document.createElement("span");
+    meta.className = "ask-ai-history-meta";
+    const createdAt = item.created_at ? new Date(item.created_at).toLocaleString("zh-CN") : "";
+    meta.textContent = createdAt;
+    button.appendChild(meta);
 
     button.addEventListener("click", () => loadAskHistoryDetail(item.conversation_id));
     askAiHistoryListEl.appendChild(button);

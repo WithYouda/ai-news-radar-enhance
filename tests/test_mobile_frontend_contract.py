@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=info-arch-0602" in html
+    assert "./assets/styles.css?v=chat-history-0602b" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=info-arch-0602" in html
+    assert "./assets/app.js?v=chat-history-0602b" in html
 
 
 def test_category_view_contract_exists():
@@ -91,6 +91,7 @@ def test_ask_ai_global_history_contract_exists():
     assert 'id="askAiHistoryList"' in html
     assert "/api/ask/history" in js
     assert "renderAskHistory" in js
+    assert "toggleAskHistory" in js
     assert ".ask-ai-history-item" in css
 
 

@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=info-arch-0602" />
+    <link rel="stylesheet" href="./assets/styles.css?v=chat-history-0602b" />
   </head>
   <body>
     <main class="shell">
@@ -170,8 +170,11 @@
           <button id="askAiClose" type="button">关闭</button>
         </div>
         <div class="ask-ai-tools">
-          <div id="askAiContext" class="ask-ai-context">今日</div>
-          <button id="askAiHistoryButton" type="button">历史</button>
+          <div class="ask-ai-context-wrap">
+            <span>上下文</span>
+            <strong id="askAiContext" class="ask-ai-context">今日</strong>
+          </div>
+          <button id="askAiHistoryButton" class="ask-ai-history-toggle" type="button">对话记录</button>
         </div>
         <div id="askAiHistoryList" class="ask-ai-history-list" hidden></div>
         <textarea id="askAiInput" rows="3" placeholder="问今天的信息流..."></textarea>
@@ -201,7 +204,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=info-arch-0602" defer></script>
+    <script src="./assets/app.js?v=chat-history-0602b" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
