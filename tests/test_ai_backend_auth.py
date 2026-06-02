@@ -25,6 +25,13 @@ def test_health_is_public(tmp_path):
     assert res.json()["ok"] is True
 
 
+def test_root_redirects_to_public_reader(tmp_path):
+    client = make_client(tmp_path)
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 307
+    assert res.headers["location"] == "https://withyouda.github.io/ai-news-radar-enhance"
+
+
 def test_login_rejects_wrong_password(tmp_path):
     client = make_client(tmp_path)
     res = client.post("/api/auth/login", json={"password": "wrong"})

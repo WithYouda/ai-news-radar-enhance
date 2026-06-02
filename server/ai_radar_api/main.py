@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from .assistant import answer_question
@@ -63,6 +64,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if not radar_session or not validate_session(config.db_path, radar_session, config.session_secret):
             raise HTTPException(status_code=401, detail="Authentication required")
         return {"authenticated": True}
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse(config.public_base_url)
 
     @app.get("/health")
     def health() -> dict:
