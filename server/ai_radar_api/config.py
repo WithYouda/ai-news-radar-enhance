@@ -22,6 +22,8 @@ class AppConfig:
     ai_api_format: str = "chat_completions"
     max_context_items: int = 40
     deep_verify_top_n: int = 3
+    data_dir: Path = Path("data")
+    data_cache_dir: Path = Path("server/data/cache")
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -42,4 +44,6 @@ class AppConfig:
             ai_api_format=(os.getenv("AI_API_FORMAT") or "chat_completions").strip().lower().replace("-", "_"),
             max_context_items=int(os.getenv("RADAR_MAX_CONTEXT_ITEMS", "40")),
             deep_verify_top_n=int(os.getenv("RADAR_DEEP_VERIFY_TOP_N", "3")),
+            data_dir=Path(os.getenv("RADAR_DATA_DIR", "data")),
+            data_cache_dir=Path(os.getenv("RADAR_DATA_CACHE_DIR", "server/data/cache")),
         )

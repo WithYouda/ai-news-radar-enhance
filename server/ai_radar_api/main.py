@@ -15,7 +15,7 @@ from .auth import create_session, delete_session, store_session, validate_sessio
 from .classifier import classify_item
 from .config import AppConfig
 from .db import connect_db, init_db
-from .radar_data import item_identity, load_latest_items, merge_item_metadata, normalize_public_url
+from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
 from .taxonomy import list_taxonomy, seed_default_taxonomy
 from .provider import AIProviderUnavailable
@@ -302,15 +302,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
         del session
         try:
-            items = load_latest_items(config, mode="ai")
-        except Exception:
-            items = []
+            items, context_source = load_latest_items_with_source(config, mode="ai")
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
         if payload.item_id:
             items = [item for item in items if item_identity(item) == payload.item_id or str(item.get("id") or "") == payload.item_id]
         if payload.category:
             items = [item for item in items if item_matches_category(item, payload.category)]
         try:
-            return await answer_question(config, payload.question, items)
+            result = await answer_question(config, payload.question, items)
+            result["context_item_count"] = len(items)
+            result["context_source"] = context_source
+            return result
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

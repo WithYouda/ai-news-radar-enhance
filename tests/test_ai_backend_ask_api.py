@@ -26,27 +26,30 @@ def login(client):
 def test_ask_category_scope_matches_legacy_ai_labels(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_load_latest_items(config, mode="ai"):
-        return [
-            {
-                "title": "New model release",
-                "url": "https://example.com/model",
-                "ai_label": "model_release",
-                "ai_score": 0.9,
-            },
-            {
-                "title": "Coding tool update",
-                "url": "https://example.com/tool",
-                "ai_label": "developer_tool",
-                "ai_score": 0.8,
-            },
-        ]
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return (
+            [
+                {
+                    "title": "New model release",
+                    "url": "https://example.com/model",
+                    "ai_label": "model_release",
+                    "ai_score": 0.9,
+                },
+                {
+                    "title": "Coding tool update",
+                    "url": "https://example.com/tool",
+                    "ai_label": "developer_tool",
+                    "ai_score": 0.8,
+                },
+            ],
+            "local",
+        )
 
     async def fake_answer_question(config, question, items):
         captured["items"] = items
         return {"answer": "ok", "citations": [], "model": config.ai_model}
 
-    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items", fake_load_latest_items)
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
     monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
 
     client = make_client(tmp_path)
@@ -55,3 +58,5 @@ def test_ask_category_scope_matches_legacy_ai_labels(monkeypatch, tmp_path):
 
     assert res.status_code == 200
     assert [item["url"] for item in captured["items"]] == ["https://example.com/model"]
+    assert res.json()["context_item_count"] == 1
+    assert res.json()["context_source"] == "local"

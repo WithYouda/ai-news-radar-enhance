@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -55,13 +57,57 @@ def fetch_public_json(config: AppConfig, path: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def load_latest_items(config: AppConfig, mode: str = "ai") -> list[dict]:
-    path = "data/latest-24h-all.json" if mode == "all" else "data/latest-24h.json"
+def _data_relative_path(path: str) -> Path:
+    raw_path = urlsplit(path).path if path.startswith(("http://", "https://")) else path
+    parts = [part for part in Path(raw_path).parts if part not in ("", "/")]
+    if parts and parts[0] == "data":
+        parts = parts[1:]
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError(f"Invalid data path: {path}")
+    return Path(*parts)
+
+
+def _read_json_file(path: Path) -> dict:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_json_file(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def fetch_public_json_with_source(config: AppConfig, path: str) -> tuple[dict, str]:
+    relative_path = _data_relative_path(path)
+    cache_path = config.data_cache_dir / relative_path
+    local_path = config.data_dir / relative_path
+
+    for source, fallback_path in (("local", local_path), ("cache", cache_path)):
+        if fallback_path.exists():
+            try:
+                return _read_json_file(fallback_path), source
+            except Exception:
+                continue
+
     payload = fetch_public_json(config, path)
+    _write_json_file(cache_path, payload)
+    return payload, "remote"
+
+
+def load_latest_items(config: AppConfig, mode: str = "ai") -> list[dict]:
+    items, _ = load_latest_items_with_source(config, mode=mode)
+    return items
+
+
+def load_latest_items_with_source(config: AppConfig, mode: str = "ai") -> tuple[list[dict], str]:
+    path = "data/latest-24h-all.json" if mode == "all" else "data/latest-24h.json"
+    payload, source = fetch_public_json_with_source(config, path)
     items = payload.get("items_all") if mode == "all" else payload.get("items")
     if items is None:
         items = payload.get("items_ai") or payload.get("items") or []
-    return [item for item in items if isinstance(item, dict)]
+    return [item for item in items if isinstance(item, dict)], source
 
 
 def _question_keywords(question: str) -> set[str]:
