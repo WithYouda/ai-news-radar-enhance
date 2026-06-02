@@ -1327,7 +1327,7 @@ summary:focus-visible {
   width: min(420px, 100vw);
   min-height: 100%;
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
   gap: 12px;
   padding: 18px;
   border-left: 1px solid var(--line);
@@ -1360,6 +1360,84 @@ summary:focus-visible {
 .ask-ai-context {
   color: var(--muted);
   font-size: 13px;
+}
+
+.ask-ai-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#askAiHistoryButton {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 10px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+#askAiHistoryButton.active {
+  border-color: rgba(18, 106, 115, 0.45);
+  color: var(--accent);
+}
+
+.ask-ai-history-list {
+  max-height: 220px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ask-ai-history-list[hidden] {
+  display: none;
+}
+
+.ask-ai-history-item {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+}
+
+.ask-ai-history-item:hover {
+  border-color: rgba(18, 106, 115, 0.3);
+}
+
+.ask-ai-history-question {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ask-ai-history-preview,
+.ask-ai-history-meta {
+  overflow-wrap: anywhere;
+}
+
+.ask-ai-history-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ask-ai-history-labels span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--accent);
+  background: rgba(18, 106, 115, 0.08);
+  font-size: 12px;
 }
 
 #askAiInput {

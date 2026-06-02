@@ -64,6 +64,21 @@ create table if not exists source_scores (
   reason text,
   updated_at text not null
 );
+
+create table if not exists ask_conversations (
+  conversation_id text primary key,
+  question text not null,
+  answer text not null,
+  scope text not null,
+  scope_json text not null,
+  labels_json text not null,
+  citations_json text not null,
+  model text not null,
+  context_source text,
+  context_item_count integer not null default 0,
+  created_at text not null,
+  updated_at text not null
+);
 """
 
 

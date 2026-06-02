@@ -169,7 +169,11 @@
           <h2>问 AI</h2>
           <button id="askAiClose" type="button">关闭</button>
         </div>
-        <div id="askAiContext" class="ask-ai-context">今日</div>
+        <div class="ask-ai-tools">
+          <div id="askAiContext" class="ask-ai-context">今日</div>
+          <button id="askAiHistoryButton" type="button">历史</button>
+        </div>
+        <div id="askAiHistoryList" class="ask-ai-history-list" hidden></div>
         <textarea id="askAiInput" rows="3" placeholder="问今天的信息流..."></textarea>
         <button id="askAiSubmit" type="button">发送</button>
         <div id="askAiAnswer" class="ask-ai-answer"></div>

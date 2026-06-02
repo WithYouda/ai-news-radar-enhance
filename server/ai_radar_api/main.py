@@ -14,6 +14,7 @@ from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
+from .conversations import get_ask_conversation, list_ask_conversations, store_ask_conversation
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
@@ -313,9 +314,44 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             result = await answer_question(config, payload.question, items)
             result["context_item_count"] = len(items)
             result["context_source"] = context_source
+            scope_payload = {
+                "scope": payload.scope,
+                "category": payload.category,
+                "item_id": payload.item_id,
+            }
+            if payload.item_id and items:
+                scope_payload["item_title"] = items[0].get("title") or items[0].get("title_zh") or items[0].get("title_en")
+            try:
+                conversation = store_ask_conversation(
+                    config.db_path,
+                    question=payload.question,
+                    answer=str(result.get("answer") or ""),
+                    scope_payload=scope_payload,
+                    citations=list(result.get("citations") or []),
+                    model=str(result.get("model") or config.ai_model),
+                    context_source=context_source,
+                    context_item_count=len(items),
+                )
+                result["history_saved"] = True
+                result["conversation_id"] = conversation["conversation_id"]
+            except Exception:
+                result["history_saved"] = False
             return result
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/ask/history")
+    def ask_history(session: dict = Depends(require_session)) -> dict:
+        del session
+        return list_ask_conversations(config.db_path)
+
+    @app.get("/api/ask/history/{conversation_id}")
+    def ask_history_detail(conversation_id: str, session: dict = Depends(require_session)) -> dict:
+        del session
+        record = get_ask_conversation(config.db_path, conversation_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return record
 
     @app.get("/api/settings")
     def read_settings(session: dict = Depends(require_session)) -> dict:

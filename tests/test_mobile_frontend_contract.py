@@ -83,6 +83,17 @@ def test_ask_ai_sheet_contract_exists():
     assert "无法连接 AI 后端" in js
 
 
+def test_ask_ai_global_history_contract_exists():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="askAiHistoryButton"' in html
+    assert 'id="askAiHistoryList"' in html
+    assert "/api/ask/history" in js
+    assert "renderAskHistory" in js
+    assert ".ask-ai-history-item" in css
+
+
 def test_settings_view_contract_exists():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")

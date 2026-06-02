@@ -60,3 +60,50 @@ def test_ask_category_scope_matches_legacy_ai_labels(monkeypatch, tmp_path):
     assert [item["url"] for item in captured["items"]] == ["https://example.com/model"]
     assert res.json()["context_item_count"] == 1
     assert res.json()["context_source"] == "local"
+
+
+def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return (
+            [
+                {
+                    "title": "New model release",
+                    "url": "https://example.com/model",
+                    "ai_label": "model_release",
+                    "ai_score": 0.9,
+                },
+            ],
+            "local",
+        )
+
+    async def fake_answer_question(config, question, items):
+        return {
+            "answer": "最值得关注的是 New model release。",
+            "citations": [{"title": "New model release", "url": "https://example.com/model"}],
+            "model": config.ai_model,
+        }
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    client = make_client(tmp_path)
+    login(client)
+
+    ask_res = client.post("/api/ask", json={"question": "今天哪个最突破？", "scope": "categories", "category": "模型与产品"})
+
+    assert ask_res.status_code == 200
+    ask_payload = ask_res.json()
+    assert ask_payload["history_saved"] is True
+    assert ask_payload["conversation_id"]
+
+    history_res = client.get("/api/ask/history")
+    assert history_res.status_code == 200
+    history_item = history_res.json()["items"][0]
+    assert history_item["conversation_id"] == ask_payload["conversation_id"]
+    assert history_item["question"] == "今天哪个最突破？"
+    assert history_item["labels"] == ["分类", "分类: 模型与产品", "推荐"]
+    assert history_item["answer_preview"] == "最值得关注的是 New model release。"
+
+    detail_res = client.get(f"/api/ask/history/{ask_payload['conversation_id']}")
+    assert detail_res.status_code == 200
+    assert detail_res.json()["answer"] == "最值得关注的是 New model release。"

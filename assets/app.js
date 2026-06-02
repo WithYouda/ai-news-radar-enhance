@@ -44,6 +44,8 @@ const state = {
   taxonomy: [],
   verificationPayload: null,
   askContext: {},
+  askHistoryLoaded: false,
+  askHistoryVisible: false,
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -85,6 +87,8 @@ const verificationListEl = document.getElementById("verificationList");
 const askAiSheetEl = document.getElementById("askAiSheet");
 const askAiCloseEl = document.getElementById("askAiClose");
 const askAiContextEl = document.getElementById("askAiContext");
+const askAiHistoryButtonEl = document.getElementById("askAiHistoryButton");
+const askAiHistoryListEl = document.getElementById("askAiHistoryList");
 const askAiInputEl = document.getElementById("askAiInput");
 const askAiSubmitEl = document.getElementById("askAiSubmit");
 const askAiAnswerEl = document.getElementById("askAiAnswer");
@@ -284,6 +288,90 @@ function renderAskAnswer(payload) {
   askAiAnswerEl.appendChild(list);
 }
 
+function renderAskHistory(payload) {
+  if (!askAiHistoryListEl) return;
+  askAiHistoryListEl.innerHTML = "";
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    askAiHistoryListEl.textContent = "暂无对话记录。";
+    return;
+  }
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ask-ai-history-item";
+    button.dataset.conversationId = item.conversation_id || "";
+
+    const question = document.createElement("span");
+    question.className = "ask-ai-history-question";
+    question.textContent = item.question || "未命名问题";
+    button.appendChild(question);
+
+    const preview = document.createElement("span");
+    preview.className = "ask-ai-history-preview";
+    preview.textContent = item.answer_preview || "";
+    button.appendChild(preview);
+
+    const meta = document.createElement("span");
+    meta.className = "ask-ai-history-meta";
+    const createdAt = item.created_at ? new Date(item.created_at).toLocaleString("zh-CN") : "";
+    meta.textContent = createdAt;
+    button.appendChild(meta);
+
+    const labels = document.createElement("span");
+    labels.className = "ask-ai-history-labels";
+    (Array.isArray(item.labels) ? item.labels : []).forEach((label) => {
+      const pill = document.createElement("span");
+      pill.textContent = label;
+      labels.appendChild(pill);
+    });
+    button.appendChild(labels);
+
+    button.addEventListener("click", () => loadAskHistoryDetail(item.conversation_id));
+    askAiHistoryListEl.appendChild(button);
+  });
+}
+
+async function loadAskHistory(force = false) {
+  if (!askAiHistoryListEl) return;
+  if (!apiBaseUrl) {
+    askAiHistoryListEl.textContent = "AI 后端未配置。";
+    return;
+  }
+  if (state.askHistoryLoaded && !force) return;
+  askAiHistoryListEl.textContent = "正在加载历史...";
+  try {
+    const payload = await apiFetch("/api/ask/history");
+    renderAskHistory(payload);
+    state.askHistoryLoaded = true;
+  } catch (err) {
+    askAiHistoryListEl.textContent = err.message || "历史记录加载失败。";
+  }
+}
+
+async function loadAskHistoryDetail(conversationId) {
+  if (!conversationId) return;
+  if (askAiAnswerEl) askAiAnswerEl.textContent = "正在加载历史对话...";
+  try {
+    const payload = await apiFetch(`/api/ask/history/${conversationId}`);
+    if (askAiInputEl) askAiInputEl.value = payload.question || "";
+    if (askAiContextEl) {
+      askAiContextEl.textContent = Array.isArray(payload.labels) && payload.labels.length ? payload.labels.join(" · ") : "历史";
+    }
+    renderAskAnswer(payload);
+  } catch (err) {
+    if (askAiAnswerEl) askAiAnswerEl.textContent = err.message || "历史对话加载失败。";
+  }
+}
+
+function toggleAskHistory() {
+  if (!askAiHistoryListEl || !askAiHistoryButtonEl) return;
+  state.askHistoryVisible = !state.askHistoryVisible;
+  askAiHistoryListEl.hidden = !state.askHistoryVisible;
+  askAiHistoryButtonEl.classList.toggle("active", state.askHistoryVisible);
+  if (state.askHistoryVisible) loadAskHistory();
+}
+
 async function submitAskAi() {
   if (!askAiInputEl || !askAiSubmitEl || !askAiAnswerEl) return;
   const question = askAiInputEl.value.trim();
@@ -300,6 +388,10 @@ async function submitAskAi() {
       body: JSON.stringify({ question, ...currentAskScope() }),
     });
     renderAskAnswer(payload);
+    if (payload?.history_saved) {
+      state.askHistoryLoaded = false;
+      if (state.askHistoryVisible) loadAskHistory(true);
+    }
   } catch (err) {
     askAiAnswerEl.textContent = err.message || "请求失败。";
   } finally {
@@ -1630,6 +1722,7 @@ if (askAiButtonEl) {
 }
 
 if (askAiCloseEl) askAiCloseEl.addEventListener("click", closeAskAi);
+if (askAiHistoryButtonEl) askAiHistoryButtonEl.addEventListener("click", toggleAskHistory);
 if (askAiSubmitEl) askAiSubmitEl.addEventListener("click", submitAskAi);
 if (askAiInputEl) {
   askAiInputEl.addEventListener("keydown", (event) => {
