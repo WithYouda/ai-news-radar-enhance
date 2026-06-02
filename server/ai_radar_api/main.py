@@ -15,6 +15,7 @@ from .classifier import classify_item
 from .config import AppConfig
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, merge_item_metadata, normalize_public_url
+from .settings import get_settings, update_settings
 from .taxonomy import DEFAULT_TAXONOMY, seed_default_taxonomy
 from .provider import AIProviderUnavailable
 from .verification import fetch_and_verify
@@ -253,6 +254,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return await answer_question(config, payload.question, items)
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/settings")
+    def read_settings(session: dict = Depends(require_session)) -> dict:
+        del session
+        return get_settings(config.db_path)
+
+    @app.put("/api/settings")
+    def write_settings(payload: dict, session: dict = Depends(require_session)) -> dict:
+        del session
+        try:
+            return update_settings(config.db_path, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app
 
