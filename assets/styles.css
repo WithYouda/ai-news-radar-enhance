@@ -561,6 +561,17 @@ summary:focus-visible {
   line-height: 1.65;
 }
 
+.bole-explainer {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(18, 106, 115, 0.18);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--ink);
+  background: rgba(18, 106, 115, 0.06);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .bole-board {
   display: grid;
   grid-template-columns: minmax(320px, 1.02fr) minmax(360px, 0.98fr);
@@ -1126,6 +1137,12 @@ summary:focus-visible {
   background: var(--surface);
 }
 
+.category-card.active {
+  border-color: rgba(18, 106, 115, 0.55);
+  color: var(--accent);
+  background: rgba(18, 106, 115, 0.08);
+}
+
 .category-card strong,
 .category-card span {
   min-width: 0;
@@ -1180,6 +1197,16 @@ summary:focus-visible {
   border-radius: var(--radius);
   padding: 8px 10px;
   background: var(--surface-soft);
+}
+
+.subcategory-summary,
+.category-news-list {
+  display: grid;
+  gap: 8px;
+}
+
+.category-news-list {
+  margin-top: 4px;
 }
 
 .verification-summary {

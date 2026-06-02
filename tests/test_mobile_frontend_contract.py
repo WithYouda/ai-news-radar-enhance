@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=api-domain-0602" in html
-    assert "./assets/config.js?v=api-domain-0602" in html
-    assert "./assets/app.js?v=api-domain-0602" in html
+    assert "./assets/styles.css?v=info-arch-0602" in html
+    assert "./assets/config.js?v=info-arch-0602" in html
+    assert "./assets/app.js?v=info-arch-0602" in html
 
 
 def test_category_view_contract_exists():
@@ -41,6 +41,26 @@ def test_category_view_contract_exists():
     assert 'id="categoryView"' in html
     assert "loadTaxonomy" in js
     assert "renderCategoryView" in js
+
+
+def test_category_cards_open_news_collection_and_scope_ask_ai():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "categoryFilter" in js
+    assert "renderCategoryResultList" in js
+    assert "category-news-list" in js
+    assert "scope.category = state.categoryFilter" in js
+    assert ".category-card.active" in css
+
+
+def test_bole_picks_explain_selection_criteria():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "为什么精选" in html
+    assert "bole-explainer" in js
+    assert "多源命中" in js
+    assert "官方源" in js
+    assert "AI 分" in js
 
 
 def test_verification_view_contract_exists():

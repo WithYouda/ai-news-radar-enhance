@@ -40,6 +40,7 @@ const state = {
   mode: "ai",
   waytoagiMode: "today",
   mobileView: "today",
+  categoryFilter: "",
   taxonomy: [],
   verificationPayload: null,
   askContext: {},
@@ -223,7 +224,11 @@ function setMobileView(view) {
 }
 
 function currentAskScope() {
-  return { scope: state.mobileView || "today", ...state.askContext };
+  const scope = { scope: state.mobileView || "today", ...state.askContext };
+  if (state.mobileView === "categories" && state.categoryFilter) {
+    scope.category = state.categoryFilter;
+  }
+  return scope;
 }
 
 function askScopeLabel(scope) {
@@ -644,15 +649,26 @@ function renderCategoryView(taxonomy, items) {
   if (!categoryGridEl || !categoryDetailEl || !categoryMetaEl) return;
   const groups = normalizeTaxonomy(taxonomy);
   const rows = Array.isArray(items) ? items : [];
+  const categoryRows = groups.map((category) => ({
+    category,
+    items: rows.filter((item) => itemCategory(item) === category.label),
+  }));
+  const firstAvailable = categoryRows.find((row) => row.items.length);
+  if (!state.categoryFilter || !categoryRows.some((row) => row.category.label === state.categoryFilter && row.items.length)) {
+    state.categoryFilter = firstAvailable?.category.label || "";
+  }
+  const selected = categoryRows.find((row) => row.category.label === state.categoryFilter) || firstAvailable;
   categoryGridEl.innerHTML = "";
   categoryDetailEl.innerHTML = "";
-  categoryMetaEl.textContent = `${fmtNumber(rows.length)} 条信号`;
+  categoryMetaEl.textContent = selected
+    ? `${selected.category.label} · ${fmtNumber(selected.items.length)} 条`
+    : `${fmtNumber(rows.length)} 条信号`;
 
-  groups.forEach((category) => {
-    const categoryItems = rows.filter((item) => itemCategory(item) === category.label);
+  categoryRows.forEach(({ category, items: categoryItems }) => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "category-card";
+    card.classList.toggle("active", state.categoryFilter === category.label);
     card.dataset.category = category.label;
     const title = document.createElement("strong");
     title.textContent = category.label;
@@ -662,46 +678,66 @@ function renderCategoryView(taxonomy, items) {
     card.disabled = categoryItems.length === 0;
     categoryGridEl.appendChild(card);
 
-    if (!categoryItems.length) return;
-    const detail = document.createElement("section");
-    detail.className = "category-detail-group";
-    const head = document.createElement("div");
-    head.className = "category-detail-head";
-    const heading = document.createElement("h3");
-    heading.textContent = category.label;
-    const meta = document.createElement("span");
-    meta.textContent = `${fmtNumber(categoryItems.length)} 条`;
-    head.append(heading, meta);
-    detail.appendChild(head);
-
-    const childRows = (category.children || [])
-      .map((child) => {
-        const matched = categoryItems.filter((item) => itemSubCategory(item) === child.label);
-        return { child, matched };
-      })
-      .filter((row) => row.matched.length);
-
-    if (childRows.length) {
-      childRows.forEach(({ child, matched }) => {
-        const row = document.createElement("div");
-        row.className = "subcategory-row";
-        const name = document.createElement("span");
-        name.textContent = child.label;
-        const value = document.createElement("strong");
-        value.textContent = fmtNumber(matched.length);
-        row.append(name, value);
-        detail.appendChild(row);
-      });
-    } else {
-      categoryItems.slice(0, 3).forEach((item) => {
-        detail.appendChild(renderItemNode(item));
-      });
-    }
-    categoryDetailEl.appendChild(detail);
     card.addEventListener("click", () => {
-      detail.scrollIntoView({ behavior: "smooth", block: "start" });
+      state.categoryFilter = category.label;
+      renderCategoryView(taxonomy, rows);
+      categoryDetailEl.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
+
+  renderCategoryResultList(selected?.category || null, selected?.items || []);
+}
+
+function renderCategoryResultList(category, categoryItems) {
+  categoryDetailEl.innerHTML = "";
+  if (!category) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "当前没有可展示的分类新闻。";
+    categoryDetailEl.appendChild(empty);
+    return;
+  }
+  const detail = document.createElement("section");
+  detail.className = "category-detail-group";
+  const head = document.createElement("div");
+  head.className = "category-detail-head";
+  const heading = document.createElement("h3");
+  heading.textContent = category.label;
+  const meta = document.createElement("span");
+  meta.textContent = `${fmtNumber(categoryItems.length)} 条新闻`;
+  head.append(heading, meta);
+  detail.appendChild(head);
+
+  const childRows = (category.children || [])
+    .map((child) => {
+      const matched = categoryItems.filter((item) => itemSubCategory(item) === child.label);
+      return { child, matched };
+    })
+    .filter((row) => row.matched.length);
+
+  if (childRows.length) {
+    const subWrap = document.createElement("div");
+    subWrap.className = "subcategory-summary";
+    childRows.forEach(({ child, matched }) => {
+      const row = document.createElement("div");
+      row.className = "subcategory-row";
+      const name = document.createElement("span");
+      name.textContent = child.label;
+      const value = document.createElement("strong");
+      value.textContent = fmtNumber(matched.length);
+      row.append(name, value);
+      subWrap.appendChild(row);
+    });
+    detail.appendChild(subWrap);
+  }
+
+  const list = document.createElement("div");
+  list.className = "category-news-list";
+  categoryItems.forEach((item) => {
+    list.appendChild(renderItemNode(item));
+  });
+  detail.appendChild(list);
+  categoryDetailEl.appendChild(detail);
 }
 
 function itemIdentity(item) {
@@ -982,9 +1018,9 @@ function pickBoleItems(items) {
 
 function boleReasonText(row) {
   const signals = row.sourceSignals || [];
-  const sourceText = signals.length ? `来源命中：${signals.join(" / ")}` : "来源命中：单源";
+  const sourceText = signals.length ? `多源命中：${signals.join(" / ")}` : "来源命中：单源";
   const mergeText = row.mergedCount > 1 ? `合并${row.mergedCount}条同事件` : "单条事件";
-  return `${sourceText} · ${mergeText} · ${reasonText(row.item)}`;
+  return `精选理由：${sourceText} · ${mergeText} · ${reasonText(row.item)}`;
 }
 
 function buildBoleLead(row) {
@@ -1078,12 +1114,17 @@ function renderBolePicks() {
   });
   bolePicksMetaEl.textContent = `按时间倒序 · Top ${fmtNumber(picks.length)} · 最高 ${topScore} 分`;
 
+  const explainer = document.createElement("div");
+  explainer.className = "bole-explainer";
+  explainer.textContent = "伯乐精选依据：多源命中优先，其次看官方源、AI 分、HN/GitHub/AI HOT 热度和发布时间；同一事件会合并，只保留最值得点开的来源。";
+
   const list = document.createElement("div");
   list.className = "bole-compact-list";
   timelinePicks.forEach((row, index) => {
     list.appendChild(buildBoleTimelineRow(row, index + 1));
   });
 
+  bolePicksListEl.appendChild(explainer);
   bolePicksListEl.appendChild(list);
 }
 
