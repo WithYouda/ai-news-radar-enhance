@@ -9,12 +9,14 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, merge_item_metadata, normalize_public_url
 from .taxonomy import DEFAULT_TAXONOMY, seed_default_taxonomy
+from .provider import AIProviderUnavailable
 from .verification import fetch_and_verify
 
 
@@ -32,6 +34,13 @@ class ClassifyRequest(BaseModel):
 
 class VerificationRequest(BaseModel):
     item: dict | None = None
+
+
+class AskRequest(BaseModel):
+    question: str
+    scope: str = "today"
+    item_id: str | None = None
+    category: str | None = None
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -224,6 +233,26 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         result = fetch_and_verify(item, deep=True) if item.get("url") else fetch_and_verify({"url": ""}, timeout_seconds=1, deep=True)
         result["deep_verified"] = True
         return store_verification_result(item_id, item, result)
+
+    @app.post("/api/ask")
+    async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        try:
+            items = load_latest_items(config, mode="ai")
+        except Exception:
+            items = []
+        if payload.item_id:
+            items = [item for item in items if item_identity(item) == payload.item_id or str(item.get("id") or "") == payload.item_id]
+        if payload.category:
+            items = [
+                item
+                for item in items
+                if item.get("top_category") == payload.category or item.get("ai_label") == payload.category
+            ]
+        try:
+            return await answer_question(config, payload.question, items)
+        except AIProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return app
 
