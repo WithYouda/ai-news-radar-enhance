@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=chat-history-0602b" />
+    <link rel="stylesheet" href="./assets/styles.css?v=ask-chat-a3" />
   </head>
   <body>
     <main class="shell">
@@ -174,12 +174,21 @@
             <span>上下文</span>
             <strong id="askAiContext" class="ask-ai-context">今日</strong>
           </div>
-          <button id="askAiHistoryButton" class="ask-ai-history-toggle" type="button">对话记录</button>
+          <div class="ask-ai-tabs">
+            <button id="askAiMessagesButton" class="ask-ai-tab active" type="button">消息</button>
+            <button id="askAiHistoryButton" class="ask-ai-tab" type="button">历史</button>
+          </div>
         </div>
-        <div id="askAiHistoryList" class="ask-ai-history-list" hidden></div>
-        <textarea id="askAiInput" rows="3" placeholder="问今天的信息流..."></textarea>
-        <button id="askAiSubmit" type="button">发送</button>
-        <div id="askAiAnswer" class="ask-ai-answer"></div>
+        <div class="ask-ai-body">
+          <div id="askAiAnswer" class="ask-ai-thread"></div>
+          <div id="askAiHistoryList" class="ask-ai-history-list" hidden></div>
+        </div>
+        <div class="ask-ai-composer">
+          <textarea id="askAiInput" rows="2" placeholder="问今天的信息流..."></textarea>
+          <button id="askAiSubmit" type="button" aria-label="发送">
+            <span class="ask-ai-send-icon" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -204,7 +213,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=chat-history-0602b" defer></script>
+    <script src="./assets/app.js?v=ask-chat-a3" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

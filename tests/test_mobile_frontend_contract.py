@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=chat-history-0602b" in html
+    assert "./assets/styles.css?v=ask-chat-a3" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=chat-history-0602b" in html
+    assert "./assets/app.js?v=ask-chat-a3" in html
 
 
 def test_category_view_contract_exists():
@@ -87,12 +87,28 @@ def test_ask_ai_global_history_contract_exists():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="askAiMessagesButton"' in html
     assert 'id="askAiHistoryButton"' in html
     assert 'id="askAiHistoryList"' in html
     assert "/api/ask/history" in js
     assert "renderAskHistory" in js
     assert "toggleAskHistory" in js
     assert ".ask-ai-history-item" in css
+
+
+def test_ask_ai_uses_chat_layout_with_bottom_composer():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'class="ask-ai-thread"' in html
+    assert 'class="ask-ai-composer"' in html
+    assert 'aria-label="发送"' in html
+    assert '>发送<' not in html
+    assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
+    assert ".ask-ai-message.user" in css
+    assert ".ask-ai-message.ai" in css
+    assert ".ask-ai-send-icon" in css
+    assert "renderAskConversation" in js
 
 
 def test_settings_view_contract_exists():
