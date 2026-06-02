@@ -1262,6 +1262,7 @@ summary:focus-visible {
 }
 
 .card-action {
+  display: none;
   justify-self: start;
   margin-top: 10px;
   border: 1px solid rgba(18, 106, 115, 0.35);
@@ -1550,6 +1551,11 @@ summary:focus-visible {
   .verification-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .card-action {
+    display: inline-flex;
+    align-items: center;
   }
 
   .ask-ai-sheet {

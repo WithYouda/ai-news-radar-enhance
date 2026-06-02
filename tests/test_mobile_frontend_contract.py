@@ -56,3 +56,16 @@ def test_settings_view_contract_exists():
     assert 'id="adminPasswordInput"' in html
     assert "loginAdmin" in js
     assert "saveSettings" in js
+
+
+def test_verify_action_is_mobile_scoped():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert ".card-action {\n  display: none;" in css
+    assert "@media (max-width: 760px)" in css
+    assert ".card-action {\n    display: inline-flex;" in css
+
+
+def test_deep_verify_preserves_item_metadata_in_verification_payload():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "const verifiedItem = { ...item, ...result }" in js
+    assert "items: [verifiedItem" in js

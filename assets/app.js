@@ -1121,8 +1121,9 @@ function renderItemNode(item) {
     if (!apiBaseUrl) return;
     try {
       const result = await deepVerifyItem(itemIdentity(item), item);
+      const verifiedItem = { ...item, ...result };
       verifyBtn.textContent = "已核验";
-      state.verificationPayload = { items: [result, ...(state.verificationPayload?.items || [])] };
+      state.verificationPayload = { items: [verifiedItem, ...(state.verificationPayload?.items || [])] };
       renderVerificationView(state.verificationPayload);
     } catch (_) {
       verifyBtn.disabled = false;
