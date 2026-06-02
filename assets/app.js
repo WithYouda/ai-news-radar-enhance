@@ -35,6 +35,7 @@ const state = {
   mode: "ai",
   waytoagiMode: "today",
   mobileView: "today",
+  taxonomy: [],
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -67,6 +68,9 @@ const coverageStripEl = document.getElementById("coverageStrip");
 const bolePicksListEl = document.getElementById("bolePicksList");
 const bolePicksMetaEl = document.getElementById("bolePicksMeta");
 const askAiButtonEl = document.getElementById("askAiButton");
+const categoryMetaEl = document.getElementById("categoryMeta");
+const categoryGridEl = document.getElementById("categoryGrid");
+const categoryDetailEl = document.getElementById("categoryDetail");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -82,6 +86,104 @@ const SOURCE_KINDS = {
   aihubtoday: { label: "AI站点", tone: "aihub" },
   aibase: { label: "AI站点", tone: "aihub" },
   newsnow: { label: "聚合", tone: "aggregate" },
+};
+
+const fallbackTaxonomy = [
+  {
+    id: "models-products",
+    label: "模型与产品",
+    children: [
+      { id: "models-products/model-release", label: "模型发布" },
+      { id: "models-products/product-features", label: "产品功能" },
+      { id: "models-products/api-platform", label: "API / 平台更新" },
+      { id: "models-products/multimodal", label: "多模态能力" },
+      { id: "models-products/pricing-access", label: "价格 / 访问权限" },
+      { id: "models-products/safety-policy", label: "安全 / 策略更新" },
+    ],
+  },
+  {
+    id: "agents-workflows",
+    label: "Agent 与工作流",
+    children: [
+      { id: "agents-workflows/agent-frameworks", label: "Agent 框架" },
+      { id: "agents-workflows/tool-calling", label: "工具调用 / Function Calling" },
+      { id: "agents-workflows/mcp-plugins", label: "MCP / 插件生态" },
+      { id: "agents-workflows/browser-computer-control", label: "浏览器 / 电脑控制" },
+      { id: "agents-workflows/multi-agent", label: "多 Agent 协作" },
+      { id: "agents-workflows/automation", label: "自动化工作流" },
+    ],
+  },
+  {
+    id: "developer-tools",
+    label: "开发者工具",
+    children: [
+      { id: "developer-tools/ide-coding-assistants", label: "IDE / 编程助手" },
+      { id: "developer-tools/sdk-api-tools", label: "SDK / API 工具" },
+      { id: "developer-tools/rag-data-tools", label: "RAG / 数据工具" },
+      { id: "developer-tools/deploy-ops", label: "部署 / 运维" },
+      { id: "developer-tools/eval-monitoring", label: "评测 / 监控" },
+      { id: "developer-tools/security-permissions", label: "安全 / 权限" },
+    ],
+  },
+  {
+    id: "open-source-projects",
+    label: "开源与项目",
+    children: [
+      { id: "open-source-projects/open-models", label: "开源模型" },
+      { id: "open-source-projects/open-tools", label: "开源工具" },
+      { id: "open-source-projects/github-projects", label: "GitHub 项目" },
+      { id: "open-source-projects/frameworks-libraries", label: "框架 / 库" },
+      { id: "open-source-projects/datasets", label: "数据集" },
+      { id: "open-source-projects/demos-apps", label: "Demo / 应用样例" },
+    ],
+  },
+  {
+    id: "research-evaluation",
+    label: "研究与评测",
+    children: [
+      { id: "research-evaluation/papers", label: "论文" },
+      { id: "research-evaluation/benchmarks", label: "Benchmark" },
+      { id: "research-evaluation/model-evaluation", label: "模型评测" },
+      { id: "research-evaluation/technical-reports", label: "技术报告" },
+      { id: "research-evaluation/alignment-safety", label: "对齐 / 安全研究" },
+      { id: "research-evaluation/robotics-embodied-ai", label: "机器人 / 具身智能" },
+    ],
+  },
+  {
+    id: "company-industry",
+    label: "公司与行业",
+    children: [
+      { id: "company-industry/funding-acquisitions", label: "融资 / 收购" },
+      { id: "company-industry/partnership-ecosystem", label: "合作 / 生态" },
+      { id: "company-industry/commercialization", label: "商业化" },
+      { id: "company-industry/regulation-policy", label: "监管 / 政策" },
+      { id: "company-industry/org-talent", label: "组织 / 人才" },
+      { id: "company-industry/market-adoption", label: "市场采用" },
+    ],
+  },
+  {
+    id: "compute-infrastructure",
+    label: "算力与基础设施",
+    children: [
+      { id: "compute-infrastructure/gpu-chips", label: "GPU / 芯片" },
+      { id: "compute-infrastructure/inference-services", label: "推理服务" },
+      { id: "compute-infrastructure/training-infra", label: "训练基础设施" },
+      { id: "compute-infrastructure/cloud-platforms", label: "云平台" },
+      { id: "compute-infrastructure/data-center-energy", label: "数据中心 / 能源" },
+      { id: "compute-infrastructure/local-edge-models", label: "本地模型 / 边缘设备" },
+    ],
+  },
+];
+
+const legacyCategoryMap = {
+  ai_general: { top: "模型与产品", sub: "产品功能" },
+  model_release: { top: "模型与产品", sub: "模型发布" },
+  agent_workflow: { top: "Agent 与工作流", sub: "Agent 框架" },
+  ai_product_update: { top: "模型与产品", sub: "产品功能" },
+  developer_tool: { top: "开发者工具", sub: "SDK / API 工具" },
+  developer_tooling: { top: "开发者工具", sub: "SDK / API 工具" },
+  infrastructure: { top: "算力与基础设施", sub: "推理服务" },
+  ai_tech: { top: "研究与评测", sub: "技术报告" },
 };
 
 function fmtNumber(n) {
@@ -300,6 +402,119 @@ function effectiveAllItems() {
 
 function modeItems() {
   return state.mode === "all" ? effectiveAllItems() : state.itemsAi;
+}
+
+function normalizeTaxonomy(taxonomy) {
+  if (!Array.isArray(taxonomy) || !taxonomy.length) return fallbackTaxonomy;
+  if (taxonomy.some((row) => Array.isArray(row.children))) {
+    return taxonomy.map((row) => ({
+      id: row.id || row.label,
+      label: row.label || row.id,
+      children: Array.isArray(row.children) ? row.children : [],
+    }));
+  }
+
+  const childrenByParent = new Map();
+  taxonomy.forEach((row) => {
+    if (!row.parent_id) return;
+    if (!childrenByParent.has(row.parent_id)) childrenByParent.set(row.parent_id, []);
+    childrenByParent.get(row.parent_id).push({ id: row.id, label: row.label });
+  });
+  return taxonomy
+    .filter((row) => !row.parent_id)
+    .map((row) => ({
+      id: row.id,
+      label: row.label,
+      children: childrenByParent.get(row.id) || [],
+    }));
+}
+
+async function loadTaxonomy() {
+  if (!apiBaseUrl) return fallbackTaxonomy;
+  try {
+    const payload = await apiFetch("/api/taxonomy");
+    return payload.categories || fallbackTaxonomy;
+  } catch (_) {
+    return fallbackTaxonomy;
+  }
+}
+
+function itemCategory(item) {
+  const direct = item.top_category || "";
+  if (direct) return direct;
+  const mapped = legacyCategoryMap[item.ai_label] || null;
+  return mapped ? mapped.top : (item.ai_label || "");
+}
+
+function itemSubCategory(item) {
+  const direct = item.sub_category || "";
+  if (direct) return direct;
+  const mapped = legacyCategoryMap[item.ai_label] || null;
+  return mapped ? mapped.sub : "";
+}
+
+function renderCategoryView(taxonomy, items) {
+  if (!categoryGridEl || !categoryDetailEl || !categoryMetaEl) return;
+  const groups = normalizeTaxonomy(taxonomy);
+  const rows = Array.isArray(items) ? items : [];
+  categoryGridEl.innerHTML = "";
+  categoryDetailEl.innerHTML = "";
+  categoryMetaEl.textContent = `${fmtNumber(rows.length)} 条信号`;
+
+  groups.forEach((category) => {
+    const categoryItems = rows.filter((item) => itemCategory(item) === category.label);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "category-card";
+    card.dataset.category = category.label;
+    const title = document.createElement("strong");
+    title.textContent = category.label;
+    const count = document.createElement("span");
+    count.textContent = `${fmtNumber(categoryItems.length)} 条`;
+    card.append(title, count);
+    card.disabled = categoryItems.length === 0;
+    categoryGridEl.appendChild(card);
+
+    if (!categoryItems.length) return;
+    const detail = document.createElement("section");
+    detail.className = "category-detail-group";
+    const head = document.createElement("div");
+    head.className = "category-detail-head";
+    const heading = document.createElement("h3");
+    heading.textContent = category.label;
+    const meta = document.createElement("span");
+    meta.textContent = `${fmtNumber(categoryItems.length)} 条`;
+    head.append(heading, meta);
+    detail.appendChild(head);
+
+    const childRows = (category.children || [])
+      .map((child) => {
+        const matched = categoryItems.filter((item) => itemSubCategory(item) === child.label);
+        return { child, matched };
+      })
+      .filter((row) => row.matched.length);
+
+    if (childRows.length) {
+      childRows.forEach(({ child, matched }) => {
+        const row = document.createElement("div");
+        row.className = "subcategory-row";
+        const name = document.createElement("span");
+        name.textContent = child.label;
+        const value = document.createElement("strong");
+        value.textContent = fmtNumber(matched.length);
+        row.append(name, value);
+        detail.appendChild(row);
+      });
+    } else {
+      categoryItems.slice(0, 3).forEach((item) => {
+        detail.appendChild(renderItemNode(item));
+      });
+    }
+    categoryDetailEl.appendChild(detail);
+    card.addEventListener("click", () => {
+      detail.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 }
 
 function getFilteredItems() {
@@ -922,11 +1137,14 @@ async function loadSourceStatusData() {
 }
 
 async function init() {
-  const [newsResult, waytoagiResult, statusResult] = await Promise.allSettled([
+  const [newsResult, waytoagiResult, statusResult, taxonomyResult] = await Promise.allSettled([
     loadNewsData(),
     loadWaytoagiData(),
     loadSourceStatusData(),
+    loadTaxonomy(),
   ]);
+
+  state.taxonomy = taxonomyResult.status === "fulfilled" ? taxonomyResult.value : fallbackTaxonomy;
 
   if (newsResult.status === "fulfilled") {
     const payload = newsResult.value;
@@ -970,6 +1188,8 @@ async function init() {
     waytoagiUpdatedAtEl.textContent = "加载失败";
     waytoagiListEl.innerHTML = `<div class="waytoagi-error">${waytoagiResult.reason.message}</div>`;
   }
+
+  renderCategoryView(state.taxonomy, state.itemsAi);
 }
 
 searchInputEl.addEventListener("input", (e) => {
