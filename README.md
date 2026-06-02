@@ -145,7 +145,7 @@ python scripts/update_news.py --output-dir data --window-hours 24 --rss-opml fee
 
 `.github/workflows/update-news.yml` 已经配置好定时任务。
 
-- 默认每 30 分钟运行一次
+- 默认每小时运行一次
 - 自动生成并提交 `data/*.json`
 - 如果没有设置 `FOLLOW_OPML_B64`，线上工作流会自动使用公开示例 `feeds/follow.example.opml`，让页面展示 RSS/OPML 能力
 - 如果设置 `FOLLOW_OPML_B64`，会优先自动解码为私有 `feeds/follow.opml`
@@ -154,6 +154,35 @@ python scripts/update_news.py --output-dir data --window-hours 24 --rss-opml fee
 - 如果设置 `X_API_ENABLED=1`、`X_BEARER_TOKEN` 和预算变量，会在每日指定UTC窗口用官方X API抓取少量公开Post；默认关闭，且当前X API按返回资源计费
 
 默认情况下，本项目不需要任何API Key就能跑核心流程。高级源配置模板见 `examples/advanced-sources.env.example`，预算说明见 `docs/research/advanced-source-free-tier-budget-2026-05-10.md`，X API演示配置见 `docs/guides/x-api-demo-config.md`；单账号/单newsletter演示见 `docs/guides/rileybrown-alphasignal-demo.md`。
+
+## 个人增强版部署
+
+GitHub Pages:
+
+```text
+Settings -> Pages -> Deploy from branch -> master / root
+```
+
+GitHub Actions:
+
+```text
+Secrets:
+FOLLOW_OPML_B64
+
+Variables:
+RSS_MAX_FEEDS=10
+```
+
+AI 后端:
+
+```bash
+python3 -m venv .venv-server
+source .venv-server/bin/activate
+pip install -r server/requirements.txt
+uvicorn server.ai_radar_api.main:app --host 127.0.0.1 --port 8090
+```
+
+后端部署和反向代理说明见 `server/README.md`。前端后端地址配置在 `assets/config.js`，不要把 API Key 或管理员密码写入仓库。
 
 ## License
 
