@@ -34,6 +34,7 @@ const state = {
   query: "",
   mode: "ai",
   waytoagiMode: "today",
+  mobileView: "today",
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -65,6 +66,7 @@ const waytoagi7dBtnEl = document.getElementById("waytoagi7dBtn");
 const coverageStripEl = document.getElementById("coverageStrip");
 const bolePicksListEl = document.getElementById("bolePicksList");
 const bolePicksMetaEl = document.getElementById("bolePicksMeta");
+const askAiButtonEl = document.getElementById("askAiButton");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -84,6 +86,16 @@ const SOURCE_KINDS = {
 
 function fmtNumber(n) {
   return new Intl.NumberFormat("zh-CN").format(n || 0);
+}
+
+function setMobileView(view) {
+  state.mobileView = view;
+  document.querySelectorAll("[data-mobile-view]").forEach((el) => {
+    el.hidden = el.dataset.mobileView !== view;
+  });
+  document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  });
 }
 
 function fmtTime(iso) {
@@ -1022,4 +1034,17 @@ if (waytoagi7dBtnEl) {
   });
 }
 
+document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    setMobileView(btn.dataset.view || "today");
+  });
+});
+
+if (askAiButtonEl) {
+  askAiButtonEl.addEventListener("click", () => {
+    if (typeof openAskAi === "function") openAskAi();
+  });
+}
+
+setMobileView(state.mobileView);
 init();

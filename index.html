@@ -28,7 +28,7 @@
   </head>
   <body>
     <main class="shell">
-      <header class="hero">
+      <header class="hero" data-mobile-view="today">
         <div class="hero-main">
           <div class="hero-headline">
             <img class="hero-logo" src="./assets/logo.svg" alt="AI News Radar Logo" />
@@ -51,12 +51,12 @@
         <section class="coverage-strip" id="coverageStrip" aria-label="Source coverage status"></section>
       </header>
 
-      <section class="primary-controls">
+      <section class="primary-controls" data-mobile-view="today">
         <input id="searchInput" type="search" placeholder="搜索 AI 信号 / 来源" />
         <div class="mode-hint" id="modeHint">AI强相关</div>
       </section>
 
-      <details class="advanced-panel">
+      <details class="advanced-panel" data-mobile-view="today">
         <summary>
           <span>高级筛选与源状态</span>
           <span class="advanced-summary" id="advancedSummary">加载中...</span>
@@ -87,7 +87,7 @@
         </div>
       </details>
 
-      <section class="bole-picks-wrap" aria-label="伯乐精选">
+      <section class="bole-picks-wrap" aria-label="伯乐精选" data-mobile-view="today">
         <div class="bole-picks-head">
           <div>
             <p class="section-eyebrow">BOLE PICKS</p>
@@ -99,7 +99,7 @@
         <div id="bolePicksList" class="bole-board"></div>
       </section>
 
-      <section class="waytoagi-wrap">
+      <section class="waytoagi-wrap" data-mobile-view="today">
         <div class="waytoagi-head">
           <h2>WaytoAGI 更新日志</h2>
           <div class="waytoagi-tools">
@@ -114,7 +114,7 @@
         <div id="waytoagiList" class="waytoagi-list"></div>
       </section>
 
-      <section class="list-wrap">
+      <section class="list-wrap" data-mobile-view="today">
         <div class="list-head">
           <h2 id="listTitle">AI 信号流</h2>
           <span id="resultCount">0 条</span>
@@ -123,6 +123,14 @@
       </section>
 
     </main>
+
+    <nav id="mobileBottomNav" class="mobile-bottom-nav" aria-label="移动端主导航">
+      <button type="button" class="mobile-nav-btn active" data-view="today">今日</button>
+      <button type="button" class="mobile-nav-btn" data-view="categories">分类</button>
+      <button type="button" class="mobile-nav-btn" data-view="verification">核验</button>
+      <button type="button" class="mobile-nav-btn" data-view="settings">设置</button>
+    </nav>
+    <button id="askAiButton" class="ask-ai-fab" type="button">问 AI</button>
 
     <template id="itemTpl">
       <article class="news-card">

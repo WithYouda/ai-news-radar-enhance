@@ -1079,9 +1079,14 @@ summary:focus-visible {
   color: var(--bad);
 }
 
+.mobile-bottom-nav,
+.ask-ai-fab {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .shell {
-    padding: 18px 12px 36px;
+    padding: 18px 12px 96px;
   }
 
   .hero,
@@ -1191,6 +1196,48 @@ summary:focus-visible {
   .bole-row-time {
     padding-top: 0;
     text-align: left;
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 -8px 20px rgba(23, 23, 23, 0.08);
+  }
+
+  .mobile-nav-btn {
+    min-height: 56px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .mobile-nav-btn.active {
+    color: var(--accent);
+    font-weight: 800;
+  }
+
+  .ask-ai-fab {
+    position: fixed;
+    right: 14px;
+    bottom: 72px;
+    z-index: 31;
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    border: 1px solid rgba(18, 106, 115, 0.4);
+    border-radius: 999px;
+    padding: 0 14px;
+    color: #fff;
+    background: var(--accent);
+    box-shadow: 0 8px 22px rgba(23, 23, 23, 0.16);
   }
 }
 
