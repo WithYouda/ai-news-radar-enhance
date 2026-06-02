@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a3" in html
+    assert "./assets/styles.css?v=ask-chat-a4" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a3" in html
+    assert "./assets/app.js?v=ask-chat-a4" in html
 
 
 def test_category_view_contract_exists():
@@ -109,6 +109,15 @@ def test_ask_ai_uses_chat_layout_with_bottom_composer():
     assert ".ask-ai-message.ai" in css
     assert ".ask-ai-send-icon" in css
     assert "renderAskConversation" in js
+
+
+def test_ask_ai_sheet_locks_background_and_uses_compact_mobile_padding():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "body.ask-ai-open" in css
+    assert "overflow: hidden;" in css
+    assert "padding: 16px 14px 88px" not in css
+    assert "askAiInputEl.value = payload.question" not in js
 
 
 def test_settings_view_contract_exists():

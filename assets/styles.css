@@ -1323,6 +1323,10 @@ summary:focus-visible {
   display: none;
 }
 
+body.ask-ai-open {
+  overflow: hidden;
+}
+
 .ask-ai-panel {
   width: min(420px, 100vw);
   min-height: 100%;
@@ -1818,7 +1822,7 @@ summary:focus-visible {
     max-height: calc(100vh - 72px);
     border-top: 1px solid var(--line);
     border-left: 0;
-    padding: 16px 14px 88px;
+    padding: 16px 14px max(16px, env(safe-area-inset-bottom));
     box-shadow: 0 -12px 26px rgba(23, 23, 23, 0.14);
   }
 

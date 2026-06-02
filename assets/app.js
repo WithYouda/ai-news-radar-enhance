@@ -396,7 +396,7 @@ async function loadAskHistoryDetail(conversationId) {
   }
   try {
     const payload = await apiFetch(`/api/ask/history/${conversationId}`);
-    if (askAiInputEl) askAiInputEl.value = payload.question || "";
+    if (askAiInputEl) askAiInputEl.value = "";
     if (askAiContextEl) {
       askAiContextEl.textContent = Array.isArray(payload.labels) && payload.labels.length ? payload.labels.join(" · ") : "历史";
     }

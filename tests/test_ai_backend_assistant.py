@@ -44,3 +44,37 @@ def test_answer_question_citations_follow_context_ranking(tmp_path):
     result = anyio.run(answer_question, config, "OpenAI?", items, FakeProvider())
 
     assert result["citations"][0]["url"] == "https://example.com/a"
+
+
+def test_answer_question_filters_citations_to_question_matches(tmp_path):
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    items = [
+        {"title": "OpenAI releases model", "url": "https://example.com/openai-model", "site_name": "OpenAI"},
+        {"title": "OpenAI updates API", "url": "https://example.com/openai-api", "site_name": "OpenAI"},
+        {"title": "Anthropic launches feature", "url": "https://example.com/anthropic", "site_name": "Anthropic"},
+        {"title": "Google releases tool", "url": "https://example.com/google", "site_name": "Google"},
+    ]
+
+    class FakeProvider:
+        async def chat(self, messages, temperature=0.2):
+            joined = "\n".join(message["content"] for message in messages)
+            assert "OpenAI releases model" in joined
+            assert "OpenAI updates API" in joined
+            assert "Anthropic launches feature" not in joined
+            return "answer"
+
+    result = anyio.run(answer_question, config, "今天 OpenAI 有什么新消息？", items, FakeProvider())
+
+    assert [citation["url"] for citation in result["citations"]] == [
+        "https://example.com/openai-model",
+        "https://example.com/openai-api",
+    ]
