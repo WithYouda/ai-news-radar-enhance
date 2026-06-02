@@ -24,6 +24,20 @@ from .verification import fetch_and_verify
 
 SESSION_COOKIE = "radar_session"
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
+LEGACY_TOP_CATEGORY_BY_LABEL = {
+    "ai_general": "模型与产品",
+    "model_release": "模型与产品",
+    "ai_product_update": "模型与产品",
+    "agent_workflow": "Agent 与工作流",
+    "developer_tool": "开发者工具",
+    "developer_tooling": "开发者工具",
+    "infrastructure": "算力与基础设施",
+    "infra_compute": "算力与基础设施",
+    "ai_tech": "研究与评测",
+    "research_paper": "研究与评测",
+    "robotics": "研究与评测",
+    "industry_business": "公司与行业",
+}
 
 
 class LoginRequest(BaseModel):
@@ -43,6 +57,16 @@ class AskRequest(BaseModel):
     scope: str = "today"
     item_id: str | None = None
     category: str | None = None
+
+
+def item_matches_category(item: dict, category: str) -> bool:
+    labels = {
+        str(item.get("top_category") or ""),
+        str(item.get("sub_category") or ""),
+        str(item.get("ai_label") or ""),
+        LEGACY_TOP_CATEGORY_BY_LABEL.get(str(item.get("ai_label") or ""), ""),
+    }
+    return category in labels
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -284,11 +308,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if payload.item_id:
             items = [item for item in items if item_identity(item) == payload.item_id or str(item.get("id") or "") == payload.item_id]
         if payload.category:
-            items = [
-                item
-                for item in items
-                if item.get("top_category") == payload.category or item.get("ai_label") == payload.category
-            ]
+            items = [item for item in items if item_matches_category(item, payload.category)]
         try:
             return await answer_question(config, payload.question, items)
         except AIProviderUnavailable as exc:
