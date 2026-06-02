@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from urllib.parse import quote
 
 from server.ai_radar_api.config import AppConfig
 from server.ai_radar_api.db import connect_db
@@ -111,3 +112,38 @@ def test_verify_uses_classified_url_when_existing_verification_url_is_empty(monk
 
     assert res.status_code == 200
     assert calls[0]["url"] == "https://example.com/source"
+
+
+def test_deep_verify_body_item_is_stored_under_canonical_identity(monkeypatch, tmp_path):
+    config = make_config(tmp_path)
+    client = TestClient(create_app(config), base_url="https://testserver")
+    item = {
+        "title": "OpenAI ships model",
+        "url": "https://OpenAI.com/news/a/?utm_source=test&b=2",
+        "ai_score": 0.9,
+    }
+    expected_item_id = item_identity(item)
+    path_item_id = quote(item["url"], safe="")
+
+    def fake_fetch_and_verify(item_arg, timeout_seconds=12, deep=False):
+        return {
+            "status": "verified",
+            "authority_score": 90,
+            "authority_reason": "test",
+            "evidence_links": [item_arg["url"]],
+            "deep_verified": deep,
+            "model": "rules-v1",
+            "verified_at": "2026-06-02T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr("server.ai_radar_api.main.fetch_and_verify", fake_fetch_and_verify)
+
+    login(client)
+    res = client.post(f"/api/verification/{path_item_id}/deep-verify", json={"item": item})
+
+    assert res.status_code == 200
+    assert res.json()["item_id"] == expected_item_id
+    with connect_db(config.db_path) as conn:
+        row = conn.execute("select item_id, url from verification_results where item_id = ?", (expected_item_id,)).fetchone()
+    assert row is not None
+    assert row["url"] == "https://openai.com/news/a?b=2"

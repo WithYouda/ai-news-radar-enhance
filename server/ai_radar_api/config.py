@@ -37,7 +37,7 @@ class AppConfig:
             db_path=Path(os.getenv("RADAR_DB_PATH", "server/data/radar.db")),
             ai_base_url=os.getenv("AI_BASE_URL", "").rstrip("/"),
             ai_api_key=os.getenv("AI_API_KEY", ""),
-            ai_model=os.getenv("AI_MODEL", "gpt-4.1-mini"),
+            ai_model=os.getenv("AI_MODEL") or "gpt-4.1-mini",
             max_context_items=int(os.getenv("RADAR_MAX_CONTEXT_ITEMS", "40")),
             deep_verify_top_n=int(os.getenv("RADAR_DEEP_VERIFY_TOP_N", "3")),
         )

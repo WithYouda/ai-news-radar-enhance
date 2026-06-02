@@ -6,11 +6,11 @@
 
 **伯乐Skill（Scout Skill）帮你从一堆信源里选出千里马。**
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live-green?style=flat-square)](https://learnprompt.github.io/ai-news-radar/)
-[![Actions](https://img.shields.io/github/actions/workflow/status/LearnPrompt/ai-news-radar/update-news.yml?branch=master&label=update&style=flat-square)](https://github.com/LearnPrompt/ai-news-radar/actions/workflows/update-news.yml)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live-green?style=flat-square)](https://withyouda.github.io/ai-news-radar-enhance/)
+[![Actions](https://img.shields.io/github/actions/workflow/status/WithYouda/ai-news-radar-enhance/update-news.yml?branch=master&label=update&style=flat-square)](https://github.com/WithYouda/ai-news-radar-enhance/actions/workflows/update-news.yml)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 
-[在线页面](https://learnprompt.github.io/ai-news-radar/) · [English](README.en.md) · [伯乐Skill](skills/ai-news-radar/README.md) · [信息源策略](docs/SOURCE_COVERAGE.md)
+[在线页面](https://withyouda.github.io/ai-news-radar-enhance/) · [English](README.en.md) · [伯乐Skill](skills/ai-news-radar/README.md) · [信息源策略](docs/SOURCE_COVERAGE.md)
 
 </div>
 

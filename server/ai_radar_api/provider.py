@@ -31,7 +31,10 @@ class AIProvider:
                 response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AIProviderUnavailable(f"AI provider request failed: {exc}") from exc
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AIProviderUnavailable("AI provider returned invalid JSON") from exc
         try:
             content = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:

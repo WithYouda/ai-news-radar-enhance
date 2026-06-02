@@ -245,14 +245,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return {"url": row["url"]}
         raise HTTPException(status_code=404, detail="Item not found for verification")
 
-    @app.post("/api/verification/{item_id}/verify")
+    def verification_storage_id(route_item_id: str, payload: VerificationRequest | None, item: dict) -> str:
+        if payload and payload.item:
+            return item_identity(item)
+        return route_item_id
+
+    @app.post("/api/verification/{item_id:path}/verify")
     def verify_item(item_id: str, payload: VerificationRequest | None = None, session: dict = Depends(require_session)) -> dict:
         del session
         item = find_verification_item(item_id, payload)
         result = fetch_and_verify(item, deep=False)
-        return store_verification_result(item_id, item, result)
+        return store_verification_result(verification_storage_id(item_id, payload, item), item, result)
 
-    @app.post("/api/verification/{item_id}/deep-verify")
+    @app.post("/api/verification/{item_id:path}/deep-verify")
     def deep_verify_item(
         item_id: str,
         payload: VerificationRequest | None = None,
@@ -262,7 +267,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         item = find_verification_item(item_id, payload)
         result = fetch_and_verify(item, deep=True)
         result["deep_verified"] = True
-        return store_verification_result(item_id, item, result)
+        return store_verification_result(verification_storage_id(item_id, payload, item), item, result)
 
     @app.post("/api/ask")
     async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:

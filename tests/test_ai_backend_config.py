@@ -44,3 +44,11 @@ def test_config_has_safe_defaults(monkeypatch):
     assert config.allowed_origins == ["https://withyouda.github.io"]
     assert config.db_path.as_posix().endswith("server/data/radar.db")
     assert config.ai_model == "gpt-4.1-mini"
+
+
+def test_empty_ai_model_env_uses_default(monkeypatch):
+    monkeypatch.setenv("AI_MODEL", "")
+
+    config = AppConfig.from_env()
+
+    assert config.ai_model == "gpt-4.1-mini"
