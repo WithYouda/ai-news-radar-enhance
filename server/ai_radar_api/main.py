@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
+from datetime import UTC, datetime
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .auth import create_session, delete_session, store_session, validate_session
+from .classifier import classify_item
 from .config import AppConfig
-from .db import init_db
-from .taxonomy import seed_default_taxonomy
+from .db import connect_db, init_db
+from .radar_data import item_identity, normalize_public_url
+from .taxonomy import DEFAULT_TAXONOMY, seed_default_taxonomy
 
 
 SESSION_COOKIE = "radar_session"
@@ -18,6 +23,10 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 class LoginRequest(BaseModel):
     password: str
+
+
+class ClassifyRequest(BaseModel):
+    items: list[dict]
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -70,6 +79,52 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.get("/api/me")
     def me(session: dict = Depends(require_session)) -> dict:
         return session
+
+    @app.post("/api/classify")
+    def classify(payload: ClassifyRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        response_items = []
+        classified_at = datetime.now(UTC).isoformat()
+        with connect_db(config.db_path) as conn:
+            for item in payload.items:
+                result = classify_item(item, DEFAULT_TAXONOMY)
+                item_id = item_identity(item)
+                title = str(item.get("title") or "")
+                url = normalize_public_url(str(item.get("url") or ""))
+                conn.execute(
+                    """
+                    insert into item_classifications(
+                      item_id, url, title_hash, top_category, sub_category, confidence,
+                      reason, taxonomy_version, model, manual_override_json, classified_at
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict(item_id) do update set
+                      url = excluded.url,
+                      title_hash = excluded.title_hash,
+                      top_category = excluded.top_category,
+                      sub_category = excluded.sub_category,
+                      confidence = excluded.confidence,
+                      reason = excluded.reason,
+                      taxonomy_version = excluded.taxonomy_version,
+                      model = excluded.model,
+                      classified_at = excluded.classified_at
+                    """,
+                    (
+                        item_id,
+                        url,
+                        hashlib.sha1(title.encode("utf-8")).hexdigest(),
+                        result["top_category"],
+                        result["sub_category"],
+                        result["confidence"],
+                        result["reason"],
+                        "default-v1",
+                        result["model"],
+                        json.dumps(None),
+                        classified_at,
+                    ),
+                )
+                response_items.append({"item_id": item_id, **result})
+        return {"items": response_items}
 
     return app
 
