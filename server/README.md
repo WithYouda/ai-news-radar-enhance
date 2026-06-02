@@ -16,6 +16,7 @@ RADAR_SESSION_SECRET=change-me-long-random-value \
 AI_BASE_URL=https://api.example.com/v1 \
 AI_API_KEY=sk-placeholder \
 AI_MODEL=gpt-4.1-mini \
+AI_API_FORMAT=chat_completions \
 uvicorn server.ai_radar_api.main:app --host 127.0.0.1 --port 8090
 ```
 
@@ -46,7 +47,13 @@ RADAR_SESSION_SECRET=<long random value>
 AI_BASE_URL=<OpenAI-compatible base URL>
 AI_API_KEY=<provider API key>
 AI_MODEL=<model name>
+AI_API_FORMAT=chat_completions
 ```
+
+`AI_API_FORMAT` supports:
+
+- `chat_completions`: calls `{AI_BASE_URL}/chat/completions`.
+- `responses`: calls `{AI_BASE_URL}/responses`.
 
 ## PM2
 
