@@ -13,8 +13,9 @@ from .auth import create_session, delete_session, store_session, validate_sessio
 from .classifier import classify_item
 from .config import AppConfig
 from .db import connect_db, init_db
-from .radar_data import item_identity, normalize_public_url
+from .radar_data import item_identity, load_latest_items, merge_item_metadata, normalize_public_url
 from .taxonomy import DEFAULT_TAXONOMY, seed_default_taxonomy
+from .verification import fetch_and_verify
 
 
 SESSION_COOKIE = "radar_session"
@@ -27,6 +28,10 @@ class LoginRequest(BaseModel):
 
 class ClassifyRequest(BaseModel):
     items: list[dict]
+
+
+class VerificationRequest(BaseModel):
+    item: dict | None = None
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -125,6 +130,100 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 )
                 response_items.append({"item_id": item_id, **result})
         return {"items": response_items}
+
+    @app.get("/api/verification/items")
+    def verification_items(session: dict = Depends(require_session)) -> dict:
+        del session
+        with connect_db(config.db_path) as conn:
+            rows = conn.execute(
+                """
+                select item_id, url, status, authority_score, authority_reason,
+                       evidence_json, deep_verified, manual_score, manual_note,
+                       model, verified_at
+                from verification_results
+                order by verified_at desc
+                """
+            ).fetchall()
+        verification_by_id = {
+            row["item_id"]: {
+                "item_id": row["item_id"],
+                "url": row["url"],
+                "status": row["status"],
+                "authority_score": row["authority_score"],
+                "authority_reason": row["authority_reason"],
+                "evidence_links": json.loads(row["evidence_json"]),
+                "deep_verified": bool(row["deep_verified"]),
+                "manual_score": row["manual_score"],
+                "manual_note": row["manual_note"],
+                "model": row["model"],
+                "verified_at": row["verified_at"],
+            }
+            for row in rows
+        }
+        try:
+            items = load_latest_items(config)
+        except Exception:
+            items = []
+        merged_items = [
+            merge_item_metadata(item, None, verification_by_id.get(item_identity(item)))
+            for item in items[: config.max_context_items]
+        ]
+        return {"items": merged_items, "verified_items": list(verification_by_id.values())}
+
+    def store_verification_result(item_id: str, item: dict, result: dict) -> dict:
+        url = normalize_public_url(str(item.get("url") or result.get("url") or ""))
+        with connect_db(config.db_path) as conn:
+            conn.execute(
+                """
+                insert into verification_results(
+                  item_id, url, status, authority_score, authority_reason,
+                  evidence_json, deep_verified, manual_score, manual_note, model, verified_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(item_id) do update set
+                  url = excluded.url,
+                  status = excluded.status,
+                  authority_score = excluded.authority_score,
+                  authority_reason = excluded.authority_reason,
+                  evidence_json = excluded.evidence_json,
+                  deep_verified = excluded.deep_verified,
+                  model = excluded.model,
+                  verified_at = excluded.verified_at
+                """,
+                (
+                    item_id,
+                    url,
+                    result["status"],
+                    result["authority_score"],
+                    result["authority_reason"],
+                    json.dumps(result.get("evidence_links", []), ensure_ascii=False),
+                    1 if result.get("deep_verified") else 0,
+                    None,
+                    None,
+                    result["model"],
+                    result["verified_at"],
+                ),
+            )
+        return {"item_id": item_id, **result}
+
+    @app.post("/api/verification/{item_id}/verify")
+    def verify_item(item_id: str, payload: VerificationRequest | None = None, session: dict = Depends(require_session)) -> dict:
+        del session
+        item = (payload.item if payload and payload.item else None) or {"url": ""}
+        result = fetch_and_verify(item, deep=False) if item.get("url") else fetch_and_verify({"url": ""}, timeout_seconds=1)
+        return store_verification_result(item_id, item, result)
+
+    @app.post("/api/verification/{item_id}/deep-verify")
+    def deep_verify_item(
+        item_id: str,
+        payload: VerificationRequest | None = None,
+        session: dict = Depends(require_session),
+    ) -> dict:
+        del session
+        item = (payload.item if payload and payload.item else None) or {"url": ""}
+        result = fetch_and_verify(item, deep=True) if item.get("url") else fetch_and_verify({"url": ""}, timeout_seconds=1, deep=True)
+        result["deep_verified"] = True
+        return store_verification_result(item_id, item, result)
 
     return app
 
