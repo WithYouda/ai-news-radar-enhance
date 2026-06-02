@@ -1,0 +1,16 @@
+{
+  "name": "AI News Radar",
+  "short_name": "AI Radar",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f6f2",
+  "theme_color": "#126a73",
+  "icons": [
+    {
+      "src": "./assets/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

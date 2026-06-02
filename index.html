@@ -24,6 +24,7 @@
       content="自动整理过去 24 小时值得看的 AI、模型和开发者工具更新；伯乐Skill（Scout Skill）帮你从一堆信源里选出千里马。"
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./assets/styles.css?v=bole-event-merge-0525" />
   </head>
   <body>
@@ -197,5 +198,12 @@
 
     <script src="./assets/config.js?v=ai-backend-0601"></script>
     <script src="./assets/app.js?v=bole-event-merge-0525" defer></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js").catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
