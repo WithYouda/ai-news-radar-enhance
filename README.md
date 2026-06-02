@@ -1,107 +1,76 @@
 <div align="center">
 
-# AI News Radar
+# AI News Radar Enhance
 
-## 24 小时 AI 更新雷达｜伯乐Skill
+## 基于原项目的个人 AI Reader 增强版
 
-**伯乐Skill（Scout Skill）帮你从一堆信源里选出千里马。**
+**GitHub Pages 负责公开 24 小时 AI 雷达，FastAPI 后端负责登录、核验、分类设置和问 AI。**
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live-green?style=flat-square)](https://withyouda.github.io/ai-news-radar-enhance/)
 [![Actions](https://img.shields.io/github/actions/workflow/status/WithYouda/ai-news-radar-enhance/update-news.yml?branch=master&label=update&style=flat-square)](https://github.com/WithYouda/ai-news-radar-enhance/actions/workflows/update-news.yml)
-[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 
-[在线页面](https://withyouda.github.io/ai-news-radar-enhance/) · [English](README.en.md) · [伯乐Skill](skills/ai-news-radar/README.md) · [信息源策略](docs/SOURCE_COVERAGE.md)
+[在线页面](https://withyouda.github.io/ai-news-radar-enhance/) · [English](README.en.md) · [伯乐Skill](skills/ai-news-radar/README.md) · [信息源策略](docs/SOURCE_COVERAGE.md) · [后端说明](server/README.md)
 
 </div>
 
 ---
 
-## 这是什么
+## 项目来源
 
-AI News Radar 是一个自动更新的 24 小时 AI 更新雷达。
+本仓库基于原项目 [LearnPrompt/ai-news-radar](https://github.com/LearnPrompt/ai-news-radar) 改造而来。原项目已经提供了静态 AI 新闻雷达、RSS/OPML 抓取、GitHub Actions 自动刷新、GitHub Pages 发布、伯乐Skill 等基础能力。
 
-普通用户直接打开网页，看最近 24 小时 AI、模型、开发者工具和技术生态更新。维护者可以 fork 这个仓库，接入自己的 OPML/RSS、公开 feed、静态页面或 AgentMail 邮箱情报。Codex / Claude Code 这类 Agent 可以使用项目内置的 **伯乐Skill**，继续帮你判断信息源、维护抓取逻辑、部署 GitHub Pages。
+这个增强版保留原项目的静态发布方式和信源策略，在此基础上增加一个自托管 AI 后端，把它改造成更适合个人长期使用的 AI Reader：
 
-这个项目不是“又一个新闻网页”。
+- 静态前端仍然可以只靠 GitHub Pages 运行。
+- 公开新闻数据仍然由 GitHub Actions 生成 `data/*.json`。
+- 私密配置、管理员登录、核验记录、设置项和模型 API Key 留在自己的服务器。
+- 前端在没有后端时会降级为普通静态雷达；配置后端后才启用问 AI、深度核验和设置保存。
 
-它的核心是**伯乐Skill**，帮你从一堆信源里选出千里马。哪些源值得长期追踪，哪些源适合做成RSS/OPML，哪些源只能接付费的API，哪些源看起来更新很多但实际上跟你长期关注的方面比方AI只占了里面的5%不到。
+## 当前能力
 
-先判断清楚，再接入。
+- `今日`：展示过去 24 小时 AI 强相关更新、伯乐精选、站点筛选、源健康状态和 WaytoAGI 更新。
+- `分类`：按模型与产品、开发者工具、研究与评测、资本与生态等分类查看更新。
+- `核验`：对新闻来源做权威性评分，支持单条深度核验，并把结果写入后端 SQLite。
+- `设置`：管理员登录后保存深度核验开关、Top N 等个人设置。
+- `问 AI`：对今日、分类、单条新闻或核验上下文提问，由后端调用 OpenAI-compatible 模型并返回带引用的回答。
+- `移动端/PWA`：保留桌面阅读体验，同时提供移动端底部导航和 Web App 安装入口。
+- `伯乐Skill`：继续用于信源判断、RSS/OPML 接入、源覆盖策略和 Agent 交接。
 
-## 为什么需要伯乐Skill
-
-好新闻分散在各处，
-
-官方博客发一点，更新日志发一点，X 上有人提前爆料，聚合站又把同一个新闻转来转去。
-
-我以为的自己在追前沿，实际每天都在重复三件事，
-
-打开几十个页面，肉眼+人脑过滤重复内容，猜哪条值得看。
-
-伯乐Skill先替你完成第一轮判断，**哪些信源是千里马，哪些是噪音**。
-
-你可以随意增加信息源，还可以把一个信息源纳入输入范围，先让它在单独的展示区域运行一个月，再判断要不要录入。
-
-AI News Radar从来都不是单纯把信息抓回来，
-
-它更像是一条轻量的新闻pipeline，把来源判断、抓取、去重、AI强相关过滤、信息源健康状态和静态网页发布串起来，上线后不消耗模型额度。
-
-## 现在能做什么
-
-- 追踪官方 AI 节点，OpenAI News、OpenAI Codex Changelog、OpenAI Skills、Anthropic、Google DeepMind、Google AI、Hugging Face、GitHub AI 等
-- 读取高信号日报和Newsletter公开来源，例如 AI Breakfast
-- 读取网页自带的feed，例如 Follow Builders 的 X builders、Anthropic Engineering、Claude Blog、AI podcasts
-- 同时接入多个公开聚合源，例如 AI HOT，补足普通官方源看不到的盲区
-- 支持OPML/RSS批量导入
-- 支持AgentMail邮箱订阅高质量AI日报
-- 输出24小时双视图，`AI强相关` 和 `全量`
-- 中英双语标题和站点分组
-- 兼容飞书文档，追加了WaytoAGI开源社区最近更新日和近7日变化
-
-## 工作原理
+## 架构
 
 ```mermaid
 flowchart LR
-    source["信息源清单"] --> classify["伯乐Skill判断信源类型"]
+    sources["RSS / OPML / public feeds"] --> actions["GitHub Actions"]
+    actions --> data["data/*.json"]
+    data --> pages["GitHub Pages static reader"]
 
-    classify --> official["官方 RSS / changelog"]
-    classify --> opml["私人 OPML / RSS"]
-    classify --> publicFeed["公开 GitHub feed / JSON"]
-    classify --> staticPage["公开页面 / Jina 兜底"]
-    classify --> privateMail["AgentMail 邮箱订阅"]
-    classify --> skip["跳过高风险来源"]
+    pages --> api["FastAPI backend"]
+    api --> sqlite["SQLite"]
+    api --> model["OpenAI-compatible model"]
 
-    official --> fetch["抓取与结构化"]
-    opml --> fetch
-    publicFeed --> fetch
-    staticPage --> fetch
-    privateMail --> fetch
-
-    fetch --> dedup["去重与归一化"]
-    dedup --> filter["AI 强相关过滤"]
-    filter --> status["源健康与覆盖统计"]
-    filter --> data["data/*.json"]
-    status --> data
-    data --> pages["GitHub Pages 网页"]
-    data --> agent["Codex / Claude Code 继续维护"]
+    sqlite --> settings["settings / sessions"]
+    sqlite --> verification["classification / verification"]
 ```
 
-AI News Radar学习了现代新闻学的技术，不是简单堆信息源，一次性放几万条信息出来等于没用，所以我选择把新闻处理拆成稳定pipeline，抓取，去重，过滤，补充状态，生成静态站点。
+核心原则：
 
-在保证稳定性的同时追求轻量化，公开版不要求用户配置LLM API Key，不依赖登录态，cookies，X API和邮箱。需要这些进阶能力时，可以通过伯乐Skill用GitHub Secrets或本地环境变量接入。
+- 公共页面只发布可以公开的数据。
+- 私有 OPML、API Key、管理员密码、cookies、tokens 和真实 `.env` 不进仓库。
+- AI 后端是可选增强，不是静态页面运行的前提。
+- 后端建议只监听 `127.0.0.1:8090`，通过 HTTPS 反向代理暴露给前端。
 
-## 快速开始
+## 本地运行静态站点
 
-普通用户不用安装，直接打开在线页面即可。
-
-想fork改造新版本，可以本地运行：
+需要 Python 3.11。当前后端和部分工具使用 `datetime.UTC`，Python 3.10 会失败。
 
 ```bash
-git clone https://github.com/LearnPrompt/ai-news-radar.git
-cd ai-news-radar
-python3 -m venv .venv
+git clone https://github.com/WithYouda/ai-news-radar-enhance.git
+cd ai-news-radar-enhance
+
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
 python scripts/update_news.py --output-dir data --window-hours 24
 python -m http.server 8080
 ```
@@ -112,78 +81,149 @@ python -m http.server 8080
 http://localhost:8080
 ```
 
-如果你有自己的 OPML：
+如果要使用自己的 OPML：
 
 ```bash
 cp feeds/follow.example.opml feeds/follow.opml
-# 把自己的订阅源写进 feeds/follow.opml，不提交这个文件
+# 编辑 feeds/follow.opml，放入自己的订阅源；不要提交这个文件
 python scripts/update_news.py --output-dir data --window-hours 24 --rss-opml feeds/follow.opml
 ```
 
-## 给Agent看的教程
+## 部署 GitHub Pages 和自动更新
 
-如果你想让Codex / Claude Code / OpenClaw / Hermes帮你搭自己的版本，可以直接说：
-
-```text
-请使用伯乐Skill，先问我要信息源清单，然后帮我判断每个信源该用RSS、公开feed、静态页面、Jina兜底、AgentMail邮箱还是跳过。目标是部署一个不需要服务器、能用GitHub Actions自动更新的 AI 日报网站。不要把任何API Key、cookies、token、私有邮件内容写入仓库。
-```
-
-项目内置 Skill 在：
-
-- `skills/ai-news-radar/README.md`
-- `skills/ai-news-radar/SKILL.md`
-
-新Agent接手验收时，推荐先读：
-
-- `README.md`
-- `README.en.md`
-- `docs/GPT_HANDOFF.md`
-- `docs/SOURCE_COVERAGE.md`
-- `docs/V2_PRODUCT_BRIEF.md`
-
-## GitHub 自动更新
-
-`.github/workflows/update-news.yml` 已经配置好定时任务。
-
-- 默认每小时运行一次
-- 自动生成并提交 `data/*.json`
-- 如果没有设置 `FOLLOW_OPML_B64`，线上工作流会自动使用公开示例 `feeds/follow.example.opml`，让页面展示 RSS/OPML 能力
-- 如果设置 `FOLLOW_OPML_B64`，会优先自动解码为私有 `feeds/follow.opml`
-- 如果设置 `EMAIL_DIGEST_ENABLED=1`、`AGENTMAIL_API_KEY`、`AGENTMAIL_INBOX_ID`，会生成脱敏邮箱摘要
-- 只有额外设置 `EMAIL_DIGEST_PUBLISH=1`，才会提交 `data/email-digest.json`
-- 如果设置 `X_API_ENABLED=1`、`X_BEARER_TOKEN` 和预算变量，会在每日指定UTC窗口用官方X API抓取少量公开Post；默认关闭，且当前X API按返回资源计费
-
-默认情况下，本项目不需要任何API Key就能跑核心流程。高级源配置模板见 `examples/advanced-sources.env.example`，预算说明见 `docs/research/advanced-source-free-tier-budget-2026-05-10.md`，X API演示配置见 `docs/guides/x-api-demo-config.md`；单账号/单newsletter演示见 `docs/guides/rileybrown-alphasignal-demo.md`。
-
-## 个人增强版部署
-
-GitHub Pages:
+GitHub Pages：
 
 ```text
 Settings -> Pages -> Deploy from branch -> master / root
 ```
 
-GitHub Actions:
+GitHub Actions 已配置 `.github/workflows/update-news.yml`：
+
+- 默认每小时运行一次。
+- 使用 Python 3.11。
+- 自动生成并提交公开快照：`data/latest-24h.json`、`data/latest-24h-all.json`、`data/archive.json`、`data/source-status.json` 等。
+- 如果没有设置私有 OPML，会使用 `feeds/follow.example.opml` 演示 RSS/OPML 能力。
+- 如果设置 `FOLLOW_OPML_B64`，会解码为私有 `feeds/follow.opml`，但不会提交该文件。
+
+常用配置：
 
 ```text
 Secrets:
 FOLLOW_OPML_B64
+AGENTMAIL_API_KEY
+AGENTMAIL_INBOX_ID
+X_BEARER_TOKEN
 
 Variables:
 RSS_MAX_FEEDS=10
+EMAIL_DIGEST_ENABLED=0
+EMAIL_DIGEST_PUBLISH=0
+X_API_ENABLED=0
 ```
 
-AI 后端:
+私有邮箱摘要和 X API 默认关闭。只有明确开启并提供密钥时才会运行；`data/email-digest.json` 也只有在 `EMAIL_DIGEST_PUBLISH=1` 时才会发布。
+
+## 部署 AI 后端
+
+后端目录是 `server/`，服务是 `server.ai_radar_api.main:app`。它提供登录、设置、分类、核验和问 AI API。
+
+本地启动：
 
 ```bash
-python3 -m venv .venv-server
+python3.11 -m venv .venv-server
 source .venv-server/bin/activate
 pip install -r server/requirements.txt
+
+RADAR_ADMIN_PASSWORD=change-me \
+RADAR_SESSION_SECRET=change-me-long-random-value \
+AI_BASE_URL=https://api.example.com/v1 \
+AI_API_KEY=sk-placeholder \
+AI_MODEL=gpt-4.1-mini \
 uvicorn server.ai_radar_api.main:app --host 127.0.0.1 --port 8090
 ```
 
-后端部署和反向代理说明见 `server/README.md`。前端后端地址配置在 `assets/config.js`，不要把 API Key 或管理员密码写入仓库。
+健康检查：
 
-## License
+```bash
+curl http://127.0.0.1:8090/health
+```
 
-[MIT](LICENSE)
+生产环境至少配置：
+
+```text
+RADAR_PUBLIC_BASE_URL=https://withyouda.github.io/ai-news-radar-enhance
+RADAR_ALLOWED_ORIGINS=https://withyouda.github.io
+RADAR_ADMIN_PASSWORD=<strong password>
+RADAR_SESSION_SECRET=<long random value>
+RADAR_DB_PATH=server/data/radar.db
+RADAR_MAX_CONTEXT_ITEMS=40
+RADAR_DEEP_VERIFY_TOP_N=3
+AI_BASE_URL=<OpenAI-compatible base URL>
+AI_API_KEY=<provider API key>
+AI_MODEL=gpt-4.1-mini
+```
+
+PM2 示例：
+
+```bash
+pm2 start ".venv-server/bin/uvicorn" --name ai-news-radar-api -- server.ai_radar_api.main:app --host 127.0.0.1 --port 8090
+pm2 save
+```
+
+反向代理目标：
+
+```text
+Public HTTPS -> 127.0.0.1:8090
+```
+
+然后在静态站点的 `assets/config.js` 配置后端地址：
+
+```javascript
+window.AI_NEWS_RADAR_CONFIG = {
+  apiBaseUrl: "https://<server-domain>",
+};
+```
+
+更细的后端说明见 [server/README.md](server/README.md)。
+
+## 安全和数据边界
+
+不要提交：
+
+- `feeds/follow.opml`
+- `.env` 或真实环境变量文件
+- API Key、cookies、tokens、管理员密码
+- 私有邮箱正文、私有订阅源原文
+- 本地手工生成的 `data/*.json`
+
+可以提交：
+
+- `feeds/follow.example.opml`
+- `server/.env.example`
+- 公开文档、公开信源策略、公开示例配置
+- GitHub Actions 自动生成的公开新闻快照
+
+如果接入私有 newsletter 或邮箱，默认只在服务端使用；除非你明确确认内容可以公开，否则不要把它写入 Pages 会发布的 `data/*.json`。
+
+## 给 Agent 的接手入口
+
+新 Agent 接手时建议先读：
+
+- [skills/ai-news-radar/SKILL.md](skills/ai-news-radar/SKILL.md)
+- [skills/ai-news-radar/README.md](skills/ai-news-radar/README.md)
+- [docs/SOURCE_COVERAGE.md](docs/SOURCE_COVERAGE.md)
+- [docs/V2_PRODUCT_BRIEF.md](docs/V2_PRODUCT_BRIEF.md)
+- [docs/GPT_HANDOFF.md](docs/GPT_HANDOFF.md)
+- [server/README.md](server/README.md)
+
+常用验证命令：
+
+```bash
+pip install -r requirements-dev.txt
+python -m py_compile scripts/update_news.py
+python -m py_compile server/ai_radar_api/*.py
+python -m pytest -q
+node --check assets/app.js
+node --check sw.js
+git diff --check
+```
