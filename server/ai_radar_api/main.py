@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .article_reader import cached_article, fetch_clean_article, find_news_item
+from .article_reader import fetch_clean_article, find_news_item
 from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
@@ -123,9 +123,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if not scope_payload.get("item_id") or len(items) != 1:
             return items
         item = items[0]
-        item_id = item_identity(item)
         try:
-            article = cached_article(config.db_path, item_id) or fetch_clean_article(config, item)
+            article = fetch_clean_article(config, item)
         except Exception:
             return items
         text = str(article.get("text") or "").strip()

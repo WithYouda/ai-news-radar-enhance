@@ -341,6 +341,61 @@ def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(
     assert calls == 1
 
 
+def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    app = create_app(config)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Fresh clean title</h1>
+          <p>The retried article body is readable after the stale unavailable cache is bypassed.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    calls = 0
+
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    client = TestClient(app, base_url="https://testserver")
+
+    res = client.get(f"/api/read/{identity}")
+
+    assert res.status_code == 200
+    assert res.json()["access_status"] == "open"
+    assert res.json()["cache_status"] == "miss"
+    assert "retried article body" in res.json()["text"]
+    assert calls == 1
+
+
 def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_path):
     captured = {}
     config, item = _config(tmp_path)
@@ -378,3 +433,60 @@ def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_p
 
     assert res.status_code == 200
     assert captured["item"]["article_text"] == "Clean article body explains the first question context in detail."
+
+
+def test_ask_item_scope_retries_cached_unavailable_article_text(monkeypatch, tmp_path):
+    captured = {}
+    config, item = _config(tmp_path)
+    client = TestClient(create_app(config), base_url="https://testserver")
+    client.post("/api/auth/login", json={"password": "pass"})
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+
+    class Response:
+        url = item["url"]
+        text = """
+        <html><body><article>
+          <p>Fresh article body should replace stale unavailable cache for Ask AI context.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        return Response()
+
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([item], "local")
+
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+        captured["item"] = items[0]
+        return {"answer": "ok", "title": "正文上下文", "citations": [], "model": config.ai_model}
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    res = client.post("/api/ask", json={"question": "这篇文章说了什么？", "scope": "today", "item_id": identity})
+
+    assert res.status_code == 200
+    assert captured["item"]["article_text"] == "Fresh article body should replace stale unavailable cache for Ask AI context."
