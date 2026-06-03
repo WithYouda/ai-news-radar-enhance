@@ -99,6 +99,29 @@ def test_extract_article_filters_signup_noise_and_marks_restricted_access():
     assert payload["translation_available"] is True
 
 
+def test_extract_article_prefers_reader_like_content_over_sidebar_noise():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <section class="sidebar promo">
+              <p>Popular links and account prompts can be quite long but should not be mixed into the readable story because they are navigation chrome rather than editorial content.</p>
+            </section>
+            <div class="story-body">
+              <p>The actual article explains a new AI browser workflow with specific details about agents, summaries, retrieval, and product behavior.</p>
+              <p>It also describes why developers should care about the implementation and what changed in the release.</p>
+            </div>
+          </body>
+        </html>
+        """,
+        url="https://example.com/story",
+        fallback_title="Reader story",
+    )
+
+    assert "actual article explains" in payload["text"]
+    assert "Popular links and account prompts" not in payload["text"]
+
+
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     calls = 0

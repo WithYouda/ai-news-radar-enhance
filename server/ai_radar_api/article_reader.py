@@ -83,6 +83,13 @@ RESTRICTED_PATTERNS = (
     r"订阅.*继续阅读",
     r"会员.*阅读",
 )
+NEGATIVE_RE = re.compile(
+    r"ad-|agegate|banner|combx|comment|community|cookie|disqus|extra|foot|header|login|menu|modal|"
+    r"newsletter|pager|pagination|popup|promo|related|remark|rss|share|shoutbox|sidebar|signin|"
+    r"sponsor|subscribe|widget",
+    flags=re.I,
+)
+POSITIVE_RE = re.compile(r"article|body|content|entry|hentry|main|page|post|story|text", flags=re.I)
 
 
 def _now() -> str:
@@ -141,6 +148,17 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
     for selector in DROP_SELECTORS:
         for node in soup.select(selector):
             node.decompose()
+    for node in list(soup.find_all(True)):
+        if getattr(node, "attrs", None) is None:
+            continue
+        signature = " ".join(
+            [
+                str(node.get("id") or ""),
+                " ".join(str(value) for value in node.get("class", []) if value),
+            ]
+        )
+        if signature and NEGATIVE_RE.search(signature) and not POSITIVE_RE.search(signature):
+            node.decompose()
     return soup
 
 
@@ -191,13 +209,32 @@ def _candidate_score(node) -> float:
     paragraph_len = sum(len(_compact_text(p.get_text(" ", strip=True))) for p in paragraphs)
     link_len = sum(len(_compact_text(a.get_text(" ", strip=True))) for a in node.find_all("a"))
     link_density = link_len / max(text_len, 1)
-    return paragraph_len + min(len(paragraphs), 12) * 80 - link_density * 420
+    signature = " ".join(
+        [
+            str(node.get("id") or ""),
+            " ".join(str(value) for value in node.get("class", []) if value),
+        ]
+    )
+    class_weight = 0
+    if POSITIVE_RE.search(signature):
+        class_weight += 180
+    if NEGATIVE_RE.search(signature):
+        class_weight -= 260
+    return paragraph_len + min(len(paragraphs), 12) * 80 + class_weight - link_density * 420
 
 
 def _best_container(soup: BeautifulSoup):
     candidates = []
     for selector in ARTICLE_SELECTORS:
         candidates.extend(soup.select(selector))
+    for paragraph in soup.find_all("p"):
+        text = _compact_text(paragraph.get_text(" ", strip=True))
+        if len(text) < 60:
+            continue
+        if paragraph.parent:
+            candidates.append(paragraph.parent)
+        if paragraph.parent and paragraph.parent.parent:
+            candidates.append(paragraph.parent.parent)
     if not candidates:
         return soup.body or soup
     return max(candidates, key=_candidate_score)

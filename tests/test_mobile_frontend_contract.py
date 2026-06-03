@@ -255,18 +255,38 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert 'id="readerBody"' in html
     assert 'id="readerTranslateButton"' in html
     assert 'id="readerAccessBadge"' in html
+    assert 'class="reader-ask-fab"' in html
     assert "openReader(item)" in js
     assert "loadCleanArticle" in js
     assert "translateReaderArticle" in js
     assert "Translator.create" in js
+    assert "Translator.availability" in js
+    assert "translate.google.com" in js
     assert 'translate="yes"' in html
     assert "/api/read/" in js
     assert "sha1Hex" in js
     assert "reader-action" in js
     assert ".reader-sheet" in css
     assert ".reader-article" in css
+    assert ".reader-ask-fab" in css
     assert ".reader-access-badge" in css
     assert "body.reader-open" in css
+
+
+def test_ask_ai_sheet_supports_smooth_drag_to_dismiss():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'class="ask-ai-panel"' in html
+    assert "askAiPanelEl" in js
+    assert "handleAskPanelDragStart" in js
+    assert "handleAskPanelDragMove" in js
+    assert "handleAskPanelDragEnd" in js
+    assert "ASK_DRAG_CLOSE_THRESHOLD" in js
+    assert "closeAskAi()" in js[js.index("function handleAskPanelDragEnd") :]
+    assert "--ask-drag-y" in css
+    assert ".ask-ai-panel.dragging" in css
+    assert "transform: translate3d(0, var(--ask-drag-y), 0)" in css
 
 
 def test_news_title_click_opens_clean_reader_instead_of_original_page():

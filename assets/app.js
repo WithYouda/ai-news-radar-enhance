@@ -96,6 +96,7 @@ const verificationMetaEl = document.getElementById("verificationMeta");
 const verificationSummaryEl = document.getElementById("verificationSummary");
 const verificationListEl = document.getElementById("verificationList");
 const askAiSheetEl = document.getElementById("askAiSheet");
+const askAiPanelEl = askAiSheetEl?.querySelector(".ask-ai-panel");
 const askAiCloseEl = document.getElementById("askAiClose");
 const askAiContextEl = document.getElementById("askAiContext");
 const askAiMessagesButtonEl = document.getElementById("askAiMessagesButton");
@@ -122,6 +123,8 @@ const readerOriginalLinkEl = document.getElementById("readerOriginalLink");
 const readerAskButtonEl = document.getElementById("readerAskButton");
 const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
 const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
+const ASK_DRAG_CLOSE_THRESHOLD = 132;
+let askDragState = null;
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -288,14 +291,68 @@ function openAskAi(extraContext = {}) {
   }
   setAskPanelView("messages");
   askAiSheetEl.hidden = false;
+  resetAskPanelDrag();
   document.body.classList.add("ask-ai-open");
   if (askAiInputEl) askAiInputEl.focus();
 }
 
 function closeAskAi() {
   if (!askAiSheetEl) return;
+  resetAskPanelDrag();
   askAiSheetEl.hidden = true;
   document.body.classList.remove("ask-ai-open");
+}
+
+function resetAskPanelDrag() {
+  askDragState = null;
+  if (!askAiPanelEl) return;
+  askAiPanelEl.classList.remove("dragging", "settling");
+  askAiPanelEl.style.setProperty("--ask-drag-y", "0px");
+  askAiSheetEl?.style.setProperty("--ask-backdrop-opacity", "1");
+}
+
+function canStartAskPanelDrag(event) {
+  const blocked = event.target.closest?.(
+    ".ask-ai-thread, .ask-ai-history-list, .ask-ai-composer, textarea, input, button, a, .ask-ai-message-actions"
+  );
+  return !blocked;
+}
+
+function handleAskPanelDragStart(event) {
+  if (!askAiPanelEl || !canStartAskPanelDrag(event)) return;
+  askDragState = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    currentY: 0,
+  };
+  askAiPanelEl.setPointerCapture?.(event.pointerId);
+  askAiPanelEl.classList.add("dragging");
+  askAiPanelEl.classList.remove("settling");
+}
+
+function handleAskPanelDragMove(event) {
+  if (!askDragState || event.pointerId !== askDragState.pointerId || !askAiPanelEl) return;
+  const delta = Math.max(0, event.clientY - askDragState.startY);
+  if (delta <= 0) return;
+  askDragState.currentY = delta;
+  askAiPanelEl.style.setProperty("--ask-drag-y", `${delta}px`);
+  askAiSheetEl?.style.setProperty("--ask-backdrop-opacity", String(Math.max(0.28, 1 - delta / 420)));
+  event.preventDefault();
+}
+
+function handleAskPanelDragEnd(event) {
+  if (!askDragState || event.pointerId !== askDragState.pointerId || !askAiPanelEl) return;
+  const shouldClose = askDragState.currentY >= ASK_DRAG_CLOSE_THRESHOLD;
+  askAiPanelEl.releasePointerCapture?.(event.pointerId);
+  askAiPanelEl.classList.remove("dragging");
+  askAiPanelEl.classList.add("settling");
+  if (shouldClose) {
+    closeAskAi();
+    return;
+  }
+  askAiPanelEl.style.setProperty("--ask-drag-y", "0px");
+  askAiSheetEl?.style.setProperty("--ask-backdrop-opacity", "1");
+  askDragState = null;
 }
 
 function escapeHtml(text) {
@@ -1493,7 +1550,10 @@ async function translateReaderArticle() {
   const sourceLanguage = state.readerArticle?.language || readerBodyEl.lang || "en";
   readerBodyEl.setAttribute("translate", "yes");
   readerTranslateButtonEl.disabled = true;
-  if (window.Translator?.create) {
+  const translatorAvailable = window.Translator?.availability
+    ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
+    : "unknown";
+  if (window.Translator?.create && translatorAvailable !== "unavailable") {
     try {
       const translator = await window.Translator.create({
         sourceLanguage,
@@ -1512,8 +1572,9 @@ async function translateReaderArticle() {
     }
   }
   document.documentElement.setAttribute("translate", "yes");
-  readerBodyEl.focus?.();
-  readerTranslateButtonEl.textContent = "浏览器翻译";
+  const translateUrl = `https://translate.google.com/translate?sl=auto&tl=zh-CN&u=${encodeURIComponent(state.readerArticle?.final_url || state.readerArticle?.url || "")}`;
+  window.open(translateUrl, "_blank", "noopener,noreferrer");
+  readerTranslateButtonEl.textContent = "已打开翻译";
   readerTranslateButtonEl.disabled = false;
 }
 
@@ -2451,6 +2512,12 @@ if (readerAskButtonEl) {
   });
 }
 if (askAiCloseEl) askAiCloseEl.addEventListener("click", closeAskAi);
+if (askAiPanelEl) {
+  askAiPanelEl.addEventListener("pointerdown", handleAskPanelDragStart);
+  askAiPanelEl.addEventListener("pointermove", handleAskPanelDragMove);
+  askAiPanelEl.addEventListener("pointerup", handleAskPanelDragEnd);
+  askAiPanelEl.addEventListener("pointercancel", handleAskPanelDragEnd);
+}
 if (askAiMessagesButtonEl) askAiMessagesButtonEl.addEventListener("click", () => setAskPanelView("messages"));
 if (askAiHistoryButtonEl) askAiHistoryButtonEl.addEventListener("click", toggleAskHistory);
 if (askAiSubmitEl) askAiSubmitEl.addEventListener("click", submitAskAi);
