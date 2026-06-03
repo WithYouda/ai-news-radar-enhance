@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=ask-fresh-b10" />
+    <link rel="stylesheet" href="./assets/styles.css?v=ask-actions-c11" />
   </head>
   <body>
     <main class="shell">
@@ -188,6 +188,7 @@
           <div id="askAiHistoryList" class="ask-ai-history-list" hidden></div>
         </div>
         <div class="ask-ai-composer">
+          <div id="askAiQuoteBar" class="ask-ai-quote-bar" hidden></div>
           <textarea id="askAiInput" rows="2" placeholder="问今天的信息流..."></textarea>
           <button id="askAiSubmit" type="button" aria-label="发送">
             <span class="ask-ai-send-icon" aria-hidden="true"></span>
@@ -217,7 +218,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=ask-fresh-b10" defer></script>
+    <script src="./assets/app.js?v=ask-actions-c11" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-fresh-b10" in html
+    assert "./assets/styles.css?v=ask-actions-c11" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-fresh-b10" in html
+    assert "./assets/app.js?v=ask-actions-c11" in html
 
 
 def test_category_view_contract_exists():
@@ -154,6 +154,33 @@ def test_ask_ai_contract_renders_markdown_and_reuses_loaded_conversation_id():
     assert "conversation_id: state.activeConversationId" in js
     assert ".ask-ai-bubble h1" in css
     assert ".ask-ai-bubble code" in css
+
+
+def test_ask_ai_message_actions_contract_matches_chat_product_controls():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="askAiQuoteBar"' in html
+    assert "appendAskMessageActions" in js
+    assert "editAskMessage" in js
+    assert "deleteAskMessage" in js
+    assert "regenerateAskMessage" in js
+    assert "copyAskMessage" in js
+    assert "handleAskSelection" in js
+    assert "setAskQuote" in js
+    assert "clearAskQuote" in js
+    assert ".ask-ai-message-actions" in css
+    assert ".ask-ai-quote-bar" in css
+    assert ".ask-ai-quote-float" in css
+    assert ".ask-ai-edit-box" in css
+
+
+def test_ask_ai_quote_is_sent_with_question_and_can_be_cleared():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    submit_js = js[js.index("async function submitAskAi()") : js.index("function setSettingsStatus")]
+    assert "buildAskQuestionText(question)" in submit_js
+    assert "clearAskQuote()" in submit_js
+    assert "引用内容：" in js
 
 
 def test_ask_ai_clears_input_immediately_after_queuing_message():

@@ -154,9 +154,64 @@ def test_ask_appends_existing_conversation_and_sends_history_to_ai(monkeypatch, 
     history = client.get("/api/ask/history").json()["items"]
     assert len(history) == 1
     detail = client.get(f"/api/ask/history/{conversation_id}").json()
+    assert all("id" in message for message in detail["messages"])
     assert [message["content"] for message in detail["messages"]] == [
         "今天 OpenAI 有什么？",
         "回答：今天 OpenAI 有什么？",
         "它和 API 有关系吗？",
         "回答：它和 API 有关系吗？",
+    ]
+
+
+def test_ask_message_edit_delete_and_regenerate(monkeypatch, tmp_path):
+    captured = []
+
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([{"title": "Model update", "url": "https://example.com/model", "ai_score": 0.9}], "local")
+
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+        captured.append({"question": question, "messages": conversation_messages or []})
+        return {
+            "answer": f"回答：{question}",
+            "title": "模型更新",
+            "citations": [],
+            "model": config.ai_model,
+        }
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    client = make_client(tmp_path)
+    login(client)
+
+    first = client.post("/api/ask", json={"question": "第一问", "scope": "today"}).json()
+    conversation_id = first["conversation_id"]
+    client.post("/api/ask", json={"question": "第二问", "scope": "today", "conversation_id": conversation_id})
+    detail = client.get(f"/api/ask/history/{conversation_id}").json()
+    first_user_id = detail["messages"][0]["id"]
+
+    edit_res = client.put(
+        f"/api/ask/history/{conversation_id}/messages/{first_user_id}",
+        json={"content": "编辑后的第一问"},
+    )
+    assert edit_res.status_code == 200
+    assert [(m["role"], m["content"]) for m in edit_res.json()["messages"]] == [("user", "编辑后的第一问")]
+
+    regen_res = client.post(f"/api/ask/history/{conversation_id}/messages/{first_user_id}/regenerate")
+    assert regen_res.status_code == 400
+
+    assistant_id = client.post(
+        "/api/ask",
+        json={"question": "重问", "scope": "today", "conversation_id": conversation_id},
+    ).json()["messages"][-1]["id"]
+    regen_res = client.post(f"/api/ask/history/{conversation_id}/messages/{assistant_id}/regenerate")
+    assert regen_res.status_code == 200
+    assert regen_res.json()["messages"][-1]["content"] == "回答：重问"
+    assert captured[-1]["messages"] == [{"role": "user", "content": "编辑后的第一问"}]
+
+    delete_res = client.delete(f"/api/ask/history/{conversation_id}/messages/{assistant_id}")
+    assert delete_res.status_code == 200
+    assert [(m["role"], m["content"]) for m in delete_res.json()["messages"]] == [
+        ("user", "编辑后的第一问"),
+        ("user", "重问"),
     ]

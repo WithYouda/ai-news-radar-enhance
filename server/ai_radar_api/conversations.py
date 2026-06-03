@@ -96,7 +96,7 @@ def _row_to_record(row, include_answer: bool = True) -> dict:
 def _message_rows(conn, conversation_id: str) -> list[dict]:
     rows = conn.execute(
         """
-        select role, content, created_at
+        select id, role, content, created_at
         from ask_messages
         where conversation_id = ?
         order by id asc
@@ -104,9 +104,28 @@ def _message_rows(conn, conversation_id: str) -> list[dict]:
         (conversation_id,),
     ).fetchall()
     return [
-        {"role": row["role"], "content": row["content"], "created_at": row["created_at"]}
+        {"id": row["id"], "role": row["role"], "content": row["content"], "created_at": row["created_at"]}
         for row in rows
     ]
+
+
+def _sync_conversation_summary(conn, conversation_id: str, updated_at: str) -> None:
+    messages = _message_rows(conn, conversation_id)
+    latest_user = next((message for message in reversed(messages) if message["role"] == "user"), None)
+    latest_assistant = next((message for message in reversed(messages) if message["role"] == "assistant"), None)
+    conn.execute(
+        """
+        update ask_conversations
+        set question = ?, answer = ?, updated_at = ?
+        where conversation_id = ?
+        """,
+        (
+            str((latest_user or {}).get("content") or ""),
+            str((latest_assistant or {}).get("content") or ""),
+            updated_at,
+            conversation_id,
+        ),
+    )
 
 
 def store_ask_conversation(
@@ -233,13 +252,94 @@ def get_ask_conversation(db_path: str | Path, conversation_id: str) -> dict | No
             return None
         record = _row_to_record(row)
         messages = _message_rows(conn, conversation_id)
-        if not messages:
+        if not messages and (record["question"] or record["answer"]):
             messages = [
-                {"role": "user", "content": record["question"], "created_at": record["created_at"]},
-                {"role": "assistant", "content": record["answer"], "created_at": record["updated_at"]},
+                {"id": None, "role": "user", "content": record["question"], "created_at": record["created_at"]},
+                {"id": None, "role": "assistant", "content": record["answer"], "created_at": record["updated_at"]},
             ]
         record["messages"] = messages
         return record
+
+
+def update_ask_message(db_path: str | Path, conversation_id: str, message_id: int, content: str) -> dict | None:
+    now = _now()
+    content = str(content or "").strip()
+    if not content:
+        raise ValueError("Message content cannot be empty")
+    with connect_db(db_path) as conn:
+        row = conn.execute(
+            """
+            select id, role
+            from ask_messages
+            where conversation_id = ? and id = ?
+            """,
+            (conversation_id, int(message_id)),
+        ).fetchone()
+        if not row:
+            return None
+        if row["role"] != "user":
+            raise ValueError("Only user messages can be edited")
+        conn.execute(
+            "update ask_messages set content = ?, created_at = ? where conversation_id = ? and id = ?",
+            (content, now, conversation_id, int(message_id)),
+        )
+        conn.execute(
+            "delete from ask_messages where conversation_id = ? and id > ?",
+            (conversation_id, int(message_id)),
+        )
+        _sync_conversation_summary(conn, conversation_id, now)
+    return get_ask_conversation(db_path, conversation_id)
+
+
+def replace_ask_message(db_path: str | Path, conversation_id: str, message_id: int, content: str) -> dict | None:
+    now = _now()
+    content = str(content or "").strip()
+    if not content:
+        raise ValueError("Message content cannot be empty")
+    with connect_db(db_path) as conn:
+        row = conn.execute(
+            """
+            select id, role
+            from ask_messages
+            where conversation_id = ? and id = ?
+            """,
+            (conversation_id, int(message_id)),
+        ).fetchone()
+        if not row:
+            return None
+        if row["role"] != "assistant":
+            raise ValueError("Only assistant messages can be regenerated")
+        conn.execute(
+            "update ask_messages set content = ?, created_at = ? where conversation_id = ? and id = ?",
+            (content, now, conversation_id, int(message_id)),
+        )
+        conn.execute(
+            "delete from ask_messages where conversation_id = ? and id > ?",
+            (conversation_id, int(message_id)),
+        )
+        _sync_conversation_summary(conn, conversation_id, now)
+    return get_ask_conversation(db_path, conversation_id)
+
+
+def delete_ask_message(db_path: str | Path, conversation_id: str, message_id: int) -> dict | None:
+    now = _now()
+    with connect_db(db_path) as conn:
+        row = conn.execute(
+            """
+            select id
+            from ask_messages
+            where conversation_id = ? and id = ?
+            """,
+            (conversation_id, int(message_id)),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "delete from ask_messages where conversation_id = ? and id >= ?",
+            (conversation_id, int(message_id)),
+        )
+        _sync_conversation_summary(conn, conversation_id, now)
+    return get_ask_conversation(db_path, conversation_id)
 
 
 def delete_ask_conversation(db_path: str | Path, conversation_id: str) -> bool:

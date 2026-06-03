@@ -14,7 +14,15 @@ from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
-from .conversations import delete_ask_conversation, get_ask_conversation, list_ask_conversations, store_ask_conversation
+from .conversations import (
+    delete_ask_conversation,
+    delete_ask_message,
+    get_ask_conversation,
+    list_ask_conversations,
+    replace_ask_message,
+    store_ask_conversation,
+    update_ask_message,
+)
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
@@ -61,6 +69,10 @@ class AskRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class AskMessageUpdateRequest(BaseModel):
+    content: str
+
+
 def item_matches_category(item: dict, category: str) -> bool:
     labels = {
         str(item.get("top_category") or ""),
@@ -90,6 +102,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if not radar_session or not validate_session(config.db_path, radar_session, config.session_secret):
             raise HTTPException(status_code=401, detail="Authentication required")
         return {"authenticated": True}
+
+    def scoped_ask_items(scope_payload: dict) -> tuple[list[dict], str | None]:
+        items, context_source = load_latest_items_with_source(config, mode="ai")
+        item_id = scope_payload.get("item_id")
+        category = scope_payload.get("category")
+        if item_id:
+            items = [
+                item
+                for item in items
+                if item_identity(item) == item_id or str(item.get("id") or "") == item_id
+            ]
+        if category:
+            items = [item for item in items if item_matches_category(item, str(category))]
+        return items, context_source
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
@@ -304,13 +330,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
         del session
         try:
-            items, context_source = load_latest_items_with_source(config, mode="ai")
+            scope_payload = {
+                "scope": payload.scope,
+                "category": payload.category,
+                "item_id": payload.item_id,
+            }
+            items, context_source = scoped_ask_items(scope_payload)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
-        if payload.item_id:
-            items = [item for item in items if item_identity(item) == payload.item_id or str(item.get("id") or "") == payload.item_id]
-        if payload.category:
-            items = [item for item in items if item_matches_category(item, payload.category)]
         try:
             existing_conversation = get_ask_conversation(config.db_path, payload.conversation_id) if payload.conversation_id else None
             conversation_messages = [
@@ -331,11 +358,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 result = await answer_question(config, payload.question, items, system_prompt=ask_system_prompt)
             result["context_item_count"] = len(items)
             result["context_source"] = context_source
-            scope_payload = {
-                "scope": payload.scope,
-                "category": payload.category,
-                "item_id": payload.item_id,
-            }
             if payload.item_id and items:
                 scope_payload["item_title"] = items[0].get("title") or items[0].get("title_zh") or items[0].get("title_en")
             try:
@@ -353,6 +375,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 )
                 result["history_saved"] = True
                 result["conversation_id"] = conversation["conversation_id"]
+                result["messages"] = conversation.get("messages", [])
+                result["title"] = conversation.get("title") or result.get("title")
             except Exception:
                 result["history_saved"] = False
             return result
@@ -378,6 +402,78 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if not delete_ask_conversation(config.db_path, conversation_id):
             raise HTTPException(status_code=404, detail="Conversation not found")
         return {"ok": True}
+
+    @app.put("/api/ask/history/{conversation_id}/messages/{message_id}")
+    def edit_ask_history_message(
+        conversation_id: str,
+        message_id: int,
+        payload: AskMessageUpdateRequest,
+        session: dict = Depends(require_session),
+    ) -> dict:
+        del session
+        try:
+            record = update_ask_message(config.db_path, conversation_id, message_id, payload.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        return record
+
+    @app.delete("/api/ask/history/{conversation_id}/messages/{message_id}")
+    def delete_ask_history_message(conversation_id: str, message_id: int, session: dict = Depends(require_session)) -> dict:
+        del session
+        record = delete_ask_message(config.db_path, conversation_id, message_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        return record
+
+    @app.post("/api/ask/history/{conversation_id}/messages/{message_id}/regenerate")
+    async def regenerate_ask_history_message(conversation_id: str, message_id: int, session: dict = Depends(require_session)) -> dict:
+        del session
+        record = get_ask_conversation(config.db_path, conversation_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        messages = list(record.get("messages") or [])
+        target_index = next((index for index, message in enumerate(messages) if message.get("id") == message_id), -1)
+        if target_index < 0:
+            raise HTTPException(status_code=404, detail="Message not found")
+        target = messages[target_index]
+        if target.get("role") != "assistant":
+            raise HTTPException(status_code=400, detail="Only assistant messages can be regenerated")
+        user_index = next(
+            (index for index in range(target_index - 1, -1, -1) if messages[index].get("role") == "user"),
+            -1,
+        )
+        if user_index < 0:
+            raise HTTPException(status_code=400, detail="No user message found for regeneration")
+        scope_payload = record.get("scope_payload") or {}
+        try:
+            items, context_source = scoped_ask_items(scope_payload)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
+        previous_messages = [
+            {"role": message.get("role"), "content": message.get("content")}
+            for message in messages[:user_index]
+            if message.get("role") in {"user", "assistant"} and message.get("content")
+        ]
+        question = str(messages[user_index].get("content") or "")
+        ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
+        try:
+            result = await answer_question(
+                config,
+                question,
+                items,
+                conversation_messages=previous_messages,
+                system_prompt=ask_system_prompt,
+            )
+        except AIProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        updated = replace_ask_message(config.db_path, conversation_id, message_id, str(result.get("answer") or ""))
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        updated["context_source"] = context_source
+        updated["context_item_count"] = len(items)
+        return updated
 
     @app.get("/api/settings")
     def read_settings(session: dict = Depends(require_session)) -> dict:
