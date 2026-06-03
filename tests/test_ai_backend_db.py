@@ -23,6 +23,7 @@ def test_init_db_creates_required_tables(tmp_path):
         "verification_results",
         "source_scores",
         "ask_conversations",
+        "ask_messages",
     }.issubset(tables)
 
 

@@ -1457,7 +1457,72 @@ body.ask-ai-open {
   font-size: 14px;
   line-height: 1.65;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.ask-ai-bubble p,
+.ask-ai-bubble ul,
+.ask-ai-bubble ol,
+.ask-ai-bubble pre,
+.ask-ai-bubble h1,
+.ask-ai-bubble h2,
+.ask-ai-bubble h3 {
+  margin: 0 0 8px;
+}
+
+.ask-ai-bubble p:last-child,
+.ask-ai-bubble ul:last-child,
+.ask-ai-bubble ol:last-child,
+.ask-ai-bubble pre:last-child,
+.ask-ai-bubble h1:last-child,
+.ask-ai-bubble h2:last-child,
+.ask-ai-bubble h3:last-child {
+  margin-bottom: 0;
+}
+
+.ask-ai-bubble h1,
+.ask-ai-bubble h2,
+.ask-ai-bubble h3 {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.ask-ai-bubble ul,
+.ask-ai-bubble ol {
+  padding-left: 18px;
+}
+
+.ask-ai-bubble li + li {
+  margin-top: 4px;
+}
+
+.ask-ai-bubble code {
+  border: 1px solid rgba(18, 106, 115, 0.16);
+  border-radius: 5px;
+  padding: 1px 4px;
+  background: rgba(18, 106, 115, 0.07);
+  font-size: 0.92em;
+}
+
+.ask-ai-bubble pre {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  background: #202421;
+  color: #f2f6f1;
+}
+
+.ask-ai-bubble pre code {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.ask-ai-bubble a {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .ask-ai-message.user .ask-ai-bubble {

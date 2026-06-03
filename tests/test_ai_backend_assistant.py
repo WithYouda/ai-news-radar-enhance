@@ -22,6 +22,23 @@ def test_build_ask_messages_keeps_user_question():
     assert "这条有一手来源吗" in messages[-1]["content"]
 
 
+def test_build_ask_messages_includes_previous_thread_turns():
+    messages = build_ask_messages(
+        "它和 API 有关系吗？",
+        "[1] OpenAI API update | OpenAI | https://example.com/api",
+        conversation_messages=[
+            {"role": "user", "content": "今天 OpenAI 有什么？"},
+            {"role": "assistant", "content": "OpenAI 发布了模型更新。"},
+        ],
+    )
+
+    assert messages[1:3] == [
+        {"role": "user", "content": "今天 OpenAI 有什么？"},
+        {"role": "assistant", "content": "OpenAI 发布了模型更新。"},
+    ]
+    assert "它和 API 有关系吗" in messages[-1]["content"]
+
+
 def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
     config = AppConfig(
         public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
@@ -40,11 +57,35 @@ def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
 
     class FakeProvider:
         async def chat(self, messages, temperature=0.2):
-            return "answer"
+            return '{"title":"OpenAI 重点","answer":"answer"}'
 
     result = anyio.run(answer_question, config, "OpenAI?", items, FakeProvider())
 
+    assert result["answer"] == "answer"
+    assert result["title"] == "OpenAI 重点"
     assert result["citations"] == []
+
+
+def test_answer_question_falls_back_when_provider_returns_plain_markdown(tmp_path):
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+
+    class FakeProvider:
+        async def chat(self, messages, temperature=0.2):
+            return "## 重点\n\n- API 更新"
+
+    result = anyio.run(answer_question, config, "OpenAI?", [], FakeProvider())
+
+    assert result["answer"] == "## 重点\n\n- API 更新"
+    assert result["title"] == "重点 - API 更新"
 
 
 def test_answer_question_filters_citations_to_question_matches(tmp_path):

@@ -44,6 +44,7 @@ const state = {
   taxonomy: [],
   verificationPayload: null,
   askContext: {},
+  activeConversationId: null,
   askHistoryLoaded: false,
   askHistoryVisible: false,
   waytoagiData: null,
@@ -249,6 +250,7 @@ function askScopeLabel(scope) {
 function openAskAi(extraContext = {}) {
   if (!askAiSheetEl) return;
   state.askContext = extraContext;
+  state.activeConversationId = null;
   const scope = currentAskScope();
   if (askAiContextEl) askAiContextEl.textContent = askScopeLabel(scope.scope);
   if (askAiAnswerEl) {
@@ -268,6 +270,68 @@ function closeAskAi() {
   document.body.classList.remove("ask-ai-open");
 }
 
+function escapeHtml(text) {
+  return String(text || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function renderMarkdown(text) {
+  const blocks = [];
+  const source = String(text || "");
+  const parts = source.split(/```/);
+  parts.forEach((part, index) => {
+    if (index % 2 === 1) {
+      const code = part.replace(/^[a-zA-Z0-9_-]+\n/, "");
+      blocks.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+      return;
+    }
+    const lines = part.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    let listItems = [];
+    let listType = "ul";
+    const flushList = () => {
+      if (!listItems.length) return;
+      blocks.push(`<${listType}>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${listType}>`);
+      listItems = [];
+    };
+    lines.forEach((line) => {
+      const heading = line.match(/^(#{1,3})\s+(.+)$/);
+      const bullet = line.match(/^[-*+]\s+(.+)$/);
+      const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+      if (heading) {
+        flushList();
+        const level = Math.min(heading[1].length, 3);
+        blocks.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      } else if (bullet || ordered) {
+        const nextType = ordered ? "ol" : "ul";
+        if (listItems.length && listType !== nextType) flushList();
+        listType = nextType;
+        listItems.push((bullet || ordered)[1]);
+      } else {
+        flushList();
+        blocks.push(`<p>${renderInlineMarkdown(line)}</p>`);
+      }
+    });
+    flushList();
+  });
+  return blocks.join("") || "<p>没有返回答案。</p>";
+}
+
+function askHistoryRow(conversationId) {
+  return Array.from(askAiHistoryListEl?.querySelectorAll(".ask-ai-history-item") || [])
+    .find((row) => row.dataset.conversationId === conversationId) || null;
+}
+
 function appendAskMessage(role, text, options = {}) {
   if (!askAiAnswerEl) return null;
   const row = document.createElement("div");
@@ -275,7 +339,7 @@ function appendAskMessage(role, text, options = {}) {
   if (options.pending) row.classList.add("pending");
   const bubble = document.createElement("div");
   bubble.className = "ask-ai-bubble";
-  bubble.textContent = text;
+  bubble.innerHTML = renderMarkdown(text);
   row.appendChild(bubble);
   askAiAnswerEl.appendChild(row);
   askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
@@ -286,11 +350,18 @@ function renderAskConversation(payload, questionText = "") {
   if (!askAiAnswerEl) return;
   askAiAnswerEl.hidden = false;
   askAiAnswerEl.innerHTML = "";
-  const question = questionText || payload?.question || "";
-  if (question) {
-    appendAskMessage("user", question);
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  if (messages.length) {
+    messages.forEach((message) => {
+      appendAskMessage(message.role === "assistant" ? "ai" : "user", message.content || "");
+    });
+  } else {
+    const question = questionText || payload?.question || "";
+    if (question) {
+      appendAskMessage("user", question);
+    }
+    appendAskMessage("ai", payload?.answer || "没有返回答案。");
   }
-  appendAskMessage("ai", payload?.answer || "没有返回答案。");
   askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
 }
 
@@ -337,7 +408,7 @@ function renderAskHistory(payload) {
 
     const question = document.createElement("span");
     question.className = "ask-ai-history-question";
-    question.textContent = item.question || "未命名问题";
+    question.textContent = item.title || "未命名对话";
     openButton.appendChild(question);
 
     const preview = document.createElement("span");
@@ -398,6 +469,7 @@ async function loadAskHistoryDetail(conversationId) {
   }
   try {
     const payload = await apiFetch(`/api/ask/history/${conversationId}`);
+    state.activeConversationId = payload.conversation_id || conversationId;
     if (askAiInputEl) askAiInputEl.value = "";
     if (askAiContextEl) {
       askAiContextEl.textContent = Array.isArray(payload.labels) && payload.labels.length ? payload.labels.join(" · ") : "历史";
@@ -408,13 +480,33 @@ async function loadAskHistoryDetail(conversationId) {
   }
 }
 
+function removeAskHistoryRow(conversationId) {
+  const row = askHistoryRow(conversationId);
+  if (row) row.remove();
+  const rows = askAiHistoryListEl?.querySelectorAll(".ask-ai-history-item") || [];
+  const count = askAiHistoryListEl?.querySelector(".ask-ai-history-head span");
+  if (count) count.textContent = `${rows.length} 条`;
+  if (!rows.length && askAiHistoryListEl && !askAiHistoryListEl.querySelector(".ask-ai-history-empty")) {
+    const empty = document.createElement("div");
+    empty.className = "ask-ai-history-empty";
+    empty.textContent = "暂无对话记录。";
+    askAiHistoryListEl.appendChild(empty);
+  }
+}
+
 async function deleteAskHistoryItem(conversationId) {
   if (!conversationId) return;
+  const deleteButton = askHistoryRow(conversationId)?.querySelector(".ask-ai-history-delete");
+  if (deleteButton) deleteButton.disabled = true;
   try {
     await apiFetch(`/api/ask/history/${conversationId}`, { method: "DELETE" });
-    state.askHistoryLoaded = false;
-    await loadAskHistory(true);
+    removeAskHistoryRow(conversationId);
+    if (state.activeConversationId === conversationId) {
+      state.activeConversationId = null;
+      if (askAiAnswerEl) askAiAnswerEl.innerHTML = "";
+    }
   } catch (err) {
+    if (deleteButton) deleteButton.disabled = false;
     if (askAiHistoryListEl) askAiHistoryListEl.textContent = err.message || "删除失败。";
   }
 }
@@ -447,8 +539,9 @@ async function submitAskAi() {
   try {
     const payload = await apiFetch("/api/ask", {
       method: "POST",
-      body: JSON.stringify({ question, ...currentAskScope() }),
+      body: JSON.stringify({ question, conversation_id: state.activeConversationId, ...currentAskScope() }),
     });
+    state.activeConversationId = payload?.conversation_id || state.activeConversationId;
     renderAskAnswer(payload);
     askAiInputEl.value = "";
     if (payload?.history_saved) {

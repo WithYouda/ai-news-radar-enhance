@@ -67,6 +67,7 @@ create table if not exists source_scores (
 
 create table if not exists ask_conversations (
   conversation_id text primary key,
+  title text not null default '新的对话',
   question text not null,
   answer text not null,
   scope text not null,
@@ -79,6 +80,18 @@ create table if not exists ask_conversations (
   created_at text not null,
   updated_at text not null
 );
+
+create table if not exists ask_messages (
+  id integer primary key autoincrement,
+  conversation_id text not null,
+  role text not null,
+  content text not null,
+  created_at text not null,
+  foreign key(conversation_id) references ask_conversations(conversation_id) on delete cascade
+);
+
+create index if not exists idx_ask_messages_conversation_id
+on ask_messages(conversation_id, id);
 """
 
 
@@ -93,3 +106,9 @@ def connect_db(db_path: str | Path) -> sqlite3.Connection:
 def init_db(db_path: str | Path) -> None:
     with connect_db(db_path) as conn:
         conn.executescript(SCHEMA)
+        columns = {
+            row["name"]
+            for row in conn.execute("pragma table_info(ask_conversations)").fetchall()
+        }
+        if "title" not in columns:
+            conn.execute("alter table ask_conversations add column title text not null default '新的对话'")

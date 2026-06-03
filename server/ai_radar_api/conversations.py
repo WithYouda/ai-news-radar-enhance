@@ -35,6 +35,13 @@ def _answer_preview(answer: str, limit: int = 96) -> str:
     return f"{compact[: limit - 1]}..."
 
 
+def _conversation_title(title: str | None, answer: str) -> str:
+    compact = " ".join(str(title or "").split())
+    if compact:
+        return compact[:64]
+    return _answer_preview(answer, limit=40) or "新的对话"
+
+
 def build_ask_labels(scope_payload: dict) -> list[str]:
     scope = str(scope_payload.get("scope") or "today")
     question = str(scope_payload.get("question") or "")
@@ -67,6 +74,7 @@ def build_ask_labels(scope_payload: dict) -> list[str]:
 def _row_to_record(row, include_answer: bool = True) -> dict:
     record = {
         "conversation_id": row["conversation_id"],
+        "title": row["title"],
         "question": row["question"],
         "scope": row["scope"],
         "scope_payload": _json_loads(row["scope_json"], {}),
@@ -85,11 +93,29 @@ def _row_to_record(row, include_answer: bool = True) -> dict:
     return record
 
 
+def _message_rows(conn, conversation_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        select role, content, created_at
+        from ask_messages
+        where conversation_id = ?
+        order by id asc
+        """,
+        (conversation_id,),
+    ).fetchall()
+    return [
+        {"role": row["role"], "content": row["content"], "created_at": row["created_at"]}
+        for row in rows
+    ]
+
+
 def store_ask_conversation(
     db_path: str | Path,
     *,
+    conversation_id: str | None = None,
     question: str,
     answer: str,
+    title: str | None = None,
     scope_payload: dict,
     citations: list[dict],
     model: str,
@@ -97,33 +123,77 @@ def store_ask_conversation(
     context_item_count: int,
 ) -> dict:
     now = _now()
-    conversation_id = uuid4().hex
+    conversation_id = conversation_id or uuid4().hex
     stored_scope = {**scope_payload, "question": question}
     labels = build_ask_labels(stored_scope)
     scope = str(scope_payload.get("scope") or "today")
+    display_title = _conversation_title(title, answer)
 
     with connect_db(db_path) as conn:
-        conn.execute(
-            """
-            insert into ask_conversations(
-              conversation_id, question, answer, scope, scope_json, labels_json,
-              citations_json, model, context_source, context_item_count, created_at, updated_at
+        existing = conn.execute(
+            "select conversation_id from ask_conversations where conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+        is_append = bool(existing)
+        if is_append:
+            stored_scope["parent_conversation_id"] = conversation_id
+            labels = build_ask_labels(stored_scope)
+            conn.execute(
+                """
+                update ask_conversations
+                set title = ?, question = ?, answer = ?, scope = ?, scope_json = ?,
+                    labels_json = ?, citations_json = ?, model = ?, context_source = ?,
+                    context_item_count = ?, updated_at = ?
+                where conversation_id = ?
+                """,
+                (
+                    display_title,
+                    question,
+                    answer,
+                    scope,
+                    json.dumps(stored_scope, ensure_ascii=False),
+                    json.dumps(labels, ensure_ascii=False),
+                    json.dumps(citations, ensure_ascii=False),
+                    model,
+                    context_source,
+                    int(context_item_count),
+                    now,
+                    conversation_id,
+                ),
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        else:
+            conn.execute(
+                """
+                insert into ask_conversations(
+                  conversation_id, title, question, answer, scope, scope_json, labels_json,
+                  citations_json, model, context_source, context_item_count, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    display_title,
+                    question,
+                    answer,
+                    scope,
+                    json.dumps(stored_scope, ensure_ascii=False),
+                    json.dumps(labels, ensure_ascii=False),
+                    json.dumps(citations, ensure_ascii=False),
+                    model,
+                    context_source,
+                    int(context_item_count),
+                    now,
+                    now,
+                ),
+            )
+        conn.executemany(
+            """
+            insert into ask_messages(conversation_id, role, content, created_at)
+            values (?, ?, ?, ?)
             """,
             (
-                conversation_id,
-                question,
-                answer,
-                scope,
-                json.dumps(stored_scope, ensure_ascii=False),
-                json.dumps(labels, ensure_ascii=False),
-                json.dumps(citations, ensure_ascii=False),
-                model,
-                context_source,
-                int(context_item_count),
-                now,
-                now,
+                (conversation_id, "user", question, now),
+                (conversation_id, "assistant", answer, now),
             ),
         )
 
@@ -137,10 +207,10 @@ def list_ask_conversations(db_path: str | Path, limit: int = 50) -> dict:
     with connect_db(db_path) as conn:
         rows = conn.execute(
             """
-            select conversation_id, question, answer, scope, scope_json, labels_json,
+            select conversation_id, title, question, answer, scope, scope_json, labels_json,
                    citations_json, model, context_source, context_item_count, created_at, updated_at
             from ask_conversations
-            order by created_at desc
+            order by updated_at desc
             limit ?
             """,
             (int(limit),),
@@ -152,17 +222,28 @@ def get_ask_conversation(db_path: str | Path, conversation_id: str) -> dict | No
     with connect_db(db_path) as conn:
         row = conn.execute(
             """
-            select conversation_id, question, answer, scope, scope_json, labels_json,
+            select conversation_id, title, question, answer, scope, scope_json, labels_json,
                    citations_json, model, context_source, context_item_count, created_at, updated_at
             from ask_conversations
             where conversation_id = ?
             """,
             (conversation_id,),
         ).fetchone()
-    return _row_to_record(row) if row else None
+        if not row:
+            return None
+        record = _row_to_record(row)
+        messages = _message_rows(conn, conversation_id)
+        if not messages:
+            messages = [
+                {"role": "user", "content": record["question"], "created_at": record["created_at"]},
+                {"role": "assistant", "content": record["answer"], "created_at": record["updated_at"]},
+            ]
+        record["messages"] = messages
+        return record
 
 
 def delete_ask_conversation(db_path: str | Path, conversation_id: str) -> bool:
     with connect_db(db_path) as conn:
+        conn.execute("delete from ask_messages where conversation_id = ?", (conversation_id,))
         cursor = conn.execute("delete from ask_conversations where conversation_id = ?", (conversation_id,))
     return cursor.rowcount > 0

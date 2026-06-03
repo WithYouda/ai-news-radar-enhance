@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 from .config import AppConfig
@@ -7,8 +8,8 @@ from .provider import AIProvider
 from .radar_data import build_context, rank_context_items
 
 
-def build_ask_messages(question: str, context: str) -> list[dict]:
-    return [
+def build_ask_messages(question: str, context: str, conversation_messages: list[dict] | None = None) -> list[dict]:
+    messages = [
         {
             "role": "system",
             "content": (
@@ -16,13 +17,58 @@ def build_ask_messages(question: str, context: str) -> list[dict]:
                 "先识别用户问题中的主体、公司、产品或分类，只使用和问题直接相关的上下文。"
                 "不要在回答末尾追加链接列表、推荐链接或无关链接。"
                 "如果证据不足或不知道，请明确说不知道或信息不足。"
+                "回答必须是 JSON 对象，字段为 title 和 answer。"
+                "title 是 8 到 18 个中文字符的对话标题，由你根据本轮回答生成，不要照抄用户问题。"
+                "answer 可以使用 Markdown。"
             ),
         },
+    ]
+    for message in conversation_messages or []:
+        role = message.get("role")
+        content = str(message.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+    messages.append(
         {
             "role": "user",
             "content": f"问题：{question}\n\n上下文：\n{context}",
-        },
-    ]
+        }
+    )
+    return messages
+
+
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.S)
+    return match.group(1).strip() if match else stripped
+
+
+def _fallback_title(answer: str) -> str:
+    lines = []
+    for raw in str(answer or "").splitlines():
+        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", raw).strip()
+        line = re.sub(r"^\s*[-*+]\s+", "", line).strip()
+        line = re.sub(r"^\s*\d+[.)]\s+", "", line).strip()
+        line = re.sub(r"[*_`>\[\]()]+", "", line).strip()
+        if line:
+            lines.append(line)
+        if len(lines) >= 2:
+            break
+    title = " - ".join(lines) if lines else "新的 AI 对话"
+    return title[:64]
+
+
+def parse_answer_payload(raw: str) -> tuple[str, str]:
+    stripped = _strip_json_fence(raw)
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return raw, _fallback_title(raw)
+    if not isinstance(payload, dict):
+        return raw, _fallback_title(raw)
+    answer = str(payload.get("answer") or "").strip() or raw
+    title = str(payload.get("title") or "").strip() or _fallback_title(answer)
+    return answer, title[:64]
 
 
 def _question_keywords(question: str) -> set[str]:
@@ -60,14 +106,17 @@ async def answer_question(
     question: str,
     items: list[dict],
     provider: AIProvider | None = None,
+    conversation_messages: list[dict] | None = None,
 ) -> dict:
     provider = provider or AIProvider(config)
     ranked_items = relevant_context_items(items, question)
     context = build_context(ranked_items, question=question, max_items=config.max_context_items)
-    messages = build_ask_messages(question, context)
-    answer = await provider.chat(messages, temperature=0.2)
+    messages = build_ask_messages(question, context, conversation_messages=conversation_messages)
+    raw_answer = await provider.chat(messages, temperature=0.2)
+    answer, title = parse_answer_payload(raw_answer)
     return {
         "answer": answer,
+        "title": title,
         "citations": [],
         "model": config.ai_model,
     }

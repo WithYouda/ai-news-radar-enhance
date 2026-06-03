@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a5" in html
+    assert "./assets/styles.css?v=ask-chat-a6" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a5" in html
+    assert "./assets/app.js?v=ask-chat-a6" in html
 
 
 def test_category_view_contract_exists():
@@ -130,6 +130,23 @@ def test_ask_ai_continues_thread_and_hides_final_link_recommendations():
     assert "renderAskConversation({ answer: \"正在整理上下文...\" }, questionText)" not in js
     assert "appendAskCitations" not in js
     assert ".ask-ai-citations" not in css
+
+
+def test_ask_ai_contract_renders_markdown_and_reuses_loaded_conversation_id():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "renderMarkdown" in js
+    assert "bubble.innerHTML = renderMarkdown(text)" in js
+    assert "state.activeConversationId" in js
+    assert "conversation_id: state.activeConversationId" in js
+    assert ".ask-ai-bubble h1" in css
+    assert ".ask-ai-bubble code" in css
+
+
+def test_ask_ai_history_delete_updates_list_without_loading_flash():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "removeAskHistoryRow(conversationId)" in js
+    assert "await loadAskHistory(true)" not in js
 
 
 def test_settings_view_contract_exists():

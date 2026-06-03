@@ -58,6 +58,7 @@ class AskRequest(BaseModel):
     scope: str = "today"
     item_id: str | None = None
     category: str | None = None
+    conversation_id: str | None = None
 
 
 def item_matches_category(item: dict, category: str) -> bool:
@@ -311,7 +312,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if payload.category:
             items = [item for item in items if item_matches_category(item, payload.category)]
         try:
-            result = await answer_question(config, payload.question, items)
+            existing_conversation = get_ask_conversation(config.db_path, payload.conversation_id) if payload.conversation_id else None
+            conversation_messages = [
+                {"role": message.get("role"), "content": message.get("content")}
+                for message in (existing_conversation or {}).get("messages", [])
+                if message.get("role") in {"user", "assistant"} and message.get("content")
+            ]
+            if conversation_messages:
+                result = await answer_question(
+                    config,
+                    payload.question,
+                    items,
+                    conversation_messages=conversation_messages,
+                )
+            else:
+                result = await answer_question(config, payload.question, items)
             result["context_item_count"] = len(items)
             result["context_source"] = context_source
             scope_payload = {
@@ -324,8 +339,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             try:
                 conversation = store_ask_conversation(
                     config.db_path,
+                    conversation_id=payload.conversation_id if existing_conversation else None,
                     question=payload.question,
                     answer=str(result.get("answer") or ""),
+                    title=str(result.get("title") or ""),
                     scope_payload=scope_payload,
                     citations=list(result.get("citations") or []),
                     model=str(result.get("model") or config.ai_model),
