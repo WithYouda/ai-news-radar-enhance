@@ -1667,11 +1667,35 @@ function cleanedTextForTranslation() {
   return text.replace(/\s+/g, " ").slice(0, 4800);
 }
 
+async function requestCleanTextTranslation(text, sourceLanguage) {
+  const payload = await apiFetch("/api/translate", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      source_language: sourceLanguage || "auto",
+    }),
+  });
+  return String(payload.translation || "").trim();
+}
+
+function renderTranslatedReaderArticle(translatedText) {
+  if (!readerBodyEl) return;
+  const blocks = String(translatedText || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  readerBodyEl.innerHTML = blocks.length
+    ? blocks.map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`).join("")
+    : "<p>未能生成译文。</p>";
+  readerBodyEl.lang = "zh";
+}
+
 async function translateReaderArticle() {
   if (!readerBodyEl || !readerTranslateButtonEl) return;
   const sourceLanguage = state.readerArticle?.language || readerBodyEl.lang || "en";
   readerBodyEl.setAttribute("translate", "yes");
   readerTranslateButtonEl.disabled = true;
+  readerTranslateButtonEl.textContent = "翻译中";
   const translatorAvailable = window.Translator?.availability
     ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
     : "unknown";
@@ -1690,15 +1714,18 @@ async function translateReaderArticle() {
       readerTranslateButtonEl.textContent = "已翻译";
       return;
     } catch (_) {
-      // Fall through to the browser-level translation hint.
+      // Fall through to the server-side cleaned-text translator.
     }
   }
-  document.documentElement.setAttribute("translate", "yes");
-  const translateText = cleanedTextForTranslation();
-  const translateUrl = `https://translate.google.com/?sl=auto&tl=zh-CN&text=${encodeURIComponent(translateText)}&op=translate`;
-  window.open(translateUrl, "_blank", "noopener,noreferrer");
-  readerTranslateButtonEl.textContent = "已打开翻译";
-  readerTranslateButtonEl.disabled = false;
+  try {
+    const translatedText = await requestCleanTextTranslation(cleanedTextForTranslation(), sourceLanguage);
+    renderTranslatedReaderArticle(translatedText);
+    readerTranslateButtonEl.textContent = "已翻译";
+  } catch (err) {
+    readerTranslateButtonEl.textContent = "翻译失败";
+    readerTranslateButtonEl.title = err.message || "翻译失败";
+    readerTranslateButtonEl.disabled = false;
+  }
 }
 
 async function loadCleanArticle(item) {

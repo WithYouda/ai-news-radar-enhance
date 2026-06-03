@@ -117,6 +117,36 @@ def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
     assert client.get("/api/ask/history").json()["items"] == []
 
 
+def test_translate_endpoint_uses_cleaned_article_text(monkeypatch, tmp_path):
+    captured = {}
+
+    async def fake_translate_clean_text(config, text, source_language="auto"):
+        captured["text"] = text
+        captured["source_language"] = source_language
+        return "这是一段站内翻译。"
+
+    monkeypatch.setattr("server.ai_radar_api.main.translate_clean_text", fake_translate_clean_text)
+
+    client = make_client(tmp_path)
+    login(client)
+
+    res = client.post(
+        "/api/translate",
+        json={
+            "text": "Cleaned article body only, without sending the original URL.",
+            "source_language": "en",
+            "url": "https://publisher.example/original",
+        },
+    )
+
+    assert res.status_code == 200
+    assert captured == {
+        "text": "Cleaned article body only, without sending the original URL.",
+        "source_language": "en",
+    }
+    assert res.json()["translation"] == "这是一段站内翻译。"
+
+
 def test_ask_appends_existing_conversation_and_sends_history_to_ai(monkeypatch, tmp_path):
     captured = []
 

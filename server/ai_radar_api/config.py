@@ -24,6 +24,7 @@ class AppConfig:
     deep_verify_top_n: int = 3
     data_dir: Path = Path("data")
     data_cache_dir: Path = Path("server/data/cache")
+    prefer_remote_data: bool = False
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -46,4 +47,5 @@ class AppConfig:
             deep_verify_top_n=int(os.getenv("RADAR_DEEP_VERIFY_TOP_N", "3")),
             data_dir=Path(os.getenv("RADAR_DATA_DIR", "data")),
             data_cache_dir=Path(os.getenv("RADAR_DATA_CACHE_DIR", "server/data/cache")),
+            prefer_remote_data=os.getenv("RADAR_PREFER_REMOTE_DATA", "").strip().lower() in {"1", "true", "yes", "on"},
         )
