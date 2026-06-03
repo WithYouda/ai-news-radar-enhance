@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from server.ai_radar_api.article_reader import extract_article_from_html
+from server.ai_radar_api.article_reader import extract_article_from_html, store_article
 from server.ai_radar_api.config import AppConfig
 from server.ai_radar_api.main import create_app
 from server.ai_radar_api.radar_data import item_identity
@@ -70,6 +70,34 @@ def test_extract_article_from_html_removes_chrome_and_keeps_readable_body():
     assert 'href="https://example.com/docs"' in payload["content_html"]
 
 
+def test_extract_article_filters_signup_noise_and_marks_restricted_access():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <h1>Important AI Platform Change</h1>
+              <p>Sign up for our daily newsletter to continue reading premium updates.</p>
+              <p>Log in or create an account to save this story.</p>
+              <p>The company released a major platform update with new agent controls, pricing changes, and API behavior that developers need to understand before they migrate production workloads.</p>
+              <p>Subscribe to continue reading this members-only analysis.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/platform-change",
+        fallback_title="Important AI Platform Change",
+    )
+
+    assert "Sign up for our daily newsletter" not in payload["text"]
+    assert "Log in or create an account" not in payload["text"]
+    assert "major platform update" in payload["text"]
+    assert payload["access_status"] == "restricted"
+    assert payload["access_label"] == "可能需要登录/订阅"
+    assert payload["language"] == "en"
+    assert payload["translation_available"] is True
+
+
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     calls = 0
@@ -114,3 +142,42 @@ def test_read_article_endpoint_rejects_unknown_item(tmp_path):
     res = client.get("/api/read/not-a-known-item")
 
     assert res.status_code == 404
+
+
+def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_path):
+    captured = {}
+    config, item = _config(tmp_path)
+    client = TestClient(create_app(config), base_url="https://testserver")
+    client.post("/api/auth/login", json={"password": "pass"})
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": "Clean cached article",
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "Clean article excerpt",
+            "text": "Clean article body explains the first question context in detail.",
+            "content_html": "<p>Clean article body explains the first question context in detail.</p>",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([item], "local")
+
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+        captured["item"] = items[0]
+        return {"answer": "ok", "title": "正文上下文", "citations": [], "model": config.ai_model}
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    res = client.post("/api/ask", json={"question": "这篇文章说了什么？", "scope": "today", "item_id": identity})
+
+    assert res.status_code == 200
+    assert captured["item"]["article_text"] == "Clean article body explains the first question context in detail."

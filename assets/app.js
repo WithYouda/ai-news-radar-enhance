@@ -56,6 +56,7 @@ const state = {
   askHistoryLoaded: false,
   askHistoryVisible: false,
   readerItem: null,
+  readerArticle: null,
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -119,6 +120,8 @@ const readerSourceEl = document.getElementById("readerSource");
 const readerBodyEl = document.getElementById("readerBody");
 const readerOriginalLinkEl = document.getElementById("readerOriginalLink");
 const readerAskButtonEl = document.getElementById("readerAskButton");
+const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
+const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -1437,19 +1440,32 @@ function closeReader() {
 }
 
 function renderReaderLoading(item) {
+  state.readerArticle = null;
   if (readerTitleEl) readerTitleEl.textContent = itemTitleText(item);
   if (readerSourceEl) readerSourceEl.textContent = item.site_name || item.source || "AI News Radar";
   if (readerOriginalLinkEl) {
     readerOriginalLinkEl.href = item.url || "#";
     readerOriginalLinkEl.hidden = !item.url;
   }
+  if (readerTranslateButtonEl) {
+    readerTranslateButtonEl.hidden = true;
+    readerTranslateButtonEl.disabled = false;
+    readerTranslateButtonEl.textContent = "翻译";
+  }
+  if (readerAccessBadgeEl) {
+    readerAccessBadgeEl.hidden = true;
+    readerAccessBadgeEl.textContent = "";
+  }
   if (readerBodyEl) {
     readerBodyEl.innerHTML = '<div class="reader-state">正在清洗原文...</div>';
+    readerBodyEl.lang = "";
+    readerBodyEl.setAttribute("translate", "yes");
   }
 }
 
 function renderReaderArticle(payload) {
   if (!readerBodyEl) return;
+  state.readerArticle = payload;
   if (readerTitleEl) readerTitleEl.textContent = payload.title || itemTitleText(payload.item || {});
   if (readerSourceEl) {
     const meta = [payload.site_name, payload.published_at ? fmtTime(payload.published_at) : "", payload.cache_status === "hit" ? "已缓存" : "新抓取"]
@@ -1458,7 +1474,47 @@ function renderReaderArticle(payload) {
     readerSourceEl.textContent = meta || "AI News Radar";
   }
   if (readerOriginalLinkEl) readerOriginalLinkEl.href = payload.final_url || payload.url || "#";
+  if (readerTranslateButtonEl) {
+    readerTranslateButtonEl.hidden = !payload.translation_available;
+    readerTranslateButtonEl.disabled = false;
+    readerTranslateButtonEl.textContent = "翻译";
+  }
+  if (readerAccessBadgeEl) {
+    readerAccessBadgeEl.hidden = payload.access_status !== "restricted";
+    readerAccessBadgeEl.textContent = payload.access_label || "可能需要登录/订阅";
+  }
+  readerBodyEl.lang = payload.language || "";
+  readerBodyEl.setAttribute("translate", "yes");
   readerBodyEl.innerHTML = payload.content_html || `<p>${escapeHtml(payload.text || "未能提取正文。")}</p>`;
+}
+
+async function translateReaderArticle() {
+  if (!readerBodyEl || !readerTranslateButtonEl) return;
+  const sourceLanguage = state.readerArticle?.language || readerBodyEl.lang || "en";
+  readerBodyEl.setAttribute("translate", "yes");
+  readerTranslateButtonEl.disabled = true;
+  if (window.Translator?.create) {
+    try {
+      const translator = await window.Translator.create({
+        sourceLanguage,
+        targetLanguage: "zh",
+      });
+      const nodes = Array.from(readerBodyEl.querySelectorAll("h2, h3, p, li, blockquote"))
+        .filter((node) => node.textContent.trim());
+      for (const node of nodes) {
+        node.textContent = await translator.translate(node.textContent);
+      }
+      readerBodyEl.lang = "zh";
+      readerTranslateButtonEl.textContent = "已翻译";
+      return;
+    } catch (_) {
+      // Fall through to the browser-level translation hint.
+    }
+  }
+  document.documentElement.setAttribute("translate", "yes");
+  readerBodyEl.focus?.();
+  readerTranslateButtonEl.textContent = "浏览器翻译";
+  readerTranslateButtonEl.disabled = false;
 }
 
 async function loadCleanArticle(item) {
@@ -2384,6 +2440,7 @@ if (askAiButtonEl) {
 }
 
 if (readerCloseEl) readerCloseEl.addEventListener("click", closeReader);
+if (readerTranslateButtonEl) readerTranslateButtonEl.addEventListener("click", translateReaderArticle);
 if (readerAskButtonEl) {
   readerAskButtonEl.addEventListener("click", async () => {
     const item = state.readerItem || {};

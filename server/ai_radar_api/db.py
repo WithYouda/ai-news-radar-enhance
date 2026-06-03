@@ -101,6 +101,9 @@ create table if not exists article_cache (
   site_name text,
   byline text,
   published_at text,
+  language text not null default 'unknown',
+  access_status text not null default 'open',
+  access_label text not null default '',
   excerpt text not null,
   text text not null,
   content_html text not null,
@@ -129,3 +132,13 @@ def init_db(db_path: str | Path) -> None:
         }
         if "title" not in columns:
             conn.execute("alter table ask_conversations add column title text not null default '新的对话'")
+        article_columns = {
+            row["name"]
+            for row in conn.execute("pragma table_info(article_cache)").fetchall()
+        }
+        if "language" not in article_columns:
+            conn.execute("alter table article_cache add column language text not null default 'unknown'")
+        if "access_status" not in article_columns:
+            conn.execute("alter table article_cache add column access_status text not null default 'open'")
+        if "access_label" not in article_columns:
+            conn.execute("alter table article_cache add column access_label text not null default ''")

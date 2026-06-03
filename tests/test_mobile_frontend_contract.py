@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=reader-mvp-01" in html
+    assert "./assets/styles.css?v=reader-mvp-03" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=reader-mvp-01" in html
+    assert "./assets/app.js?v=reader-mvp-03" in html
 
 
 def test_category_view_contract_exists():
@@ -253,13 +253,19 @@ def test_clean_reader_contract_exists_for_news_cards():
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
     assert 'id="readerSheet"' in html
     assert 'id="readerBody"' in html
+    assert 'id="readerTranslateButton"' in html
+    assert 'id="readerAccessBadge"' in html
     assert "openReader(item)" in js
     assert "loadCleanArticle" in js
+    assert "translateReaderArticle" in js
+    assert "Translator.create" in js
+    assert 'translate="yes"' in html
     assert "/api/read/" in js
     assert "sha1Hex" in js
     assert "reader-action" in js
     assert ".reader-sheet" in css
     assert ".reader-article" in css
+    assert ".reader-access-badge" in css
     assert "body.reader-open" in css
 
 

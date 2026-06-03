@@ -161,6 +161,10 @@ def build_context(items: list[dict], question: str, max_items: int = 40) -> str:
         if when:
             parts.append(f"time={when}")
         lines.append(" | ".join(str(part) for part in parts if part))
+        article_text = str(item.get("article_text") or "").strip()
+        if article_text:
+            excerpt = re.sub(r"\s+", " ", article_text)[:4000]
+            lines.append(f"正文摘录[{index}]: {excerpt}")
     return "\n".join(lines)
 
 

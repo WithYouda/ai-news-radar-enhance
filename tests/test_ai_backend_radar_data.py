@@ -38,6 +38,23 @@ def test_build_context_limits_and_cites_items():
     assert "Low signal" not in context
 
 
+def test_build_context_includes_clean_article_excerpt_when_available():
+    items = [
+        {
+            "title": "OpenAI ships model",
+            "url": "https://example.com/a",
+            "ai_score": 0.9,
+            "site_name": "OpenAI",
+            "article_text": "Clean article body with details that were extracted from the original page.",
+        },
+    ]
+
+    context = build_context(items, question="这篇文章说了什么？", max_items=1)
+
+    assert "正文摘录[1]" in context
+    assert "Clean article body with details" in context
+
+
 def test_merge_item_metadata_adds_classification_and_verification():
     item = {"title": "A", "url": "https://example.com/a"}
     merged = merge_item_metadata(

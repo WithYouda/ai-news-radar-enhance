@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=reader-mvp-01" />
+    <link rel="stylesheet" href="./assets/styles.css?v=reader-mvp-03" />
   </head>
   <body>
     <main class="shell">
@@ -182,9 +182,11 @@
         </header>
         <div class="reader-toolbar">
           <a id="readerOriginalLink" href="#" target="_blank" rel="noopener noreferrer">原文</a>
+          <button id="readerTranslateButton" type="button" hidden>翻译</button>
           <button id="readerAskButton" type="button">问 AI</button>
+          <span id="readerAccessBadge" class="reader-access-badge" hidden></span>
         </div>
-        <article id="readerBody" class="reader-article"></article>
+        <article id="readerBody" class="reader-article" translate="yes"></article>
       </div>
     </section>
 
@@ -239,7 +241,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=reader-mvp-01" defer></script>
+    <script src="./assets/app.js?v=reader-mvp-03" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

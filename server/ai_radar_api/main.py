@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .article_reader import fetch_clean_article, find_news_item
+from .article_reader import cached_article, fetch_clean_article, find_news_item
 from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
@@ -118,6 +118,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if category:
             items = [item for item in items if item_matches_category(item, str(category))]
         return items, context_source
+
+    def attach_clean_article_context(scope_payload: dict, items: list[dict]) -> list[dict]:
+        if not scope_payload.get("item_id") or len(items) != 1:
+            return items
+        item = items[0]
+        item_id = item_identity(item)
+        try:
+            article = cached_article(config.db_path, item_id) or fetch_clean_article(config, item)
+        except Exception:
+            return items
+        text = str(article.get("text") or "").strip()
+        if not text:
+            return items
+        enriched = dict(item)
+        enriched["article_title"] = article.get("title") or item.get("title")
+        enriched["article_text"] = text
+        enriched["article_access_status"] = article.get("access_status") or "open"
+        return [enriched]
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
@@ -348,6 +366,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 "item_id": payload.item_id,
             }
             items, context_source = scoped_ask_items(scope_payload)
+            items = attach_clean_article_context(scope_payload, items)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
         try:
@@ -463,6 +482,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         scope_payload = existing.get("scope_payload") or {}
         try:
             items, context_source = scoped_ask_items(scope_payload)
+            items = attach_clean_article_context(scope_payload, items)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
         previous_messages = [
@@ -530,6 +550,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         scope_payload = record.get("scope_payload") or {}
         try:
             items, context_source = scoped_ask_items(scope_payload)
+            items = attach_clean_article_context(scope_payload, items)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
         previous_messages = [

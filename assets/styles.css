@@ -1381,7 +1381,9 @@ body.reader-open {
 
 .reader-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   padding: 0 22px 12px;
   border-bottom: 1px solid #eee7dc;
 }
@@ -1390,6 +1392,24 @@ body.reader-open {
   color: #fff;
   border-color: rgba(18, 106, 115, 0.44);
   background: var(--accent);
+}
+
+.reader-toolbar button:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.reader-access-badge {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(154, 103, 0, 0.32);
+  border-radius: var(--radius);
+  padding: 0 9px;
+  color: var(--warn);
+  background: rgba(154, 103, 0, 0.08);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .reader-article {

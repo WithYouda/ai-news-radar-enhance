@@ -36,6 +36,16 @@ DROP_SELECTORS = (
     ".share",
     ".comments",
     ".related",
+    ".signup",
+    ".login",
+    ".subscribe",
+    ".newsletter",
+    ".paywall",
+    "[id='signup']",
+    "[id='login']",
+    "[id='subscribe']",
+    "[id='newsletter']",
+    "[id='paywall']",
 )
 ARTICLE_SELECTORS = (
     "article",
@@ -47,6 +57,31 @@ ARTICLE_SELECTORS = (
     ".article__content",
     ".content",
     "body",
+)
+CTA_PATTERNS = (
+    r"\bsign\s*up\b",
+    r"\blog\s*in\b",
+    r"\bcreate an account\b",
+    r"\bsubscribe\b",
+    r"\bnewsletter\b",
+    r"\baccept cookies\b",
+    r"\bprivacy policy\b",
+    r"\balready have an account\b",
+    r"注册",
+    r"登录",
+    r"订阅",
+    r"会员",
+)
+RESTRICTED_PATTERNS = (
+    r"\bsubscribe to continue\b",
+    r"\bcontinue reading\b",
+    r"\bmembers-only\b",
+    r"\bpremium\b",
+    r"\bpaywall\b",
+    r"\bsign in to continue\b",
+    r"登录后.*阅读",
+    r"订阅.*继续阅读",
+    r"会员.*阅读",
 )
 
 
@@ -107,6 +142,47 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
         for node in soup.select(selector):
             node.decompose()
     return soup
+
+
+def _looks_boilerplate(text: str) -> bool:
+    compact = _compact_text(text).lower()
+    if not compact:
+        return True
+    if len(compact) > 420:
+        return False
+    return any(re.search(pattern, compact, flags=re.I) for pattern in CTA_PATTERNS)
+
+
+def _access_status(text: str) -> tuple[str, str]:
+    compact = _compact_text(text).lower()
+    if any(re.search(pattern, compact, flags=re.I) for pattern in RESTRICTED_PATTERNS):
+        return "restricted", "可能需要登录/订阅"
+    return "open", ""
+
+
+def _detect_language(soup: BeautifulSoup, text: str) -> str:
+    html_lang = _compact_text((soup.html or {}).get("lang", "") if soup.html else "").lower()
+    if html_lang:
+        return html_lang.split("-")[0]
+    compact = _compact_text(text)
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", compact))
+    latin = len(re.findall(r"[A-Za-z]", compact))
+    if cjk >= max(12, latin * 0.18):
+        return "zh"
+    if latin >= 24:
+        return "en"
+    return "unknown"
+
+
+def _article_metadata(soup: BeautifulSoup, raw_text: str, article_text: str) -> dict:
+    access_status, access_label = _access_status(raw_text)
+    language = _detect_language(soup, article_text or raw_text)
+    return {
+        "access_status": access_status,
+        "access_label": access_label,
+        "language": language,
+        "translation_available": language not in {"", "unknown", "zh", "zh-cn", "zh-tw"},
+    }
 
 
 def _candidate_score(node) -> float:
@@ -177,12 +253,15 @@ def _block_html(node, base_url: str) -> tuple[str, str]:
 def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
     soup = _clean_soup(html_text)
     container = _best_container(soup)
+    raw_text = _compact_text(container.get_text(" ", strip=True))
     blocks = []
     texts = []
     seen = set()
     for node in container.find_all(BLOCK_TAGS):
         block_html, text = _block_html(node, url)
         if not text or text in seen:
+            continue
+        if _looks_boilerplate(text):
             continue
         if node.name == "p" and len(text) < 24:
             continue
@@ -199,6 +278,7 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
         "excerpt": article_text[:260],
         "text": article_text,
         "content_html": "\n".join(blocks),
+        **_article_metadata(soup, raw_text, article_text),
     }
 
 
@@ -206,8 +286,8 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     with connect_db(db_path) as conn:
         row = conn.execute(
             """
-            select item_id, url, final_url, title, site_name, byline, published_at,
-                   excerpt, text, content_html, fetched_at
+            select item_id, url, final_url, title, site_name, byline, published_at, language,
+                   access_status, access_label, excerpt, text, content_html, fetched_at
             from article_cache
             where item_id = ?
             """,
@@ -215,7 +295,7 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
         ).fetchone()
     if not row:
         return None
-    return {
+    article = {
         "item_id": row["item_id"],
         "url": row["url"],
         "final_url": row["final_url"],
@@ -223,12 +303,17 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
         "site_name": row["site_name"],
         "byline": row["byline"],
         "published_at": row["published_at"],
+        "language": row["language"],
+        "access_status": row["access_status"],
+        "access_label": row["access_label"],
         "excerpt": row["excerpt"],
         "text": row["text"],
         "content_html": row["content_html"],
         "fetched_at": row["fetched_at"],
         "cache_status": "hit",
     }
+    article["translation_available"] = article["language"] not in {"", "unknown", "zh", "zh-cn", "zh-tw"}
+    return article
 
 
 def store_article(db_path: str | Path, article: dict) -> None:
@@ -236,10 +321,11 @@ def store_article(db_path: str | Path, article: dict) -> None:
         conn.execute(
             """
             insert into article_cache(
-              item_id, url, final_url, title, site_name, byline, published_at,
+              item_id, url, final_url, title, site_name, byline, published_at, language,
+              access_status, access_label,
               excerpt, text, content_html, fetched_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict(item_id) do update set
               url = excluded.url,
               final_url = excluded.final_url,
@@ -247,6 +333,9 @@ def store_article(db_path: str | Path, article: dict) -> None:
               site_name = excluded.site_name,
               byline = excluded.byline,
               published_at = excluded.published_at,
+              language = excluded.language,
+              access_status = excluded.access_status,
+              access_label = excluded.access_label,
               excerpt = excluded.excerpt,
               text = excluded.text,
               content_html = excluded.content_html,
@@ -260,6 +349,9 @@ def store_article(db_path: str | Path, article: dict) -> None:
                 article["site_name"],
                 article.get("byline", ""),
                 article.get("published_at", ""),
+                article.get("language", "unknown"),
+                article.get("access_status", "open"),
+                article.get("access_label", ""),
                 article.get("excerpt", ""),
                 article.get("text", ""),
                 article.get("content_html", ""),
