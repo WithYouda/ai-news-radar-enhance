@@ -372,6 +372,10 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     return article
 
 
+def _should_retry_cached_article(article: dict) -> bool:
+    return str(article.get("access_status") or "").strip().lower() == "unavailable"
+
+
 def store_article(db_path: str | Path, article: dict) -> None:
     with connect_db(db_path) as conn:
         conn.execute(
@@ -578,7 +582,7 @@ def resolve_google_news_url(url: str, timeout_seconds: int = 6) -> str:
 def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
-    if cached:
+    if cached and not _should_retry_cached_article(cached):
         return {**cached, "item": item}
 
     url = normalize_public_url(str(item.get("url") or ""))
