@@ -51,6 +51,7 @@ const state = {
   verificationPayload: null,
   askContext: {},
   askQuote: "",
+  askStreamingEnabled: false,
   activeConversationId: null,
   askHistoryLoaded: false,
   askHistoryVisible: false,
@@ -107,6 +108,7 @@ const adminPasswordInputEl = document.getElementById("adminPasswordInput");
 const loginButtonEl = document.getElementById("loginButton");
 const deepVerificationToggleEl = document.getElementById("deepVerificationToggle");
 const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
+const askStreamingToggleEl = document.getElementById("askStreamingToggle");
 const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
 
@@ -354,12 +356,26 @@ function strTrim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function messageActionButton(label, action) {
+function askActionIcon(action) {
+  const icons = {
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>',
+    delete: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M7 7l1 13h8l1-13"/><path d="M9 7V4h6v3"/></svg>',
+    regenerate: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 10A7 7 0 0 0 6.2 7.8"/><path d="M5.5 14a7 7 0 0 0 12.3 2.2"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v12H8z"/><path d="M6 16H4V4h12v2"/></svg>',
+    cancel: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>',
+    save: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>',
+  };
+  return `<span class="ask-ai-action-icon ask-ai-action-${action}">${icons[action] || ""}</span>`;
+}
+
+function messageActionButton(action, label) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ask-ai-message-action";
   button.dataset.action = action;
-  button.textContent = label;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.innerHTML = askActionIcon(action);
   return button;
 }
 
@@ -369,14 +385,14 @@ function appendAskMessageActions(row, role, text, options = {}) {
   actions.className = "ask-ai-message-actions";
   if (role === "user") {
     actions.append(
-      messageActionButton("编辑", "edit"),
-      messageActionButton("删除", "delete"),
+      messageActionButton("edit", "编辑"),
+      messageActionButton("delete", "删除"),
     );
   } else {
     actions.append(
-      messageActionButton("重生成", "regenerate"),
-      messageActionButton("复制", "copy"),
-      messageActionButton("删除", "delete"),
+      messageActionButton("regenerate", "重新生成"),
+      messageActionButton("copy", "复制"),
+      messageActionButton("delete", "删除"),
     );
   }
   actions.addEventListener("click", (event) => {
@@ -434,7 +450,7 @@ function renderAskLoading(questionText) {
   if (!askAiAnswerEl) return;
   askAiAnswerEl.hidden = false;
   appendAskMessage("user", questionText);
-  appendAskMessage("ai", "正在整理上下文...", { pending: true });
+  return appendAskMessage("ai", "正在整理上下文...", { pending: true });
 }
 
 function renderAskAnswer(payload) {
@@ -489,6 +505,60 @@ function buildAskQuestionText(question) {
   return `引用内容：\n${quoted}\n\n${base}`;
 }
 
+function askRequestBody(question) {
+  return { question, conversation_id: state.activeConversationId, ...currentAskScope() };
+}
+
+function updateStreamingBubble(row, text) {
+  const bubble = row?.querySelector(".ask-ai-bubble");
+  if (!bubble) return;
+  bubble.innerHTML = renderMarkdown(text || "正在整理上下文...");
+  askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
+}
+
+function parseSseBlock(block) {
+  const event = { type: "message", data: "" };
+  block.split(/\n/).forEach((line) => {
+    if (line.startsWith("event:")) event.type = line.slice(6).trim();
+    if (line.startsWith("data:")) event.data += line.slice(5).trim();
+  });
+  if (!event.data) return null;
+  try {
+    return { type: event.type, payload: JSON.parse(event.data) };
+  } catch (err) {
+    return null;
+  }
+}
+
+async function apiStream(path, body, onEvent) {
+  const res = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text();
+    throw new Error(text || `API 请求失败: ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\n\n/);
+    buffer = blocks.pop() || "";
+    blocks.forEach((block) => {
+      const event = parseSseBlock(block);
+      if (event) onEvent(event);
+    });
+  }
+  const tail = parseSseBlock(buffer);
+  if (tail) onEvent(tail);
+}
+
 function removeAskQuoteFloat() {
   document.querySelector(".ask-ai-quote-float")?.remove();
 }
@@ -505,11 +575,10 @@ function selectedAskText() {
   return bubble ? { text, range } : null;
 }
 
-function handleAskSelection() {
+function showAskQuoteFloat(text, rect) {
   removeAskQuoteFloat();
-  const selected = selectedAskText();
-  if (!selected) return;
-  const rect = selected.range.getBoundingClientRect();
+  const quoteText = strTrim(text);
+  if (!quoteText) return;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ask-ai-quote-float";
@@ -517,11 +586,45 @@ function handleAskSelection() {
   button.style.left = `${Math.min(window.innerWidth - 74, Math.max(12, rect.left))}px`;
   button.style.top = `${Math.max(12, rect.bottom + 8)}px`;
   button.addEventListener("click", () => {
-    setAskQuote(selected.text);
+    setAskQuote(quoteText);
     window.getSelection?.().removeAllRanges();
     removeAskQuoteFloat();
   });
   document.body.appendChild(button);
+}
+
+function handleAskSelection() {
+  const selected = selectedAskText();
+  if (!selected) {
+    removeAskQuoteFloat();
+    return;
+  }
+  showAskQuoteFloat(selected.text, selected.range.getBoundingClientRect());
+}
+
+let askLongPressTimer = null;
+
+function clearAskLongPress() {
+  if (askLongPressTimer) {
+    window.clearTimeout(askLongPressTimer);
+    askLongPressTimer = null;
+  }
+}
+
+function handleAskLongPress(event) {
+  const bubble = event.target.closest?.(".ask-ai-message.ai .ask-ai-bubble");
+  if (!bubble || event.pointerType === "mouse") return;
+  clearAskLongPress();
+  const point = { x: event.clientX, y: event.clientY };
+  askLongPressTimer = window.setTimeout(() => {
+    const selected = selectedAskText();
+    if (selected) {
+      showAskQuoteFloat(selected.text, selected.range.getBoundingClientRect());
+      return;
+    }
+    const rect = { left: point.x, bottom: point.y + 6 };
+    showAskQuoteFloat(bubble.textContent || "", rect);
+  }, 420);
 }
 
 async function copyAskMessage(text, button) {
@@ -539,13 +642,20 @@ async function copyAskMessage(text, button) {
       input.remove();
     }
     if (button) {
-      button.textContent = "已复制";
+      button.classList.add("copied");
+      button.setAttribute("aria-label", "已复制");
+      button.title = "已复制";
       window.setTimeout(() => {
-        button.textContent = "复制";
+        button.classList.remove("copied");
+        button.setAttribute("aria-label", "复制");
+        button.title = "复制";
       }, 900);
     }
   } catch (err) {
-    if (button) button.textContent = "复制失败";
+    if (button) {
+      button.setAttribute("aria-label", "复制失败");
+      button.title = "复制失败";
+    }
   }
 }
 
@@ -562,8 +672,8 @@ async function editAskMessage(row) {
   editor.value = original;
   const controls = document.createElement("div");
   controls.className = "ask-ai-edit-actions";
-  const cancel = messageActionButton("取消", "cancel-edit");
-  const save = messageActionButton("保存", "save-edit");
+  const cancel = messageActionButton("cancel", "取消");
+  const save = messageActionButton("save", "保存");
   controls.append(cancel, save);
   bubble.append(editor, controls);
   editor.focus();
@@ -766,13 +876,17 @@ async function submitAskAi() {
   }
   askAiSubmitEl.disabled = true;
   setAskPanelView("messages");
-  renderAskLoading(question);
+  const pendingRow = renderAskLoading(question);
   askAiInputEl.value = "";
   clearAskQuote();
   try {
+    if (state.askStreamingEnabled) {
+      await submitAskAiStream(question, pendingRow);
+      return;
+    }
     const payload = await apiFetch("/api/ask", {
       method: "POST",
-      body: JSON.stringify({ question, conversation_id: state.activeConversationId, ...currentAskScope() }),
+      body: JSON.stringify(askRequestBody(question)),
     });
     state.activeConversationId = payload?.conversation_id || state.activeConversationId;
     renderAskAnswer(payload);
@@ -789,6 +903,36 @@ async function submitAskAi() {
   }
 }
 
+async function submitAskAiStream(question, pendingRow) {
+  let streamedText = "";
+  let donePayload = null;
+  try {
+    await apiStream("/api/ask/stream", askRequestBody(question), (event) => {
+      if (event.type === "delta") {
+        streamedText += String(event.payload?.text || "");
+        updateStreamingBubble(pendingRow, streamedText);
+      }
+      if (event.type === "done") {
+        donePayload = event.payload;
+      }
+    });
+  } catch (err) {
+    const payload = await apiFetch("/api/ask", {
+      method: "POST",
+      body: JSON.stringify(askRequestBody(question)),
+    });
+    state.activeConversationId = payload?.conversation_id || state.activeConversationId;
+    renderAskAnswer(payload);
+    if (payload?.history_saved) state.askHistoryLoaded = false;
+    return;
+  }
+  if (donePayload) {
+    state.activeConversationId = donePayload?.conversation_id || state.activeConversationId;
+    renderAskConversation(donePayload);
+    if (donePayload?.history_saved) state.askHistoryLoaded = false;
+  }
+}
+
 function setSettingsStatus(text) {
   if (settingsStatusEl) settingsStatusEl.textContent = text;
 }
@@ -800,6 +944,10 @@ function applySettings(settings) {
   }
   if (deepVerificationTopNEl) {
     deepVerificationTopNEl.value = String(settings.deep_verification_top_n || 3);
+  }
+  state.askStreamingEnabled = Boolean(settings.ask_streaming_enabled);
+  if (askStreamingToggleEl) {
+    askStreamingToggleEl.checked = state.askStreamingEnabled;
   }
   if (askSystemPromptInputEl) {
     askSystemPromptInputEl.value = String(settings.ask_system_prompt || "");
@@ -866,6 +1014,7 @@ async function saveSettings() {
         deep_verification_enabled: Boolean(deepVerificationToggleEl?.checked),
         deep_verification_scope: "bole_picks_and_topic_top_n",
         deep_verification_top_n: topN,
+        ask_streaming_enabled: Boolean(askStreamingToggleEl?.checked),
         ask_system_prompt: askSystemPromptInputEl?.value || "",
       }),
     });
@@ -2112,6 +2261,14 @@ if (askAiSubmitEl) askAiSubmitEl.addEventListener("click", submitAskAi);
 if (askAiAnswerEl) {
   askAiAnswerEl.addEventListener("mouseup", handleAskSelection);
   askAiAnswerEl.addEventListener("touchend", () => window.setTimeout(handleAskSelection, 80));
+  askAiAnswerEl.addEventListener("pointerdown", handleAskLongPress);
+  askAiAnswerEl.addEventListener("pointerup", clearAskLongPress);
+  askAiAnswerEl.addEventListener("pointercancel", clearAskLongPress);
+  askAiAnswerEl.addEventListener("contextmenu", (event) => {
+    if (event.target.closest?.(".ask-ai-message.ai .ask-ai-bubble")) {
+      event.preventDefault();
+    }
+  });
 }
 if (askAiInputEl) {
   askAiInputEl.addEventListener("keydown", (event) => {

@@ -215,3 +215,32 @@ def test_ask_message_edit_delete_and_regenerate(monkeypatch, tmp_path):
         ("user", "编辑后的第一问"),
         ("user", "重问"),
     ]
+
+
+def test_ask_stream_endpoint_emits_answer_and_done_events(monkeypatch, tmp_path):
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([{"title": "Model update", "url": "https://example.com/model", "ai_score": 0.9}], "local")
+
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+        return {
+            "answer": "第一段。\n\n第二段。",
+            "title": "模型更新",
+            "citations": [],
+            "model": config.ai_model,
+        }
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    client = make_client(tmp_path)
+    login(client)
+
+    with client.stream("POST", "/api/ask/stream", json={"question": "说说模型更新", "scope": "today"}) as res:
+        body = "".join(res.iter_text())
+
+    assert res.status_code == 200
+    assert 'event: delta' in body
+    assert '第一段。' in body
+    assert 'event: done' in body
+    history = client.get("/api/ask/history").json()["items"]
+    assert history[0]["title"] == "模型更新"

@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-actions-c11" in html
+    assert "./assets/styles.css?v=ask-stream-d12" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-actions-c11" in html
+    assert "./assets/app.js?v=ask-stream-d12" in html
 
 
 def test_category_view_contract_exists():
@@ -166,13 +166,31 @@ def test_ask_ai_message_actions_contract_matches_chat_product_controls():
     assert "deleteAskMessage" in js
     assert "regenerateAskMessage" in js
     assert "copyAskMessage" in js
+    assert "ask-ai-action-icon" in js
+    assert "aria-label" in js
+    assert 'messageActionButton("重生成"' not in js
+    assert 'messageActionButton("复制"' not in js
+    assert 'messageActionButton("删除"' not in js
     assert "handleAskSelection" in js
+    assert "handleAskLongPress" in js
     assert "setAskQuote" in js
     assert "clearAskQuote" in js
     assert ".ask-ai-message-actions" in css
+    assert ".ask-ai-action-icon" in css
     assert ".ask-ai-quote-bar" in css
     assert ".ask-ai-quote-float" in css
     assert ".ask-ai-edit-box" in css
+    assert "-webkit-touch-callout: none" in css
+
+
+def test_ask_ai_streaming_setting_and_stream_submit_contract():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert 'id="askStreamingToggle"' in html
+    assert "ask_streaming_enabled" in js
+    assert "state.askStreamingEnabled" in js
+    assert "submitAskAiStream" in js
+    assert 'apiStream("/api/ask/stream"' in js
 
 
 def test_ask_ai_quote_is_sent_with_question_and_can_be_cleared():

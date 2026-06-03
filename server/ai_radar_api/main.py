@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .assistant import answer_question
@@ -326,9 +326,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         result["deep_verified"] = True
         return store_verification_result(verification_storage_id(item_id, payload, item), item, result)
 
-    @app.post("/api/ask")
-    async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
-        del session
+    async def run_ask_payload(payload: AskRequest) -> dict:
         try:
             scope_payload = {
                 "scope": payload.scope,
@@ -382,6 +380,34 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return result
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    def sse_event(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    def answer_stream_chunks(answer: str) -> list[str]:
+        chunks = []
+        for block in str(answer or "").split("\n\n"):
+            text = block.strip()
+            if text:
+                chunks.append(f"{text}\n\n")
+        return chunks or [str(answer or "")]
+
+    @app.post("/api/ask")
+    async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        return await run_ask_payload(payload)
+
+    @app.post("/api/ask/stream")
+    async def ask_stream(payload: AskRequest, session: dict = Depends(require_session)) -> StreamingResponse:
+        del session
+        result = await run_ask_payload(payload)
+
+        async def events():
+            for chunk in answer_stream_chunks(str(result.get("answer") or "")):
+                yield sse_event("delta", {"text": chunk})
+            yield sse_event("done", result)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/api/ask/history")
     def ask_history(session: dict = Depends(require_session)) -> dict:
