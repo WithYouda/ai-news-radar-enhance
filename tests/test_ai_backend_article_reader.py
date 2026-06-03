@@ -3,8 +3,9 @@ import json
 import httpx
 from fastapi.testclient import TestClient
 
-from server.ai_radar_api.article_reader import extract_article_from_html, store_article
+from server.ai_radar_api.article_reader import extract_article_from_html, fetch_clean_article, resolve_google_news_url, store_article
 from server.ai_radar_api.config import AppConfig
+from server.ai_radar_api.db import init_db
 from server.ai_radar_api.main import create_app
 from server.ai_radar_api.radar_data import item_identity
 
@@ -175,6 +176,91 @@ def test_extract_article_removes_related_recommended_and_extension_reading_block
     assert "recommended story" not in payload["text"].lower()
     assert "Recommended reading" not in payload["text"]
     assert "扩展阅读内容" not in payload["text"]
+
+
+def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
+    captured = {}
+
+    class Response:
+        url = "https://news.google.com/read/article-id"
+        text = """
+        <html><body>
+          <div data-n-a-id="encoded-article" data-n-a-ts="1780492486" data-n-a-sg="signature"></div>
+        </body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    class DecodeResponse:
+        text = """)]}'\n\n[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"https://publisher.example/story\\"]",null,null,null,"generic"]]"""
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        captured["get_url"] = url
+        return Response()
+
+    def fake_post(url, **kwargs):
+        captured["post_url"] = url
+        captured["post_data"] = kwargs.get("data") or {}
+        return DecodeResponse()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.post", fake_post)
+
+    resolved = resolve_google_news_url("https://news.google.com/read/article-id?hl=en-US&gl=US&ceid=US:en")
+
+    assert resolved == "https://publisher.example/story"
+    assert captured["get_url"].startswith("https://news.google.com/read/")
+    assert "batchexecute" in captured["post_url"]
+    assert "encoded-article" in captured["post_data"]["f.req"]
+    assert "signature" in captured["post_data"]["f.req"]
+
+
+def test_fetch_clean_article_resolves_google_news_url_before_extracting(monkeypatch, tmp_path):
+    item = {
+        "title": "Google News item",
+        "url": "https://news.google.com/read/article-id",
+        "site_name": "Google News",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+
+    class Response:
+        url = "https://publisher.example/story"
+        text = """
+        <html><body><article>
+          <h1>Publisher story</h1>
+          <p>The publisher article body has enough detail to be extracted after resolving the Google News wrapper.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        assert url == "https://publisher.example/story"
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.resolve_google_news_url", lambda url, timeout_seconds=6: "https://publisher.example/story")
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["url"] == "https://news.google.com/read/article-id"
+    assert payload["final_url"] == "https://publisher.example/story"
+    assert "publisher article body" in payload["text"]
 
 
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
