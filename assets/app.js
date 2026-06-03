@@ -1480,8 +1480,8 @@ function renderReaderArticle(payload) {
     readerTranslateButtonEl.textContent = "翻译";
   }
   if (readerAccessBadgeEl) {
-    readerAccessBadgeEl.hidden = payload.access_status !== "restricted";
-    readerAccessBadgeEl.textContent = payload.access_label || "可能需要登录/订阅";
+    readerAccessBadgeEl.hidden = !payload.access_status || payload.access_status === "open";
+    readerAccessBadgeEl.textContent = payload.access_label || "暂时无法清洗原文";
   }
   readerBodyEl.lang = payload.language || "";
   readerBodyEl.setAttribute("translate", "yes");

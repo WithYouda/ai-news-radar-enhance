@@ -360,6 +360,37 @@ def store_article(db_path: str | Path, article: dict) -> None:
         )
 
 
+def _fallback_article(item: dict, *, url: str, final_url: str, reason: str, status_code: int | None = None) -> dict:
+    item_id = item_identity(item)
+    restricted = status_code in {401, 402, 403}
+    access_label = "原站限制抓取，可能需要登录/订阅" if restricted else "暂时无法清洗原文"
+    title = str(item.get("title") or item.get("title_zh") or item.get("title_en") or "未命名文章")
+    text = f"{title}\n\n{access_label}。可打开原文查看。"
+    return {
+        "item_id": item_id,
+        "url": url,
+        "final_url": final_url or url,
+        "title": title,
+        "site_name": str(item.get("site_name") or item.get("source") or ""),
+        "byline": "",
+        "published_at": str(item.get("published_at") or item.get("first_seen_at") or ""),
+        "language": "zh",
+        "access_status": "restricted" if restricted else "unavailable",
+        "access_label": access_label,
+        "translation_available": False,
+        "excerpt": text[:260],
+        "text": text,
+        "content_html": (
+            f"<p>{html.escape(access_label)}。</p>"
+            f"<p>这类页面通常由原站反爬、登录墙、会员墙或网络限制导致。请使用上方原文入口查看。</p>"
+        ),
+        "fetched_at": _now(),
+        "cache_status": "miss",
+        "item": item,
+        "fetch_error": reason[:320],
+    }
+
+
 def find_news_item(config, requested_id: str) -> dict | None:
     for mode in ("ai", "all"):
         try:
@@ -374,7 +405,7 @@ def find_news_item(config, requested_id: str) -> dict | None:
     return None
 
 
-def fetch_clean_article(config, item: dict, timeout_seconds: int = 15) -> dict:
+def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
     if cached:
@@ -384,19 +415,28 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 15) -> dict:
     if not _is_safe_public_url(url):
         raise ValueError("Unsupported article URL")
 
-    response = httpx.get(
-        url,
-        timeout=timeout_seconds,
-        follow_redirects=True,
-        headers={
-            "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.get(
+            url,
+            timeout=timeout_seconds,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        final_url = str(getattr(getattr(exc, "response", None), "url", "") or url)
+        article = _fallback_article(item, url=url, final_url=final_url, reason=str(exc), status_code=status_code)
+        store_article(config.db_path, article)
+        return article
     extracted = extract_article_from_html(response.text, url=str(response.url), fallback_title=str(item.get("title") or ""))
     if not extracted["text"]:
-        raise ValueError("No readable article body found")
+        article = _fallback_article(item, url=url, final_url=str(response.url), reason="No readable article body found")
+        store_article(config.db_path, article)
+        return article
 
     article = {
         **extracted,

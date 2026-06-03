@@ -1,5 +1,6 @@
 import json
 
+import httpx
 from fastapi.testclient import TestClient
 
 from server.ai_radar_api.article_reader import extract_article_from_html, store_article
@@ -142,6 +143,38 @@ def test_read_article_endpoint_rejects_unknown_item(tmp_path):
     res = client.get("/api/read/not-a-known-item")
 
     assert res.status_code == 404
+
+
+def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    calls = 0
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = ""
+        status_code = 403
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("blocked", request=None, response=self)
+
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+    identity = item_identity(item)
+
+    first = client.get(f"/api/read/{identity}")
+    second = client.get(f"/api/read/{identity}")
+
+    assert first.status_code == 200
+    assert first.json()["access_status"] == "restricted"
+    assert "原站限制" in first.json()["access_label"]
+    assert second.status_code == 200
+    assert second.json()["cache_status"] == "hit"
+    assert calls == 1
 
 
 def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_path):
