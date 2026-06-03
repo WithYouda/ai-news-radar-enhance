@@ -15,6 +15,7 @@ from .auth import create_session, delete_session, store_session, validate_sessio
 from .classifier import classify_item
 from .config import AppConfig
 from .conversations import (
+    append_ask_assistant_response,
     delete_ask_conversation,
     delete_ask_message,
     get_ask_conversation,
@@ -430,20 +431,61 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.put("/api/ask/history/{conversation_id}/messages/{message_id}")
-    def edit_ask_history_message(
+    async def edit_ask_history_message(
         conversation_id: str,
         message_id: int,
         payload: AskMessageUpdateRequest,
         session: dict = Depends(require_session),
     ) -> dict:
         del session
+        existing = get_ask_conversation(config.db_path, conversation_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        messages = list(existing.get("messages") or [])
+        target_index = next((index for index, message in enumerate(messages) if message.get("id") == message_id), -1)
+        if target_index < 0:
+            raise HTTPException(status_code=404, detail="Message not found")
+        if messages[target_index].get("role") != "user":
+            raise HTTPException(status_code=400, detail="Only user messages can be edited")
+        scope_payload = existing.get("scope_payload") or {}
+        try:
+            items, context_source = scoped_ask_items(scope_payload)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
+        previous_messages = [
+            {"role": message.get("role"), "content": message.get("content")}
+            for message in messages[:target_index]
+            if message.get("role") in {"user", "assistant"} and message.get("content")
+        ]
+        ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
+        try:
+            result = await answer_question(
+                config,
+                payload.content,
+                items,
+                conversation_messages=previous_messages,
+                system_prompt=ask_system_prompt,
+            )
+        except AIProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         try:
             record = update_ask_message(config.db_path, conversation_id, message_id, payload.content)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if record is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        return record
+        updated = append_ask_assistant_response(
+            config.db_path,
+            conversation_id,
+            answer=str(result.get("answer") or ""),
+            citations=list(result.get("citations") or []),
+            model=str(result.get("model") or config.ai_model),
+            context_source=context_source,
+            context_item_count=len(items),
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return updated
 
     @app.delete("/api/ask/history/{conversation_id}/messages/{message_id}")
     def delete_ask_history_message(conversation_id: str, message_id: int, session: dict = Depends(require_session)) -> dict:

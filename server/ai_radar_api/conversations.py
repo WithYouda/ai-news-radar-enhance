@@ -321,6 +321,53 @@ def replace_ask_message(db_path: str | Path, conversation_id: str, message_id: i
     return get_ask_conversation(db_path, conversation_id)
 
 
+def append_ask_assistant_response(
+    db_path: str | Path,
+    conversation_id: str,
+    *,
+    answer: str,
+    citations: list[dict],
+    model: str,
+    context_source: str | None,
+    context_item_count: int,
+) -> dict | None:
+    now = _now()
+    answer = str(answer or "").strip()
+    if not answer:
+        raise ValueError("Assistant answer cannot be empty")
+    with connect_db(db_path) as conn:
+        existing = conn.execute(
+            "select conversation_id from ask_conversations where conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+        if not existing:
+            return None
+        conn.execute(
+            """
+            insert into ask_messages(conversation_id, role, content, created_at)
+            values (?, 'assistant', ?, ?)
+            """,
+            (conversation_id, answer, now),
+        )
+        conn.execute(
+            """
+            update ask_conversations
+            set answer = ?, citations_json = ?, model = ?, context_source = ?,
+                context_item_count = ?, updated_at = ?
+            where conversation_id = ?
+            """,
+            (
+                answer,
+                json.dumps(citations, ensure_ascii=False),
+                model,
+                context_source,
+                int(context_item_count),
+                now,
+                conversation_id,
+            ),
+        )
+    return get_ask_conversation(db_path, conversation_id)
+
 def delete_ask_message(db_path: str | Path, conversation_id: str, message_id: int) -> dict | None:
     now = _now()
     with connect_db(db_path) as conn:

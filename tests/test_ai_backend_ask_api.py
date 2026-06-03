@@ -195,7 +195,11 @@ def test_ask_message_edit_delete_and_regenerate(monkeypatch, tmp_path):
         json={"content": "编辑后的第一问"},
     )
     assert edit_res.status_code == 200
-    assert [(m["role"], m["content"]) for m in edit_res.json()["messages"]] == [("user", "编辑后的第一问")]
+    assert [(m["role"], m["content"]) for m in edit_res.json()["messages"]] == [
+        ("user", "编辑后的第一问"),
+        ("assistant", "回答：编辑后的第一问"),
+    ]
+    assert captured[-1] == {"question": "编辑后的第一问", "messages": []}
 
     regen_res = client.post(f"/api/ask/history/{conversation_id}/messages/{first_user_id}/regenerate")
     assert regen_res.status_code == 400
@@ -207,12 +211,16 @@ def test_ask_message_edit_delete_and_regenerate(monkeypatch, tmp_path):
     regen_res = client.post(f"/api/ask/history/{conversation_id}/messages/{assistant_id}/regenerate")
     assert regen_res.status_code == 200
     assert regen_res.json()["messages"][-1]["content"] == "回答：重问"
-    assert captured[-1]["messages"] == [{"role": "user", "content": "编辑后的第一问"}]
+    assert captured[-1]["messages"] == [
+        {"role": "user", "content": "编辑后的第一问"},
+        {"role": "assistant", "content": "回答：编辑后的第一问"},
+    ]
 
     delete_res = client.delete(f"/api/ask/history/{conversation_id}/messages/{assistant_id}")
     assert delete_res.status_code == 200
     assert [(m["role"], m["content"]) for m in delete_res.json()["messages"]] == [
         ("user", "编辑后的第一问"),
+        ("assistant", "回答：编辑后的第一问"),
         ("user", "重问"),
     ]
 

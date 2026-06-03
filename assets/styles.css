@@ -1484,13 +1484,6 @@ body.ask-ai-open {
   color: #fffdf8;
 }
 
-.ask-ai-message.user::before {
-  order: 2;
-  content: "你";
-  background: #dff1ee;
-  color: #115c64;
-}
-
 .ask-ai-bubble {
   position: relative;
   max-width: min(82%, 332px);

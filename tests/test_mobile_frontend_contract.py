@@ -217,7 +217,8 @@ def test_ask_ai_visual_contract_feels_like_refined_chat_product():
     assert "--ask-ai-bg: #ffffff" in css
     assert "backdrop-filter" in css
     assert "flex-direction: row-reverse" not in css
-    assert ".ask-ai-message.user::before {\n  order: 2;" in css
+    assert 'content: "你"' not in css
+    assert ".ask-ai-message.user::before" not in css
     assert ".ask-ai-message.ai .ask-ai-bubble::before" not in css
     assert ".ask-ai-message.user .ask-ai-bubble::before" not in css
 
