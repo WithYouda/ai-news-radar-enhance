@@ -1488,6 +1488,17 @@ async function openReader(item) {
   }
 }
 
+function bindReaderLink(linkEl, item) {
+  if (!linkEl) return;
+  linkEl.href = item.url || "#";
+  linkEl.removeAttribute("target");
+  linkEl.rel = "noopener noreferrer";
+  linkEl.addEventListener("click", (event) => {
+    event.preventDefault();
+    openReader(item);
+  });
+}
+
 async function loadVerificationSummary() {
   if (!apiBaseUrl) return { items: [], unavailable: true };
   try {
@@ -1771,9 +1782,7 @@ function buildBoleLead(row) {
   const { item, score } = row;
   const lead = document.createElement("a");
   lead.className = "bole-lead-card";
-  lead.href = item.url || "#";
-  lead.target = "_blank";
-  lead.rel = "noopener noreferrer";
+  bindReaderLink(lead, item);
 
   const top = document.createElement("div");
   top.className = "bole-lead-top";
@@ -1805,9 +1814,7 @@ function buildBoleTimelineRow(row, rank) {
   const { item, score } = row;
   const link = document.createElement("a");
   link.className = "bole-row";
-  link.href = item.url || "#";
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  bindReaderLink(link, item);
 
   const time = document.createElement("time");
   time.className = "bole-row-time";
@@ -1897,7 +1904,7 @@ function renderItemNode(item) {
   } else {
     titleEl.textContent = item.title || zh || en;
   }
-  titleEl.href = item.url;
+  bindReaderLink(titleEl, item);
   const readerBtn = document.createElement("button");
   readerBtn.type = "button";
   readerBtn.className = "card-action reader-action";

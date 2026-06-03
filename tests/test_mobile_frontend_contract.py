@@ -263,6 +263,15 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert "body.reader-open" in css
 
 
+def test_news_title_click_opens_clean_reader_instead_of_original_page():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "function bindReaderLink" in js
+    assert "linkEl.removeAttribute(\"target\")" in js
+    assert "event.preventDefault()" in js[js.index("function bindReaderLink") :]
+    assert "bindReaderLink(titleEl, item)" in js[js.index("function renderItemNode") :]
+    assert "bindReaderLink(link, item)" in js[js.index("function buildBoleTimelineRow") :]
+
+
 def test_deep_verify_preserves_item_metadata_in_verification_payload():
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
     assert "const verifiedItem = { ...item, ...result }" in js
