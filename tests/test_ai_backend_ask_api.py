@@ -107,3 +107,8 @@ def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
     detail_res = client.get(f"/api/ask/history/{ask_payload['conversation_id']}")
     assert detail_res.status_code == 200
     assert detail_res.json()["answer"] == "最值得关注的是 New model release。"
+
+    delete_res = client.delete(f"/api/ask/history/{ask_payload['conversation_id']}")
+    assert delete_res.status_code == 200
+    assert delete_res.json() == {"ok": True}
+    assert client.get("/api/ask/history").json()["items"] == []

@@ -1,5 +1,6 @@
 from server.ai_radar_api.conversations import (
     build_ask_labels,
+    delete_ask_conversation,
     get_ask_conversation,
     list_ask_conversations,
     store_ask_conversation,
@@ -62,3 +63,22 @@ def test_get_ask_conversation_returns_full_record(tmp_path):
     assert record["answer"] == "这条新闻说明 API 更新。"
     assert record["citations"] == [{"title": "API update", "url": "https://example.com/api"}]
     assert record["labels"] == ["今日"]
+
+
+def test_delete_ask_conversation_removes_record(tmp_path):
+    db_path = tmp_path / "radar.db"
+    init_db(db_path)
+    stored = store_ask_conversation(
+        db_path,
+        question="删除这条",
+        answer="可以删除。",
+        scope_payload={"scope": "today"},
+        citations=[],
+        model="test-model",
+        context_source="local",
+        context_item_count=1,
+    )
+
+    assert delete_ask_conversation(db_path, stored["conversation_id"]) is True
+    assert get_ask_conversation(db_path, stored["conversation_id"]) is None
+    assert delete_ask_conversation(db_path, stored["conversation_id"]) is False

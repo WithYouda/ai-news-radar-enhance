@@ -268,29 +268,18 @@ function closeAskAi() {
   document.body.classList.remove("ask-ai-open");
 }
 
-function createAskMessage(role, text) {
+function appendAskMessage(role, text, options = {}) {
+  if (!askAiAnswerEl) return null;
   const row = document.createElement("div");
   row.className = `ask-ai-message ${role}`;
+  if (options.pending) row.classList.add("pending");
   const bubble = document.createElement("div");
   bubble.className = "ask-ai-bubble";
   bubble.textContent = text;
   row.appendChild(bubble);
-  return { row, bubble };
-}
-
-function appendAskCitations(container, citations) {
-  if (!citations.length) return;
-  const list = document.createElement("div");
-  list.className = "ask-ai-citations";
-  citations.forEach((citation, index) => {
-    const link = document.createElement("a");
-    link.href = citation.url || "#";
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = `${index + 1}. ${citation.title || citation.url || "引用"}`;
-    list.appendChild(link);
-  });
-  container.appendChild(list);
+  askAiAnswerEl.appendChild(row);
+  askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
+  return row;
 }
 
 function renderAskConversation(payload, questionText = "") {
@@ -299,20 +288,23 @@ function renderAskConversation(payload, questionText = "") {
   askAiAnswerEl.innerHTML = "";
   const question = questionText || payload?.question || "";
   if (question) {
-    askAiAnswerEl.appendChild(createAskMessage("user", question).row);
+    appendAskMessage("user", question);
   }
-  const aiMessage = createAskMessage("ai", payload?.answer || "没有返回答案。");
-  appendAskCitations(aiMessage.bubble, Array.isArray(payload?.citations) ? payload.citations : []);
-  askAiAnswerEl.appendChild(aiMessage.row);
+  appendAskMessage("ai", payload?.answer || "没有返回答案。");
   askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
 }
 
 function renderAskLoading(questionText) {
-  renderAskConversation({ answer: "正在整理上下文..." }, questionText);
+  if (!askAiAnswerEl) return;
+  askAiAnswerEl.hidden = false;
+  appendAskMessage("user", questionText);
+  appendAskMessage("ai", "正在整理上下文...", { pending: true });
 }
 
 function renderAskAnswer(payload) {
-  renderAskConversation(payload, payload?.question || askAiInputEl?.value?.trim() || "");
+  const pending = askAiAnswerEl?.querySelector(".ask-ai-message.pending");
+  if (pending) pending.remove();
+  appendAskMessage("ai", payload?.answer || "没有返回答案。");
 }
 
 function renderAskHistory(payload) {
@@ -335,20 +327,23 @@ function renderAskHistory(payload) {
     return;
   }
   items.forEach((item) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ask-ai-history-item";
-    button.dataset.conversationId = item.conversation_id || "";
+    const itemEl = document.createElement("div");
+    itemEl.className = "ask-ai-history-item";
+    itemEl.dataset.conversationId = item.conversation_id || "";
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "ask-ai-history-open";
 
     const question = document.createElement("span");
     question.className = "ask-ai-history-question";
     question.textContent = item.question || "未命名问题";
-    button.appendChild(question);
+    openButton.appendChild(question);
 
     const preview = document.createElement("span");
     preview.className = "ask-ai-history-preview";
     preview.textContent = item.answer_preview || "";
-    button.appendChild(preview);
+    openButton.appendChild(preview);
 
     const labels = document.createElement("span");
     labels.className = "ask-ai-history-labels";
@@ -357,16 +352,23 @@ function renderAskHistory(payload) {
       pill.textContent = label;
       labels.appendChild(pill);
     });
-    button.appendChild(labels);
+    openButton.appendChild(labels);
 
     const meta = document.createElement("span");
     meta.className = "ask-ai-history-meta";
     const createdAt = item.created_at ? new Date(item.created_at).toLocaleString("zh-CN") : "";
     meta.textContent = createdAt;
-    button.appendChild(meta);
+    openButton.appendChild(meta);
 
-    button.addEventListener("click", () => loadAskHistoryDetail(item.conversation_id));
-    askAiHistoryListEl.appendChild(button);
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "ask-ai-history-delete";
+    deleteButton.textContent = "删除";
+    deleteButton.addEventListener("click", () => deleteAskHistoryItem(item.conversation_id));
+
+    openButton.addEventListener("click", () => loadAskHistoryDetail(item.conversation_id));
+    itemEl.append(openButton, deleteButton);
+    askAiHistoryListEl.appendChild(itemEl);
   });
 }
 
@@ -406,6 +408,17 @@ async function loadAskHistoryDetail(conversationId) {
   }
 }
 
+async function deleteAskHistoryItem(conversationId) {
+  if (!conversationId) return;
+  try {
+    await apiFetch(`/api/ask/history/${conversationId}`, { method: "DELETE" });
+    state.askHistoryLoaded = false;
+    await loadAskHistory(true);
+  } catch (err) {
+    if (askAiHistoryListEl) askAiHistoryListEl.textContent = err.message || "删除失败。";
+  }
+}
+
 function setAskPanelView(view) {
   const isHistory = view === "history";
   state.askHistoryVisible = isHistory;
@@ -437,12 +450,15 @@ async function submitAskAi() {
       body: JSON.stringify({ question, ...currentAskScope() }),
     });
     renderAskAnswer(payload);
+    askAiInputEl.value = "";
     if (payload?.history_saved) {
       state.askHistoryLoaded = false;
       if (state.askHistoryVisible) loadAskHistory(true);
     }
   } catch (err) {
-    askAiAnswerEl.textContent = err.message || "请求失败。";
+    const pending = askAiAnswerEl.querySelector(".ask-ai-message.pending");
+    if (pending) pending.remove();
+    appendAskMessage("ai", err.message || "请求失败。");
   } finally {
     askAiSubmitEl.disabled = false;
   }

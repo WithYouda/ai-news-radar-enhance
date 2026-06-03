@@ -4,13 +4,14 @@ from server.ai_radar_api.assistant import answer_question, build_ask_messages
 from server.ai_radar_api.config import AppConfig
 
 
-def test_build_ask_messages_requires_citations():
+def test_build_ask_messages_avoids_unrelated_link_lists():
     messages = build_ask_messages(
         question="总结今天最重要的两条",
         context="[1] OpenAI ships model | OpenAI | https://example.com/a",
     )
     text = "\n".join(m["content"] for m in messages)
-    assert "引用" in text
+    assert "不要在回答末尾追加链接列表" in text
+    assert "无关链接" in text
     assert "不知道" in text or "不足" in text
     assert "https://example.com/a" in text
 
@@ -21,7 +22,7 @@ def test_build_ask_messages_keeps_user_question():
     assert "这条有一手来源吗" in messages[-1]["content"]
 
 
-def test_answer_question_citations_follow_context_ranking(tmp_path):
+def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
     config = AppConfig(
         public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
         allowed_origins=["https://withyouda.github.io"],
@@ -43,7 +44,7 @@ def test_answer_question_citations_follow_context_ranking(tmp_path):
 
     result = anyio.run(answer_question, config, "OpenAI?", items, FakeProvider())
 
-    assert result["citations"][0]["url"] == "https://example.com/a"
+    assert result["citations"] == []
 
 
 def test_answer_question_filters_citations_to_question_matches(tmp_path):
@@ -74,7 +75,4 @@ def test_answer_question_filters_citations_to_question_matches(tmp_path):
 
     result = anyio.run(answer_question, config, "今天 OpenAI 有什么新消息？", items, FakeProvider())
 
-    assert [citation["url"] for citation in result["citations"]] == [
-        "https://example.com/openai-model",
-        "https://example.com/openai-api",
-    ]
+    assert result["citations"] == []

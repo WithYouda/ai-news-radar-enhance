@@ -160,3 +160,9 @@ def get_ask_conversation(db_path: str | Path, conversation_id: str) -> dict | No
             (conversation_id,),
         ).fetchone()
     return _row_to_record(row) if row else None
+
+
+def delete_ask_conversation(db_path: str | Path, conversation_id: str) -> bool:
+    with connect_db(db_path) as conn:
+        cursor = conn.execute("delete from ask_conversations where conversation_id = ?", (conversation_id,))
+    return cursor.rowcount > 0

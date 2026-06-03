@@ -14,7 +14,7 @@ from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
-from .conversations import get_ask_conversation, list_ask_conversations, store_ask_conversation
+from .conversations import delete_ask_conversation, get_ask_conversation, list_ask_conversations, store_ask_conversation
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
@@ -352,6 +352,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return record
+
+    @app.delete("/api/ask/history/{conversation_id}")
+    def delete_ask_history(conversation_id: str, session: dict = Depends(require_session)) -> dict:
+        del session
+        if not delete_ask_conversation(config.db_path, conversation_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return {"ok": True}
 
     @app.get("/api/settings")
     def read_settings(session: dict = Depends(require_session)) -> dict:

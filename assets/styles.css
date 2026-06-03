@@ -1473,6 +1473,10 @@ body.ask-ai-open {
   color: var(--ink);
 }
 
+.ask-ai-message.pending .ask-ai-bubble {
+  color: var(--muted);
+}
+
 .ask-ai-history-list {
   display: grid;
   align-content: start;
@@ -1504,7 +1508,9 @@ body.ask-ai-open {
 
 .ask-ai-history-item {
   display: grid;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1518,6 +1524,27 @@ body.ask-ai-open {
 .ask-ai-history-item:hover {
   border-color: rgba(18, 106, 115, 0.3);
   background: #ffffff;
+}
+
+.ask-ai-history-open {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.ask-ai-history-delete {
+  min-height: 30px;
+  border: 1px solid rgba(154, 64, 53, 0.22);
+  border-radius: var(--radius);
+  padding: 0 8px;
+  background: rgba(154, 64, 53, 0.06);
+  color: #9a4035;
+  font-size: 12px;
 }
 
 .ask-ai-history-question {
@@ -1621,18 +1648,6 @@ body.ask-ai-open {
 #askAiSubmit:disabled {
   cursor: default;
   opacity: 0.65;
-}
-
-.ask-ai-citations {
-  display: grid;
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.ask-ai-citations a {
-  color: var(--accent);
-  font-size: 13px;
-  overflow-wrap: anywhere;
 }
 
 .settings-panel {

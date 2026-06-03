@@ -7,9 +7,6 @@ from .provider import AIProvider
 from .radar_data import build_context, rank_context_items
 
 
-MAX_CITATIONS = 8
-
-
 def build_ask_messages(question: str, context: str) -> list[dict]:
     return [
         {
@@ -17,7 +14,7 @@ def build_ask_messages(question: str, context: str) -> list[dict]:
             "content": (
                 "你是 AI News Radar 的阅读助手。只能基于给定上下文回答。"
                 "先识别用户问题中的主体、公司、产品或分类，只使用和问题直接相关的上下文。"
-                "回答必须包含引用，引用要能对应上下文中的 URL，不能引用无关链接。"
+                "不要在回答末尾追加链接列表、推荐链接或无关链接。"
                 "如果证据不足或不知道，请明确说不知道或信息不足。"
             ),
         },
@@ -26,16 +23,6 @@ def build_ask_messages(question: str, context: str) -> list[dict]:
             "content": f"问题：{question}\n\n上下文：\n{context}",
         },
     ]
-
-
-def _citations(items: list[dict], max_items: int) -> list[dict]:
-    citations = []
-    for item in items[:max_items]:
-        url = item.get("url")
-        if not url:
-            continue
-        citations.append({"title": item.get("title") or item.get("title_zh") or "Untitled", "url": url})
-    return citations
 
 
 def _question_keywords(question: str) -> set[str]:
@@ -81,6 +68,6 @@ async def answer_question(
     answer = await provider.chat(messages, temperature=0.2)
     return {
         "answer": answer,
-        "citations": _citations(ranked_items, min(MAX_CITATIONS, config.max_context_items)),
+        "citations": [],
         "model": config.ai_model,
     }

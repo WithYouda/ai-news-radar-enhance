@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a4" in html
+    assert "./assets/styles.css?v=ask-chat-a5" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a4" in html
+    assert "./assets/app.js?v=ask-chat-a5" in html
 
 
 def test_category_view_contract_exists():
@@ -93,7 +93,9 @@ def test_ask_ai_global_history_contract_exists():
     assert "/api/ask/history" in js
     assert "renderAskHistory" in js
     assert "toggleAskHistory" in js
+    assert "deleteAskHistoryItem" in js
     assert ".ask-ai-history-item" in css
+    assert ".ask-ai-history-delete" in css
 
 
 def test_ask_ai_uses_chat_layout_with_bottom_composer():
@@ -118,6 +120,16 @@ def test_ask_ai_sheet_locks_background_and_uses_compact_mobile_padding():
     assert "overflow: hidden;" in css
     assert "padding: 16px 14px 88px" not in css
     assert "askAiInputEl.value = payload.question" not in js
+
+
+def test_ask_ai_continues_thread_and_hides_final_link_recommendations():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "appendAskMessage" in js
+    assert "renderAskLoading(question)" in js
+    assert "renderAskConversation({ answer: \"正在整理上下文...\" }, questionText)" not in js
+    assert "appendAskCitations" not in js
+    assert ".ask-ai-citations" not in css
 
 
 def test_settings_view_contract_exists():
