@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a7" in html
+    assert "./assets/styles.css?v=ask-chat-a8" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a7" in html
+    assert "./assets/app.js?v=ask-chat-a8" in html
 
 
 def test_category_view_contract_exists():
@@ -154,10 +154,12 @@ def test_ask_ai_clears_input_immediately_after_queuing_message():
 
 def test_ask_ai_visual_contract_feels_like_refined_chat_product():
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
-    assert "--ask-panel-bg" in css
-    assert "--ask-user-bg" in css
-    assert "--ask-ai-bg" in css
+    assert "--ask-panel-bg: #fffdf8" in css
+    assert "--ask-user-bg: #126a73" in css
+    assert "--ask-ai-bg: #ffffff" in css
     assert "backdrop-filter" in css
+    assert "flex-direction: row-reverse" not in css
+    assert ".ask-ai-message.user::before {\n  order: 2;" in css
     assert ".ask-ai-message.ai .ask-ai-bubble::before" in css
     assert ".ask-ai-message.user .ask-ai-bubble::before" in css
 
