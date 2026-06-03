@@ -23,6 +23,12 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+async function fetchFreshJson(url, errorLabel) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`${errorLabel}: ${res.status}`);
+  return res.json();
+}
+
 const state = {
   itemsAi: [],
   itemsAll: [],
@@ -367,7 +373,6 @@ function renderAskConversation(payload, questionText = "") {
     }
     appendAskMessage("ai", payload?.answer || "没有返回答案。");
   }
-  appendAskCitations(payload?.citations);
   askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
 }
 
@@ -382,26 +387,6 @@ function renderAskAnswer(payload) {
   const pending = askAiAnswerEl?.querySelector(".ask-ai-message.pending");
   if (pending) pending.remove();
   appendAskMessage("ai", payload?.answer || "没有返回答案。");
-  appendAskCitations(payload?.citations);
-}
-
-function appendAskCitations(citations) {
-  if (!askAiAnswerEl || !Array.isArray(citations) || !citations.length) return;
-  const wrap = document.createElement("div");
-  wrap.className = "ask-ai-citations";
-  citations.slice(0, 5).forEach((citation, index) => {
-    if (!citation?.url) return;
-    const link = document.createElement("a");
-    link.href = citation.url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = `${index + 1}. ${citation.title || citation.source || "引用"}`;
-    wrap.appendChild(link);
-  });
-  if (wrap.childElementCount) {
-    askAiAnswerEl.appendChild(wrap);
-    askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
-  }
 }
 
 function renderAskHistory(payload) {
@@ -1733,19 +1718,13 @@ function renderSourceHealth(errorMessage = "") {
 }
 
 async function loadNewsData() {
-  const res = await fetch(`./data/latest-24h.json?t=${Date.now()}`);
-  if (!res.ok) throw new Error(`加载 latest-24h.json 失败: ${res.status}`);
-  return res.json();
+  return fetchFreshJson(`./data/latest-24h.json?t=${Date.now()}`, "加载 latest-24h.json 失败");
 }
 
 async function loadAllModeData() {
   if (state.allDataLoaded) return;
   if (!state.allDataPromise) {
-    state.allDataPromise = fetch(`./${state.allDataUrl}?t=${Date.now()}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`加载 latest-24h-all.json 失败: ${res.status}`);
-        return res.json();
-      })
+    state.allDataPromise = fetchFreshJson(`./${state.allDataUrl}?t=${Date.now()}`, "加载 latest-24h-all.json 失败")
       .then((payload) => {
         state.itemsAllRaw = payload.items_all_raw || payload.items_all || state.itemsAi;
         state.itemsAll = payload.items_all || state.itemsAi;
@@ -1762,15 +1741,11 @@ async function loadAllModeData() {
 }
 
 async function loadWaytoagiData() {
-  const res = await fetch(`./data/waytoagi-7d.json?t=${Date.now()}`);
-  if (!res.ok) throw new Error(`加载 waytoagi-7d.json 失败: ${res.status}`);
-  return res.json();
+  return fetchFreshJson(`./data/waytoagi-7d.json?t=${Date.now()}`, "加载 waytoagi-7d.json 失败");
 }
 
 async function loadSourceStatusData() {
-  const res = await fetch(`./data/source-status.json?t=${Date.now()}`);
-  if (!res.ok) throw new Error(`加载 source-status.json 失败: ${res.status}`);
-  return res.json();
+  return fetchFreshJson(`./data/source-status.json?t=${Date.now()}`, "加载 source-status.json 失败");
 }
 
 async function init() {

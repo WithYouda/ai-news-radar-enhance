@@ -1605,24 +1605,6 @@ body.ask-ai-open {
   color: var(--muted);
 }
 
-.ask-ai-citations {
-  max-width: 84%;
-  display: grid;
-  gap: 6px;
-  margin-left: 34px;
-  border-left: 3px solid rgba(18, 106, 115, 0.28);
-  padding-left: 9px;
-}
-
-.ask-ai-citations a {
-  overflow: hidden;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ask-ai-history-list {
   display: grid;
   align-content: start;
