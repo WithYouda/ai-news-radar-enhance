@@ -103,7 +103,7 @@ def test_store_ask_conversation_appends_turn_to_existing_thread(tmp_path):
 
     assert second["conversation_id"] == first["conversation_id"]
     assert [item["conversation_id"] for item in history["items"]] == [first["conversation_id"]]
-    assert history["items"][0]["title"] == "OpenAI API 影响"
+    assert history["items"][0]["title"] == "OpenAI 模型更新"
     assert record["question"] == "它和 API 有关系吗？"
     assert record["answer"] == "有，主要影响 API 使用。"
     assert [message["role"] for message in record["messages"]] == ["user", "assistant", "user", "assistant"]

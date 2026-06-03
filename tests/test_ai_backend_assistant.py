@@ -39,6 +39,23 @@ def test_build_ask_messages_includes_previous_thread_turns():
     assert "它和 API 有关系吗" in messages[-1]["content"]
 
 
+def test_build_ask_messages_embeds_history_in_current_prompt():
+    messages = build_ask_messages(
+        "我第一个问题是什么？",
+        "[1] OpenAI API update | OpenAI | https://example.com/api",
+        conversation_messages=[
+            {"role": "user", "content": "今天 OpenAI 有什么？"},
+            {"role": "assistant", "content": "OpenAI 发布了模型更新。"},
+        ],
+    )
+
+    current_prompt = messages[-1]["content"]
+    assert "历史对话" in current_prompt
+    assert "用户：今天 OpenAI 有什么？" in current_prompt
+    assert "助手：OpenAI 发布了模型更新。" in current_prompt
+    assert "可以使用历史对话回答关于本对话的问题" in "\n".join(message["content"] for message in messages)
+
+
 def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
     config = AppConfig(
         public_base_url="https://withyouda.github.io/ai-news-radar-enhance",

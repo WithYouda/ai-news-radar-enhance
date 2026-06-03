@@ -8,6 +8,19 @@ from .provider import AIProvider
 from .radar_data import build_context, rank_context_items
 
 
+def format_conversation_history(conversation_messages: list[dict] | None) -> str:
+    lines = []
+    for message in conversation_messages or []:
+        role = message.get("role")
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        label = "用户" if role == "user" else "助手" if role == "assistant" else ""
+        if label:
+            lines.append(f"{label}：{content}")
+    return "\n".join(lines[-12:])
+
+
 def build_ask_messages(question: str, context: str, conversation_messages: list[dict] | None = None) -> list[dict]:
     messages = [
         {
@@ -15,6 +28,7 @@ def build_ask_messages(question: str, context: str, conversation_messages: list[
             "content": (
                 "你是 AI News Radar 的阅读助手。只能基于给定上下文回答。"
                 "先识别用户问题中的主体、公司、产品或分类，只使用和问题直接相关的上下文。"
+                "可以使用历史对话回答关于本对话的问题，也可以用历史对话理解追问里的指代。"
                 "不要在回答末尾追加链接列表、推荐链接或无关链接。"
                 "如果证据不足或不知道，请明确说不知道或信息不足。"
                 "回答必须是 JSON 对象，字段为 title 和 answer。"
@@ -28,10 +42,12 @@ def build_ask_messages(question: str, context: str, conversation_messages: list[
         content = str(message.get("content") or "").strip()
         if role in {"user", "assistant"} and content:
             messages.append({"role": role, "content": content})
+    history = format_conversation_history(conversation_messages)
+    history_block = f"\n\n历史对话：\n{history}" if history else ""
     messages.append(
         {
             "role": "user",
-            "content": f"问题：{question}\n\n上下文：\n{context}",
+            "content": f"问题：{question}{history_block}\n\n新闻上下文：\n{context}",
         }
     )
     return messages

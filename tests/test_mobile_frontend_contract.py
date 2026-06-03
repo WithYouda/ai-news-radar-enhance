@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a6" in html
+    assert "./assets/styles.css?v=ask-chat-a7" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a6" in html
+    assert "./assets/app.js?v=ask-chat-a7" in html
 
 
 def test_category_view_contract_exists():
@@ -141,6 +141,25 @@ def test_ask_ai_contract_renders_markdown_and_reuses_loaded_conversation_id():
     assert "conversation_id: state.activeConversationId" in js
     assert ".ask-ai-bubble h1" in css
     assert ".ask-ai-bubble code" in css
+
+
+def test_ask_ai_clears_input_immediately_after_queuing_message():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    submit_js = js[js.index("async function submitAskAi()") : js.index("function setSettingsStatus")]
+    loading_index = submit_js.index("renderAskLoading(question)")
+    clear_index = submit_js.index("askAiInputEl.value = \"\"")
+    fetch_index = submit_js.index("const payload = await apiFetch(\"/api/ask\"")
+    assert loading_index < clear_index < fetch_index
+
+
+def test_ask_ai_visual_contract_feels_like_refined_chat_product():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "--ask-panel-bg" in css
+    assert "--ask-user-bg" in css
+    assert "--ask-ai-bg" in css
+    assert "backdrop-filter" in css
+    assert ".ask-ai-message.ai .ask-ai-bubble::before" in css
+    assert ".ask-ai-message.user .ask-ai-bubble::before" in css
 
 
 def test_ask_ai_history_delete_updates_list_without_loading_flash():

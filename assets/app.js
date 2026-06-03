@@ -536,6 +536,7 @@ async function submitAskAi() {
   askAiSubmitEl.disabled = true;
   setAskPanelView("messages");
   renderAskLoading(question);
+  askAiInputEl.value = "";
   try {
     const payload = await apiFetch("/api/ask", {
       method: "POST",
@@ -543,7 +544,6 @@ async function submitAskAi() {
     });
     state.activeConversationId = payload?.conversation_id || state.activeConversationId;
     renderAskAnswer(payload);
-    askAiInputEl.value = "";
     if (payload?.history_saved) {
       state.askHistoryLoaded = false;
       if (state.askHistoryVisible) loadAskHistory(true);

@@ -127,14 +127,14 @@ def store_ask_conversation(
     stored_scope = {**scope_payload, "question": question}
     labels = build_ask_labels(stored_scope)
     scope = str(scope_payload.get("scope") or "today")
-    display_title = _conversation_title(title, answer)
 
     with connect_db(db_path) as conn:
         existing = conn.execute(
-            "select conversation_id from ask_conversations where conversation_id = ?",
+            "select conversation_id, title from ask_conversations where conversation_id = ?",
             (conversation_id,),
         ).fetchone()
         is_append = bool(existing)
+        display_title = existing["title"] if is_append else _conversation_title(title, answer)
         if is_append:
             stored_scope["parent_conversation_id"] = conversation_id
             labels = build_ask_labels(stored_scope)
