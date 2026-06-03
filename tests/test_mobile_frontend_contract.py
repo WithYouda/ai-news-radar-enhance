@@ -261,9 +261,10 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert "translateReaderArticle" in js
     assert "Translator.create" in js
     assert "Translator.availability" in js
-    assert "translate.google.com" in js
+    assert "requestCleanTextTranslation" in js
+    assert "translate.google.com" not in js
     assert "cleanedTextForTranslation" in js
-    assert "&op=translate" in js
+    assert "/api/translate" in js
     assert "&u=" not in js[js.index("async function translateReaderArticle") : js.index("async function loadCleanArticle")]
     assert 'translate="yes"' in html
     assert "/api/read/" in js
@@ -345,8 +346,8 @@ def test_clean_reader_translation_button_and_cleaned_text_fallback_contract():
     assert "isReaderTranslationAvailable(payload)" in render_fn
     assert "readerTranslateButtonEl.hidden = !isReaderTranslationAvailable(payload)" in render_fn
     assert "cleanedTextForTranslation()" in translate_fn
-    assert "translate.google.com" in translate_fn
-    assert "&text=" in translate_fn
+    assert "requestCleanTextTranslation" in translate_fn
+    assert "translate.google.com" not in translate_fn
     assert "&u=" not in translate_fn
 
 

@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .article_reader import fetch_clean_article, find_news_item
-from .assistant import answer_question
+from .assistant import answer_question, translate_clean_text
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
@@ -73,6 +73,11 @@ class AskRequest(BaseModel):
 
 class AskMessageUpdateRequest(BaseModel):
     content: str
+
+
+class TranslateRequest(BaseModel):
+    text: str
+    source_language: str = "auto"
 
 
 def item_matches_category(item: dict, category: str) -> bool:
@@ -440,6 +445,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             yield sse_event("done", result)
 
         return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.post("/api/translate")
+    async def translate(payload: TranslateRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="No cleaned text to translate")
+        try:
+            translation = await translate_clean_text(config, text, source_language=payload.source_language)
+        except AIProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"translation": translation, "model": config.ai_model}
 
     @app.get("/api/ask/history")
     def ask_history(session: dict = Depends(require_session)) -> dict:

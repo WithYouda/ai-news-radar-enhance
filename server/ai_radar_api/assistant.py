@@ -172,3 +172,31 @@ async def answer_question(
         "citations": citation_items(ranked_items),
         "model": config.ai_model,
     }
+
+
+async def translate_clean_text(
+    config: AppConfig,
+    text: str,
+    source_language: str = "auto",
+    provider: AIProvider | None = None,
+) -> str:
+    clean_text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean_text:
+        return ""
+    provider = provider or AIProvider(config)
+    source = str(source_language or "auto").strip() or "auto"
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 AI News Radar 的站内翻译助手。"
+                "只翻译用户提供的清洗后正文文本为简体中文。"
+                "不要访问、补充或引用原网页链接，不要添加总结、评论或推荐。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"源语言：{source}\n\n清洗后正文：\n{clean_text[:12000]}",
+        },
+    ]
+    return (await provider.chat(messages, temperature=0)).strip()

@@ -84,7 +84,16 @@ def fetch_public_json_with_source(config: AppConfig, path: str) -> tuple[dict, s
     cache_path = config.data_cache_dir / relative_path
     local_path = config.data_dir / relative_path
 
-    for source, fallback_path in (("local", local_path), ("cache", cache_path)):
+    if config.prefer_remote_data:
+        try:
+            payload = fetch_public_json(config, path)
+            _write_json_file(cache_path, payload)
+            return payload, "remote"
+        except Exception:
+            pass
+
+    fallback_paths = (("cache", cache_path), ("local", local_path)) if config.prefer_remote_data else (("local", local_path), ("cache", cache_path))
+    for source, fallback_path in fallback_paths:
         if fallback_path.exists():
             try:
                 return _read_json_file(fallback_path), source

@@ -91,6 +91,35 @@ def test_load_latest_items_prefers_local_data_without_remote_fetch(monkeypatch, 
     assert items[0]["title"] == "Local first model news"
 
 
+def test_load_latest_items_can_prefer_remote_public_data_over_stale_local(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "latest-24h.json").write_text(
+        json.dumps({"items": [{"title": "Stale local news", "url": "https://example.com/local"}]}),
+        encoding="utf-8",
+    )
+    config = AppConfig(
+        **{
+            **_config(tmp_path, data_dir=data_dir).__dict__,
+            "prefer_remote_data": True,
+        }
+    )
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"items": [{"title": "Current public news", "url": "https://example.com/remote"}]}
+
+    monkeypatch.setattr("server.ai_radar_api.radar_data.httpx.get", lambda *args, **kwargs: Response())
+
+    items, source = load_latest_items_with_source(config)
+
+    assert source == "remote"
+    assert items[0]["title"] == "Current public news"
+
+
 def test_load_latest_items_uses_cache_before_remote(monkeypatch, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
