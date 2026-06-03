@@ -99,6 +99,7 @@ const adminPasswordInputEl = document.getElementById("adminPasswordInput");
 const loginButtonEl = document.getElementById("loginButton");
 const deepVerificationToggleEl = document.getElementById("deepVerificationToggle");
 const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
+const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
 
 const SOURCE_KINDS = {
@@ -301,13 +302,17 @@ function renderMarkdown(text) {
     let listType = "ul";
     const flushList = () => {
       if (!listItems.length) return;
-      blocks.push(`<${listType}>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${listType}>`);
+      const itemsHtml = listItems.map((item) => {
+        const marker = item.marker ? `<span class="md-list-number">${escapeHtml(item.marker)}</span>` : "";
+        return `<li>${marker}<span>${renderInlineMarkdown(item.text)}</span></li>`;
+      }).join("");
+      blocks.push(`<${listType} class="ask-ai-md-list">${itemsHtml}</${listType}>`);
       listItems = [];
     };
     lines.forEach((line) => {
       const heading = line.match(/^(#{1,3})\s+(.+)$/);
       const bullet = line.match(/^[-*+]\s+(.+)$/);
-      const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+      const ordered = line.match(/^(\d+[.)])\s+(.+)$/);
       if (heading) {
         flushList();
         const level = Math.min(heading[1].length, 3);
@@ -316,7 +321,7 @@ function renderMarkdown(text) {
         const nextType = ordered ? "ol" : "ul";
         if (listItems.length && listType !== nextType) flushList();
         listType = nextType;
-        listItems.push((bullet || ordered)[1]);
+        listItems.push(ordered ? { marker: ordered[1], text: ordered[2] } : { marker: "•", text: bullet[1] });
       } else {
         flushList();
         blocks.push(`<p>${renderInlineMarkdown(line)}</p>`);
@@ -362,6 +367,7 @@ function renderAskConversation(payload, questionText = "") {
     }
     appendAskMessage("ai", payload?.answer || "没有返回答案。");
   }
+  appendAskCitations(payload?.citations);
   askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
 }
 
@@ -376,6 +382,26 @@ function renderAskAnswer(payload) {
   const pending = askAiAnswerEl?.querySelector(".ask-ai-message.pending");
   if (pending) pending.remove();
   appendAskMessage("ai", payload?.answer || "没有返回答案。");
+  appendAskCitations(payload?.citations);
+}
+
+function appendAskCitations(citations) {
+  if (!askAiAnswerEl || !Array.isArray(citations) || !citations.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "ask-ai-citations";
+  citations.slice(0, 5).forEach((citation, index) => {
+    if (!citation?.url) return;
+    const link = document.createElement("a");
+    link.href = citation.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = `${index + 1}. ${citation.title || citation.source || "引用"}`;
+    wrap.appendChild(link);
+  });
+  if (wrap.childElementCount) {
+    askAiAnswerEl.appendChild(wrap);
+    askAiAnswerEl.scrollTop = askAiAnswerEl.scrollHeight;
+  }
 }
 
 function renderAskHistory(payload) {
@@ -569,6 +595,9 @@ function applySettings(settings) {
   if (deepVerificationTopNEl) {
     deepVerificationTopNEl.value = String(settings.deep_verification_top_n || 3);
   }
+  if (askSystemPromptInputEl) {
+    askSystemPromptInputEl.value = String(settings.ask_system_prompt || "");
+  }
 }
 
 async function loginAdmin() {
@@ -631,6 +660,7 @@ async function saveSettings() {
         deep_verification_enabled: Boolean(deepVerificationToggleEl?.checked),
         deep_verification_scope: "bole_picks_and_topic_top_n",
         deep_verification_top_n: topN,
+        ask_system_prompt: askSystemPromptInputEl?.value || "",
       }),
     });
     applySettings(settings);

@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=ask-chat-a8" />
+    <link rel="stylesheet" href="./assets/styles.css?v=ask-chat-a9" />
   </head>
   <body>
     <main class="shell">
@@ -157,6 +157,10 @@
             <span>Top N</span>
             <input id="deepVerificationTopN" type="number" min="1" max="10" value="3" />
           </label>
+          <label class="field">
+            <span>Ask AI 系统提示词</span>
+            <textarea id="askSystemPromptInput" rows="7" placeholder="设置 Ask AI 的系统提示词"></textarea>
+          </label>
           <button id="saveSettingsButton" type="button">保存设置</button>
         </div>
       </section>
@@ -213,7 +217,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=ask-chat-a8" defer></script>
+    <script src="./assets/app.js?v=ask-chat-a9" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

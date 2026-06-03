@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .db import connect_db
+from .assistant import DEFAULT_ASK_SYSTEM_PROMPT
 
 
 SETTINGS_KEY = "app_settings"
@@ -13,6 +14,7 @@ DEFAULT_SETTINGS = {
     "deep_verification_scope": "bole_picks_and_topic_top_n",
     "deep_verification_top_n": 3,
     "mobile_default_view": "today",
+    "ask_system_prompt": DEFAULT_ASK_SYSTEM_PROMPT,
 }
 VALID_DEEP_VERIFICATION_SCOPES = {"bole_picks_and_topic_top_n"}
 
@@ -39,6 +41,7 @@ def update_settings(db_path: str | Path, values: dict) -> dict:
         raise ValueError("deep_verification_scope is not supported in V1")
     merged["deep_verification_top_n"] = int(merged["deep_verification_top_n"])
     merged["deep_verification_enabled"] = bool(merged["deep_verification_enabled"])
+    merged["ask_system_prompt"] = str(merged.get("ask_system_prompt") or DEFAULT_ASK_SYSTEM_PROMPT).strip()
     with connect_db(db_path) as conn:
         conn.execute(
             """

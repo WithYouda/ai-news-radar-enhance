@@ -45,7 +45,7 @@ def test_ask_category_scope_matches_legacy_ai_labels(monkeypatch, tmp_path):
             "local",
         )
 
-    async def fake_answer_question(config, question, items):
+    async def fake_answer_question(config, question, items, system_prompt=None):
         captured["items"] = items
         return {"answer": "ok", "citations": [], "model": config.ai_model}
 
@@ -76,7 +76,7 @@ def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
             "local",
         )
 
-    async def fake_answer_question(config, question, items):
+    async def fake_answer_question(config, question, items, system_prompt=None):
         return {
             "answer": "最值得关注的是 New model release。",
             "title": "模型发布重点",
@@ -123,7 +123,7 @@ def test_ask_appends_existing_conversation_and_sends_history_to_ai(monkeypatch, 
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([{"title": "OpenAI API update", "url": "https://example.com/api", "ai_score": 0.9}], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
         captured.append({"question": question, "messages": conversation_messages or []})
         return {
             "answer": f"回答：{question}",

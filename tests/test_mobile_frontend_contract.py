@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-chat-a8" in html
+    assert "./assets/styles.css?v=ask-chat-a9" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-chat-a8" in html
+    assert "./assets/app.js?v=ask-chat-a9" in html
 
 
 def test_category_view_contract_exists():
@@ -128,8 +128,8 @@ def test_ask_ai_continues_thread_and_hides_final_link_recommendations():
     assert "appendAskMessage" in js
     assert "renderAskLoading(question)" in js
     assert "renderAskConversation({ answer: \"正在整理上下文...\" }, questionText)" not in js
-    assert "appendAskCitations" not in js
-    assert ".ask-ai-citations" not in css
+    assert "appendAskCitations" in js
+    assert ".ask-ai-citations" in css
 
 
 def test_ask_ai_contract_renders_markdown_and_reuses_loaded_conversation_id():
@@ -137,6 +137,7 @@ def test_ask_ai_contract_renders_markdown_and_reuses_loaded_conversation_id():
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
     assert "renderMarkdown" in js
     assert "bubble.innerHTML = renderMarkdown(text)" in js
+    assert "md-list-number" in js
     assert "state.activeConversationId" in js
     assert "conversation_id: state.activeConversationId" in js
     assert ".ask-ai-bubble h1" in css
@@ -160,8 +161,8 @@ def test_ask_ai_visual_contract_feels_like_refined_chat_product():
     assert "backdrop-filter" in css
     assert "flex-direction: row-reverse" not in css
     assert ".ask-ai-message.user::before {\n  order: 2;" in css
-    assert ".ask-ai-message.ai .ask-ai-bubble::before" in css
-    assert ".ask-ai-message.user .ask-ai-bubble::before" in css
+    assert ".ask-ai-message.ai .ask-ai-bubble::before" not in css
+    assert ".ask-ai-message.user .ask-ai-bubble::before" not in css
 
 
 def test_ask_ai_history_delete_updates_list_without_loading_flash():
@@ -175,8 +176,10 @@ def test_settings_view_contract_exists():
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
     assert 'id="settingsView"' in html
     assert 'id="adminPasswordInput"' in html
+    assert 'id="askSystemPromptInput"' in html
     assert "loginAdmin" in js
     assert "saveSettings" in js
+    assert "ask_system_prompt" in js
 
 
 def test_verify_action_is_mobile_scoped():

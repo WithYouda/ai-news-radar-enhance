@@ -5,7 +5,23 @@ import re
 
 from .config import AppConfig
 from .provider import AIProvider
-from .radar_data import build_context, rank_context_items
+from .radar_data import build_context, normalize_public_url, rank_context_items
+
+
+DEFAULT_ASK_SYSTEM_PROMPT = (
+    "你是 AI News Radar 的阅读助手。只能基于给定新闻上下文和历史对话回答。"
+    "先识别用户问题中的主体、公司、产品或分类，只使用和问题直接相关的上下文。"
+    "可以使用历史对话回答关于本对话的问题，也可以用历史对话理解追问里的指代。"
+    "如果证据不足或不知道，请明确说不知道或信息不足。"
+)
+
+ASK_PROTOCOL_PROMPT = (
+    "回答必须是 JSON 对象，字段为 title 和 answer。"
+    "title 是 8 到 18 个中文字符的对话标题，由你根据本轮回答生成，不要照抄用户问题。"
+    "answer 可以使用 Markdown。"
+    "回答涉及新闻事实时，优先使用新闻上下文中的编号和 URL 做引用，格式可以是 [1](https://...)。"
+    "不要在回答末尾追加无关链接、推荐链接或和答案无关的链接。"
+)
 
 
 def format_conversation_history(conversation_messages: list[dict] | None) -> str:
@@ -21,20 +37,17 @@ def format_conversation_history(conversation_messages: list[dict] | None) -> str
     return "\n".join(lines[-12:])
 
 
-def build_ask_messages(question: str, context: str, conversation_messages: list[dict] | None = None) -> list[dict]:
+def build_ask_messages(
+    question: str,
+    context: str,
+    conversation_messages: list[dict] | None = None,
+    system_prompt: str | None = None,
+) -> list[dict]:
+    base_prompt = str(system_prompt or "").strip() or DEFAULT_ASK_SYSTEM_PROMPT
     messages = [
         {
             "role": "system",
-            "content": (
-                "你是 AI News Radar 的阅读助手。只能基于给定上下文回答。"
-                "先识别用户问题中的主体、公司、产品或分类，只使用和问题直接相关的上下文。"
-                "可以使用历史对话回答关于本对话的问题，也可以用历史对话理解追问里的指代。"
-                "不要在回答末尾追加链接列表、推荐链接或无关链接。"
-                "如果证据不足或不知道，请明确说不知道或信息不足。"
-                "回答必须是 JSON 对象，字段为 title 和 answer。"
-                "title 是 8 到 18 个中文字符的对话标题，由你根据本轮回答生成，不要照抄用户问题。"
-                "answer 可以使用 Markdown。"
-            ),
+            "content": f"{base_prompt}\n{ASK_PROTOCOL_PROMPT}",
         },
     ]
     for message in conversation_messages or []:
@@ -87,6 +100,22 @@ def parse_answer_payload(raw: str) -> tuple[str, str]:
     return answer, title[:64]
 
 
+def citation_items(items: list[dict], limit: int = 5) -> list[dict]:
+    citations = []
+    seen_urls = set()
+    for item in items:
+        url = normalize_public_url(str(item.get("url") or ""))
+        if not url or url in seen_urls:
+            continue
+        title = item.get("title") or item.get("title_zh") or item.get("title_en") or "Untitled"
+        source = item.get("site_name") or item.get("source") or "Unknown source"
+        citations.append({"title": str(title), "url": url, "source": str(source)})
+        seen_urls.add(url)
+        if len(citations) >= limit:
+            break
+    return citations
+
+
 def _question_keywords(question: str) -> set[str]:
     generic = {"今天", "今日", "有什么", "哪些", "什么", "消息", "新闻", "更新", "总结", "重要"}
     return {
@@ -123,16 +152,22 @@ async def answer_question(
     items: list[dict],
     provider: AIProvider | None = None,
     conversation_messages: list[dict] | None = None,
+    system_prompt: str | None = None,
 ) -> dict:
     provider = provider or AIProvider(config)
     ranked_items = relevant_context_items(items, question)
     context = build_context(ranked_items, question=question, max_items=config.max_context_items)
-    messages = build_ask_messages(question, context, conversation_messages=conversation_messages)
+    messages = build_ask_messages(
+        question,
+        context,
+        conversation_messages=conversation_messages,
+        system_prompt=system_prompt,
+    )
     raw_answer = await provider.chat(messages, temperature=0.2)
     answer, title = parse_answer_payload(raw_answer)
     return {
         "answer": answer,
         "title": title,
-        "citations": [],
+        "citations": citation_items(ranked_items),
         "model": config.ai_model,
     }

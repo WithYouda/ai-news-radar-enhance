@@ -1531,11 +1531,29 @@ body.ask-ai-open {
 
 .ask-ai-bubble ul,
 .ask-ai-bubble ol {
-  padding-left: 18px;
+  padding-left: 0;
 }
 
 .ask-ai-bubble li + li {
   margin-top: 4px;
+}
+
+.ask-ai-md-list {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+}
+
+.ask-ai-md-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+}
+
+.md-list-number {
+  color: var(--accent);
+  font-weight: 800;
+  user-select: text;
 }
 
 .ask-ai-bubble code {
@@ -1583,30 +1601,26 @@ body.ask-ai-open {
   box-shadow: 0 8px 18px rgba(20, 27, 22, 0.08);
 }
 
-.ask-ai-message.ai .ask-ai-bubble::before,
-.ask-ai-message.user .ask-ai-bubble::before {
-  content: "";
-  position: absolute;
-  bottom: 8px;
-  width: 8px;
-  height: 8px;
-  transform: rotate(45deg);
-}
-
-.ask-ai-message.ai .ask-ai-bubble::before {
-  left: -4px;
-  border-left: 1px solid rgba(20, 27, 22, 0.08);
-  border-bottom: 1px solid rgba(20, 27, 22, 0.08);
-  background: var(--ask-ai-bg);
-}
-
-.ask-ai-message.user .ask-ai-bubble::before {
-  right: -4px;
-  background: var(--ask-user-bg);
-}
-
 .ask-ai-message.pending .ask-ai-bubble {
   color: var(--muted);
+}
+
+.ask-ai-citations {
+  max-width: 84%;
+  display: grid;
+  gap: 6px;
+  margin-left: 34px;
+  border-left: 3px solid rgba(18, 106, 115, 0.28);
+  padding-left: 9px;
+}
+
+.ask-ai-citations a {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ask-ai-history-list {
@@ -1823,6 +1837,12 @@ body.ask-ai-open {
 
 .settings-toggle input {
   width: auto;
+}
+
+#askSystemPromptInput {
+  min-height: 148px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .mobile-bottom-nav,

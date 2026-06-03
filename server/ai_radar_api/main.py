@@ -318,15 +318,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 for message in (existing_conversation or {}).get("messages", [])
                 if message.get("role") in {"user", "assistant"} and message.get("content")
             ]
+            ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
             if conversation_messages:
                 result = await answer_question(
                     config,
                     payload.question,
                     items,
                     conversation_messages=conversation_messages,
+                    system_prompt=ask_system_prompt,
                 )
             else:
-                result = await answer_question(config, payload.question, items)
+                result = await answer_question(config, payload.question, items, system_prompt=ask_system_prompt)
             result["context_item_count"] = len(items)
             result["context_source"] = context_source
             scope_payload = {

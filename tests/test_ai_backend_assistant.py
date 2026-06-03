@@ -10,7 +10,7 @@ def test_build_ask_messages_avoids_unrelated_link_lists():
         context="[1] OpenAI ships model | OpenAI | https://example.com/a",
     )
     text = "\n".join(m["content"] for m in messages)
-    assert "不要在回答末尾追加链接列表" in text
+    assert "引用" in text
     assert "无关链接" in text
     assert "不知道" in text or "不足" in text
     assert "https://example.com/a" in text
@@ -56,6 +56,19 @@ def test_build_ask_messages_embeds_history_in_current_prompt():
     assert "可以使用历史对话回答关于本对话的问题" in "\n".join(message["content"] for message in messages)
 
 
+def test_build_ask_messages_uses_custom_system_prompt_with_protocol():
+    messages = build_ask_messages(
+        "总结今天",
+        "[1] A | Source | https://a.com",
+        system_prompt="你是一个严格的 AI 新闻编辑，只给结论。",
+    )
+
+    system_text = messages[0]["content"]
+    assert "严格的 AI 新闻编辑" in system_text
+    assert "回答必须是 JSON 对象" in system_text
+    assert "引用" in system_text
+
+
 def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
     config = AppConfig(
         public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
@@ -80,7 +93,7 @@ def test_answer_question_does_not_return_final_link_recommendations(tmp_path):
 
     assert result["answer"] == "answer"
     assert result["title"] == "OpenAI 重点"
-    assert result["citations"] == []
+    assert result["citations"] == [{"title": "OpenAI ships model", "url": "https://example.com/a", "source": "OpenAI"}]
 
 
 def test_answer_question_falls_back_when_provider_returns_plain_markdown(tmp_path):
@@ -133,4 +146,7 @@ def test_answer_question_filters_citations_to_question_matches(tmp_path):
 
     result = anyio.run(answer_question, config, "今天 OpenAI 有什么新消息？", items, FakeProvider())
 
-    assert result["citations"] == []
+    assert [citation["title"] for citation in result["citations"]] == [
+        "OpenAI releases model",
+        "OpenAI updates API",
+    ]
