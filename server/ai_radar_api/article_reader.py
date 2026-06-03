@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import html
 import ipaddress
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -100,6 +101,7 @@ RECOMMENDATION_HEADING_RE = re.compile(
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
     flags=re.I,
 )
+GOOGLE_NEWS_BATCH_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
 
 
 def _now() -> str:
@@ -459,6 +461,120 @@ def find_news_item(config, requested_id: str) -> dict | None:
     return None
 
 
+def _is_google_news_url(url: str) -> bool:
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    return host == "news.google.com" or host.endswith(".news.google.com")
+
+
+def _google_news_locale(url: str) -> tuple[str, str, str]:
+    query = parse_qs(urlsplit(url).query)
+    hl = (query.get("hl") or ["en-US"])[0] or "en-US"
+    gl = (query.get("gl") or ["US"])[0] or "US"
+    ceid = (query.get("ceid") or [f"{gl}:en"])[0] or f"{gl}:en"
+    return hl, gl, ceid
+
+
+def _google_news_decode_request(article_id: str, timestamp: str, signature: str, url: str) -> str:
+    hl, gl, ceid = _google_news_locale(url)
+    ts_value: int | str = int(timestamp) if str(timestamp).isdigit() else timestamp
+    inner = [
+        "garturlreq",
+        [
+            [hl, gl, ["FINANCE_TOP_INDICES", "WEB_TEST_1_0_0"], None, None, 1, 1, ceid, None, 180, None, None, None, None, None, 0, None, None, [1608992183, 723341000]],
+            hl,
+            gl,
+            1,
+            [2, 3, 4, 8],
+            1,
+            0,
+            "655000234",
+            0,
+            0,
+            None,
+            0,
+        ],
+        article_id,
+        ts_value,
+        signature,
+    ]
+    return json.dumps([[["Fbv4je", json.dumps(inner, separators=(",", ":")), None, "generic"]]], separators=(",", ":"))
+
+
+def _walk_first_public_url(value) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith(("http://", "https://")) and _is_safe_public_url(stripped) and not _is_google_news_url(stripped):
+            return unquote(stripped)
+        if stripped.startswith(("[", "{")):
+            try:
+                nested = json.loads(stripped)
+            except json.JSONDecodeError:
+                nested = None
+            if nested is not None:
+                found = _walk_first_public_url(nested)
+                if found:
+                    return found
+        for candidate in re.findall(r"https?://[^\"\\\s<>]+", stripped):
+            candidate = unquote(candidate)
+            if _is_safe_public_url(candidate) and not _is_google_news_url(candidate):
+                return candidate
+        return ""
+    if isinstance(value, dict):
+        values = value.values()
+    elif isinstance(value, list):
+        values = value
+    else:
+        return ""
+    for item in values:
+        found = _walk_first_public_url(item)
+        if found:
+            return found
+    return ""
+
+
+def _decoded_google_news_url(response_text: str) -> str:
+    payload = re.sub(r"^\)\]\}'\s*", "", response_text or "").strip()
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return ""
+    return _walk_first_public_url(data)
+
+
+def resolve_google_news_url(url: str, timeout_seconds: int = 6) -> str:
+    if not _is_google_news_url(url):
+        return ""
+    response = httpx.get(
+        url,
+        timeout=timeout_seconds,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"},
+    )
+    response.raise_for_status()
+    final_url = normalize_public_url(str(response.url))
+    if final_url and not _is_google_news_url(final_url) and _is_safe_public_url(final_url):
+        return final_url
+    soup = BeautifulSoup(response.text or "", "html.parser")
+    node = soup.select_one("[data-n-a-id][data-n-a-ts][data-n-a-sg]")
+    if not node:
+        return ""
+    request_body = _google_news_decode_request(str(node.get("data-n-a-id") or ""), str(node.get("data-n-a-ts") or ""), str(node.get("data-n-a-sg") or ""), url)
+    decode_response = httpx.post(
+        GOOGLE_NEWS_BATCH_URL,
+        params={"rpcids": "Fbv4je"},
+        data={"f.req": request_body},
+        timeout=timeout_seconds,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "Referer": "https://news.google.com/",
+        },
+    )
+    decode_response.raise_for_status()
+    resolved = normalize_public_url(_decoded_google_news_url(decode_response.text))
+    return resolved if resolved and _is_safe_public_url(resolved) else ""
+
+
 def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
@@ -469,9 +585,16 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     if not _is_safe_public_url(url):
         raise ValueError("Unsupported article URL")
 
+    fetch_url = url
+    if _is_google_news_url(url):
+        try:
+            fetch_url = resolve_google_news_url(url, timeout_seconds=timeout_seconds) or url
+        except Exception:
+            fetch_url = url
+
     try:
         response = httpx.get(
-            url,
+            fetch_url,
             timeout=timeout_seconds,
             follow_redirects=True,
             headers={
