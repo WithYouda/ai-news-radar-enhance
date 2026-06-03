@@ -90,6 +90,10 @@ NEGATIVE_RE = re.compile(
     flags=re.I,
 )
 POSITIVE_RE = re.compile(r"article|body|content|entry|hentry|main|page|post|story|text", flags=re.I)
+RECOMMENDATION_HEADING_RE = re.compile(
+    r"^(recommended|related|more from|more stories|read next|you might also like|popular|latest|推荐|相关阅读|更多|热门)",
+    flags=re.I,
+)
 
 
 def _now() -> str:
@@ -298,6 +302,8 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
         block_html, text = _block_html(node, url)
         if not text or text in seen:
             continue
+        if node.name in {"h2", "h3"} and RECOMMENDATION_HEADING_RE.search(text):
+            break
         if _looks_boilerplate(text):
             continue
         if node.name == "p" and len(text) < 24:

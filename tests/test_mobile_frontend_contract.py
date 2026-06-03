@@ -262,6 +262,9 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert "Translator.create" in js
     assert "Translator.availability" in js
     assert "translate.google.com" in js
+    assert "cleanedTextForTranslation" in js
+    assert "&op=translate" in js
+    assert "&u=" not in js[js.index("async function translateReaderArticle") : js.index("async function loadCleanArticle")]
     assert 'translate="yes"' in html
     assert "/api/read/" in js
     assert "sha1Hex" in js
@@ -270,6 +273,7 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert ".reader-article" in css
     assert ".reader-ask-fab" in css
     assert ".reader-access-badge" in css
+    assert ".reader-close" in css and "white-space: nowrap" in css
     assert "body.reader-open" in css
 
 
@@ -286,7 +290,22 @@ def test_ask_ai_sheet_supports_smooth_drag_to_dismiss():
     assert "closeAskAi()" in js[js.index("function handleAskPanelDragEnd") :]
     assert "--ask-drag-y" in css
     assert ".ask-ai-panel.dragging" in css
-    assert "transform: translate3d(0, var(--ask-drag-y), 0)" in css
+    assert "transform: translate3d(0, calc(var(--ask-open-y) + var(--ask-drag-y)), 0)" in css
+    assert ".ask-ai-sheet.open" in css
+    assert ".ask-ai-sheet.empty-thread .ask-ai-body" in css
+
+
+def test_reader_sheet_supports_drag_to_dismiss_and_floating_ask():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "readerPanelEl" in js
+    assert "handleReaderPanelDragStart" in js
+    assert "READER_DRAG_CLOSE_THRESHOLD" in js
+    assert "closeReader()" in js[js.index("function handleReaderPanelDragEnd") :]
+    assert "--reader-drag-y" in css
+    assert ".reader-panel.dragging" in css
+    assert "transform: translate3d(0, var(--reader-drag-y), 0)" in css
+    assert ".reader-ask-fab" in css
 
 
 def test_news_title_click_opens_clean_reader_instead_of_original_page():

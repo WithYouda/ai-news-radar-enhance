@@ -122,6 +122,27 @@ def test_extract_article_prefers_reader_like_content_over_sidebar_noise():
     assert "Popular links and account prompts" not in payload["text"]
 
 
+def test_extract_article_stops_before_recommendation_sections():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The actual article explains the product launch, the model behavior, and the API migration details readers need.</p>
+              <h2>Recommended for you</h2>
+              <p>This unrelated recommendation promotes another story and must not be included in the clean reader body.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/story",
+        fallback_title="Reader story",
+    )
+
+    assert "actual article explains" in payload["text"]
+    assert "unrelated recommendation" not in payload["text"]
+
+
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     calls = 0

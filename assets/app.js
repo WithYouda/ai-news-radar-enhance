@@ -115,6 +115,7 @@ const askStreamingToggleEl = document.getElementById("askStreamingToggle");
 const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
 const readerSheetEl = document.getElementById("readerSheet");
+const readerPanelEl = readerSheetEl?.querySelector(".reader-panel");
 const readerCloseEl = document.getElementById("readerClose");
 const readerTitleEl = document.getElementById("readerTitle");
 const readerSourceEl = document.getElementById("readerSource");
@@ -124,7 +125,9 @@ const readerAskButtonEl = document.getElementById("readerAskButton");
 const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
 const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
 const ASK_DRAG_CLOSE_THRESHOLD = 132;
+const READER_DRAG_CLOSE_THRESHOLD = 128;
 let askDragState = null;
+let readerDragState = null;
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -290,15 +293,19 @@ function openAskAi(extraContext = {}) {
     if (!apiBaseUrl) askAiAnswerEl.textContent = "AI 后端未配置。";
   }
   setAskPanelView("messages");
+  askAiSheetEl.classList.toggle("empty-thread", Boolean(apiBaseUrl));
+  askAiSheetEl.classList.remove("open");
   askAiSheetEl.hidden = false;
   resetAskPanelDrag();
   document.body.classList.add("ask-ai-open");
+  window.requestAnimationFrame(() => askAiSheetEl.classList.add("open"));
   if (askAiInputEl) askAiInputEl.focus();
 }
 
 function closeAskAi() {
   if (!askAiSheetEl) return;
   resetAskPanelDrag();
+  askAiSheetEl.classList.remove("open", "empty-thread");
   askAiSheetEl.hidden = true;
   document.body.classList.remove("ask-ai-open");
 }
@@ -353,6 +360,56 @@ function handleAskPanelDragEnd(event) {
   askAiPanelEl.style.setProperty("--ask-drag-y", "0px");
   askAiSheetEl?.style.setProperty("--ask-backdrop-opacity", "1");
   askDragState = null;
+}
+
+function resetReaderPanelDrag() {
+  readerDragState = null;
+  if (!readerPanelEl) return;
+  readerPanelEl.classList.remove("dragging", "settling");
+  readerPanelEl.style.setProperty("--reader-drag-y", "0px");
+}
+
+function canStartReaderPanelDrag(event) {
+  if (event.target.closest?.("textarea, input, button, a")) return false;
+  if (event.target.closest?.(".reader-article")) {
+    return !readerBodyEl || readerBodyEl.scrollTop <= 0;
+  }
+  return true;
+}
+
+function handleReaderPanelDragStart(event) {
+  if (!readerPanelEl || !canStartReaderPanelDrag(event)) return;
+  readerDragState = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    currentY: 0,
+  };
+  readerPanelEl.setPointerCapture?.(event.pointerId);
+  readerPanelEl.classList.add("dragging");
+  readerPanelEl.classList.remove("settling");
+}
+
+function handleReaderPanelDragMove(event) {
+  if (!readerDragState || event.pointerId !== readerDragState.pointerId || !readerPanelEl) return;
+  const delta = Math.max(0, event.clientY - readerDragState.startY);
+  if (delta <= 0) return;
+  readerDragState.currentY = delta;
+  readerPanelEl.style.setProperty("--reader-drag-y", `${delta}px`);
+  event.preventDefault();
+}
+
+function handleReaderPanelDragEnd(event) {
+  if (!readerDragState || event.pointerId !== readerDragState.pointerId || !readerPanelEl) return;
+  const shouldClose = readerDragState.currentY >= READER_DRAG_CLOSE_THRESHOLD;
+  readerPanelEl.releasePointerCapture?.(event.pointerId);
+  readerPanelEl.classList.remove("dragging");
+  readerPanelEl.classList.add("settling");
+  if (shouldClose) {
+    closeReader();
+    return;
+  }
+  readerPanelEl.style.setProperty("--reader-drag-y", "0px");
+  readerDragState = null;
 }
 
 function escapeHtml(text) {
@@ -483,6 +540,7 @@ function appendAskMessageActions(row, role, text, options = {}) {
 
 function appendAskMessage(role, text, options = {}) {
   if (!askAiAnswerEl) return null;
+  askAiSheetEl?.classList.remove("empty-thread");
   const row = document.createElement("div");
   row.className = `ask-ai-message ${role}`;
   if (options.pending) row.classList.add("pending");
@@ -928,6 +986,7 @@ async function deleteAskHistoryItem(conversationId) {
 function setAskPanelView(view) {
   const isHistory = view === "history";
   state.askHistoryVisible = isHistory;
+  if (isHistory) askAiSheetEl?.classList.remove("empty-thread");
   if (askAiHistoryListEl) askAiHistoryListEl.hidden = !isHistory;
   if (askAiAnswerEl) askAiAnswerEl.hidden = isHistory;
   if (askAiHistoryButtonEl) askAiHistoryButtonEl.classList.toggle("active", isHistory);
@@ -1492,6 +1551,7 @@ async function readerItemId(item) {
 
 function closeReader() {
   if (!readerSheetEl) return;
+  resetReaderPanelDrag();
   readerSheetEl.hidden = true;
   document.body.classList.remove("reader-open");
 }
@@ -1545,6 +1605,11 @@ function renderReaderArticle(payload) {
   readerBodyEl.innerHTML = payload.content_html || `<p>${escapeHtml(payload.text || "未能提取正文。")}</p>`;
 }
 
+function cleanedTextForTranslation() {
+  const text = (state.readerArticle?.text || readerBodyEl?.textContent || "").trim();
+  return text.replace(/\s+/g, " ").slice(0, 4800);
+}
+
 async function translateReaderArticle() {
   if (!readerBodyEl || !readerTranslateButtonEl) return;
   const sourceLanguage = state.readerArticle?.language || readerBodyEl.lang || "en";
@@ -1572,7 +1637,8 @@ async function translateReaderArticle() {
     }
   }
   document.documentElement.setAttribute("translate", "yes");
-  const translateUrl = `https://translate.google.com/translate?sl=auto&tl=zh-CN&u=${encodeURIComponent(state.readerArticle?.final_url || state.readerArticle?.url || "")}`;
+  const translateText = cleanedTextForTranslation();
+  const translateUrl = `https://translate.google.com/?sl=auto&tl=zh-CN&text=${encodeURIComponent(translateText)}&op=translate`;
   window.open(translateUrl, "_blank", "noopener,noreferrer");
   readerTranslateButtonEl.textContent = "已打开翻译";
   readerTranslateButtonEl.disabled = false;
@@ -1587,6 +1653,7 @@ async function loadCleanArticle(item) {
 async function openReader(item) {
   if (!readerSheetEl) return;
   state.readerItem = item;
+  resetReaderPanelDrag();
   renderReaderLoading(item);
   readerSheetEl.hidden = false;
   document.body.classList.add("reader-open");
@@ -2501,6 +2568,12 @@ if (askAiButtonEl) {
 }
 
 if (readerCloseEl) readerCloseEl.addEventListener("click", closeReader);
+if (readerPanelEl) {
+  readerPanelEl.addEventListener("pointerdown", handleReaderPanelDragStart);
+  readerPanelEl.addEventListener("pointermove", handleReaderPanelDragMove);
+  readerPanelEl.addEventListener("pointerup", handleReaderPanelDragEnd);
+  readerPanelEl.addEventListener("pointercancel", handleReaderPanelDragEnd);
+}
 if (readerTranslateButtonEl) readerTranslateButtonEl.addEventListener("click", translateReaderArticle);
 if (readerAskButtonEl) {
   readerAskButtonEl.addEventListener("click", async () => {

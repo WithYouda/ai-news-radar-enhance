@@ -1315,6 +1315,7 @@ summary:focus-visible {
 }
 
 .reader-sheet {
+  --reader-drag-y: 0px;
   position: fixed;
   inset: 0;
   z-index: 48;
@@ -1343,6 +1344,17 @@ body.reader-open {
   border-left: 1px solid #ded8cc;
   background: #fffefb;
   box-shadow: -18px 0 36px rgba(24, 32, 29, 0.14);
+  transform: translate3d(0, var(--reader-drag-y), 0);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+.reader-panel.dragging {
+  transition: none;
+}
+
+.reader-panel.settling {
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .reader-head {
@@ -1378,6 +1390,7 @@ body.reader-open {
   color: var(--ink);
   text-decoration: none;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .reader-toolbar {
@@ -1490,6 +1503,7 @@ body.reader-open {
   --ask-ai-bg: #ffffff;
   --ask-chat-line: #e8ddca;
   --ask-drag-y: 0px;
+  --ask-open-y: 20px;
   --ask-backdrop-opacity: 1;
   position: fixed;
   inset: 0;
@@ -1499,10 +1513,17 @@ body.reader-open {
   align-items: stretch;
   background: rgb(24 32 29 / calc(0.2 * var(--ask-backdrop-opacity)));
   backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 180ms ease-out, background 180ms ease-out;
 }
 
 .ask-ai-sheet[hidden] {
   display: none;
+}
+
+.ask-ai-sheet.open {
+  --ask-open-y: 0px;
+  opacity: 1;
 }
 
 body.ask-ai-open {
@@ -1521,9 +1542,13 @@ body.ask-ai-open {
     linear-gradient(180deg, #fff7e8, transparent 28%),
     var(--ask-panel-bg);
   box-shadow: -18px 0 36px rgba(24, 32, 29, 0.16);
-  transform: translate3d(0, var(--ask-drag-y), 0);
-  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: translate3d(0, calc(var(--ask-open-y) + var(--ask-drag-y)), 0);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out;
   will-change: transform;
+}
+
+.ask-ai-sheet.empty-thread .ask-ai-body {
+  display: none;
 }
 
 .ask-ai-panel.dragging {
