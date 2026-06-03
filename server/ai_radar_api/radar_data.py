@@ -146,6 +146,13 @@ def rank_context_items(items: list[dict], question: str) -> list[dict]:
     return sorted(items, key=lambda item: _rank_item(item, keywords), reverse=True)
 
 
+def _strip_item_url_from_article_text(text: str, item_url: str) -> str:
+    normalized_url = normalize_public_url(item_url)
+    if not normalized_url:
+        return text
+    return re.sub(re.escape(normalized_url), "", text)
+
+
 def build_context(items: list[dict], question: str, max_items: int = 40) -> str:
     ranked = rank_context_items(items, question)
     lines = []
@@ -163,7 +170,7 @@ def build_context(items: list[dict], question: str, max_items: int = 40) -> str:
         lines.append(" | ".join(str(part) for part in parts if part))
         article_text = str(item.get("article_text") or "").strip()
         if article_text:
-            excerpt = re.sub(r"\s+", " ", article_text)[:4000]
+            excerpt = re.sub(r"\s+", " ", _strip_item_url_from_article_text(article_text, url)).strip()[:4000]
             lines.append(f"正文摘录[{index}]: {excerpt}")
     return "\n".join(lines)
 

@@ -85,13 +85,19 @@ RESTRICTED_PATTERNS = (
 )
 NEGATIVE_RE = re.compile(
     r"ad-|agegate|banner|combx|comment|community|cookie|disqus|extra|foot|header|login|menu|modal|"
-    r"newsletter|pager|pagination|popup|promo|related|remark|rss|share|shoutbox|sidebar|signin|"
+    r"newsletter|pager|pagination|popup|promo|recommend|related|remark|rss|share|shoutbox|sidebar|signin|"
     r"sponsor|subscribe|widget",
     flags=re.I,
 )
 POSITIVE_RE = re.compile(r"article|body|content|entry|hentry|main|page|post|story|text", flags=re.I)
+READER_AUXILIARY_RE = re.compile(
+    r"related|recommend|more[-_\s]*(stories|from|like)|read[-_\s]*next|you[-_\s]*might|popular|latest|"
+    r"extension[-_\s]*reading|extended[-_\s]*reading|相关阅读|推荐阅读|延伸阅读|扩展阅读|更多故事|更多文章",
+    flags=re.I,
+)
 RECOMMENDATION_HEADING_RE = re.compile(
-    r"^(recommended|related|more from|more stories|read next|you might also like|popular|latest|推荐|相关阅读|更多|热门)",
+    r"^(recommended|related|more from|more stories|read next|you might also like|popular|latest|"
+    r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
     flags=re.I,
 )
 
@@ -159,8 +165,13 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
             [
                 str(node.get("id") or ""),
                 " ".join(str(value) for value in node.get("class", []) if value),
+                str(node.get("aria-label") or ""),
+                " ".join(str(value) for key, value in node.attrs.items() if str(key).startswith("data-")),
             ]
         )
+        if signature and READER_AUXILIARY_RE.search(signature):
+            node.decompose()
+            continue
         if signature and NEGATIVE_RE.search(signature) and not POSITIVE_RE.search(signature):
             node.decompose()
     return soup

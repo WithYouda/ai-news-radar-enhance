@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 httpx
 pydantic
+beautifulsoup4==4.12.3

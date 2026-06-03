@@ -143,6 +143,40 @@ def test_extract_article_stops_before_recommendation_sections():
     assert "unrelated recommendation" not in payload["text"]
 
 
+def test_extract_article_removes_related_recommended_and_extension_reading_blocks():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <article class="article-content">
+                <p>The real story explains an AI agent release with concrete product behavior, model constraints, customer impact, and migration details for teams evaluating the update.</p>
+                <p>The second real paragraph adds implementation notes and background that belong in the clean reader body.</p>
+                <section class="article-content__related">
+                  <p>This recommended story is long enough to look like editorial text, but it is not part of the current article and must be removed.</p>
+                </section>
+                <div class="recommended-list">
+                  <p>Recommended reading about another company should not survive extraction.</p>
+                </div>
+                <div class="extension-reading content">
+                  <p>这是一段扩展阅读内容，不应该进入清洗后的正文。</p>
+                </div>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://example.com/story",
+        fallback_title="Reader story",
+    )
+
+    assert "real story explains" in payload["text"]
+    assert "second real paragraph" in payload["text"]
+    assert "recommended story" not in payload["text"].lower()
+    assert "Recommended reading" not in payload["text"]
+    assert "扩展阅读内容" not in payload["text"]
+
+
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     calls = 0
