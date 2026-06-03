@@ -1,0 +1,320 @@
+from __future__ import annotations
+
+import html
+import ipaddress
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.parse import urljoin, urlsplit
+
+import httpx
+from bs4 import BeautifulSoup, Comment
+
+from .db import connect_db
+from .radar_data import item_identity, load_latest_items, normalize_public_url
+
+
+BLOCK_TAGS = ("h2", "h3", "p", "blockquote", "pre", "ul", "ol")
+DROP_SELECTORS = (
+    "script",
+    "style",
+    "noscript",
+    "svg",
+    "canvas",
+    "iframe",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "form",
+    "button",
+    "[aria-hidden='true']",
+    ".ad",
+    ".ads",
+    ".advertisement",
+    ".social",
+    ".share",
+    ".comments",
+    ".related",
+)
+ARTICLE_SELECTORS = (
+    "article",
+    "main",
+    "[role='main']",
+    ".post-content",
+    ".entry-content",
+    ".article-content",
+    ".article__content",
+    ".content",
+    "body",
+)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _absolute_link(url: str, base_url: str) -> str:
+    href = urljoin(base_url, str(url or "").strip())
+    parsed = urlsplit(href)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return href
+
+
+def _is_safe_public_url(url: str) -> bool:
+    parsed = urlsplit(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    host = parsed.hostname.strip().lower()
+    if host in {"localhost", "0.0.0.0"} or host.endswith(".local"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+
+
+def _meta_content(soup: BeautifulSoup, *selectors: str) -> str:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        value = node.get("content") if node else ""
+        if value:
+            return _compact_text(value)
+    return ""
+
+
+def _title(soup: BeautifulSoup, fallback_title: str) -> str:
+    return (
+        _meta_content(soup, "meta[property='og:title']", "meta[name='twitter:title']")
+        or _compact_text(soup.h1.get_text(" ", strip=True) if soup.h1 else "")
+        or _compact_text(soup.title.get_text(" ", strip=True) if soup.title else "")
+        or _compact_text(fallback_title)
+        or "未命名文章"
+    )
+
+
+def _clean_soup(html_text: str) -> BeautifulSoup:
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+    for selector in DROP_SELECTORS:
+        for node in soup.select(selector):
+            node.decompose()
+    return soup
+
+
+def _candidate_score(node) -> float:
+    paragraphs = node.find_all("p")
+    text_len = len(_compact_text(node.get_text(" ", strip=True)))
+    paragraph_len = sum(len(_compact_text(p.get_text(" ", strip=True))) for p in paragraphs)
+    link_len = sum(len(_compact_text(a.get_text(" ", strip=True))) for a in node.find_all("a"))
+    link_density = link_len / max(text_len, 1)
+    return paragraph_len + min(len(paragraphs), 12) * 80 - link_density * 420
+
+
+def _best_container(soup: BeautifulSoup):
+    candidates = []
+    for selector in ARTICLE_SELECTORS:
+        candidates.extend(soup.select(selector))
+    if not candidates:
+        return soup.body or soup
+    return max(candidates, key=_candidate_score)
+
+
+def _inline_html(node, base_url: str) -> str:
+    parts: list[str] = []
+    for child in node.children:
+        name = getattr(child, "name", None)
+        if not name:
+            parts.append(html.escape(str(child), quote=False))
+            continue
+        if name == "br":
+            parts.append("<br>")
+            continue
+        if name == "a":
+            text = _compact_text(child.get_text(" ", strip=True))
+            href = _absolute_link(child.get("href", ""), base_url)
+            if text and href:
+                parts.append(f'<a href="{html.escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(text)}</a>')
+            elif text:
+                parts.append(html.escape(text))
+            continue
+        text = _compact_text(child.get_text(" ", strip=True))
+        if text:
+            parts.append(html.escape(text))
+    return _compact_text("".join(parts))
+
+
+def _block_html(node, base_url: str) -> tuple[str, str]:
+    name = getattr(node, "name", "")
+    if name in {"h2", "h3", "p", "blockquote", "pre"}:
+        inner = _inline_html(node, base_url) if name != "pre" else html.escape(node.get_text("\n", strip=True))
+        text = _compact_text(node.get_text(" ", strip=True))
+        if not text:
+            return "", ""
+        return f"<{name}>{inner}</{name}>", text
+    if name in {"ul", "ol"}:
+        items = []
+        texts = []
+        for li in node.find_all("li", recursive=False):
+            text = _compact_text(li.get_text(" ", strip=True))
+            if not text:
+                continue
+            items.append(f"<li>{_inline_html(li, base_url)}</li>")
+            texts.append(text)
+        if not items:
+            return "", ""
+        return f"<{name}>{''.join(items)}</{name}>", "\n".join(texts)
+    return "", ""
+
+
+def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
+    soup = _clean_soup(html_text)
+    container = _best_container(soup)
+    blocks = []
+    texts = []
+    seen = set()
+    for node in container.find_all(BLOCK_TAGS):
+        block_html, text = _block_html(node, url)
+        if not text or text in seen:
+            continue
+        if node.name == "p" and len(text) < 24:
+            continue
+        seen.add(text)
+        blocks.append(block_html)
+        texts.append(text)
+        if sum(len(part) for part in texts) >= 15000 or len(blocks) >= 80:
+            break
+    article_text = "\n\n".join(texts)
+    return {
+        "title": _title(soup, fallback_title),
+        "byline": _meta_content(soup, "meta[name='author']", "meta[property='article:author']"),
+        "published_at": _meta_content(soup, "meta[property='article:published_time']", "meta[name='date']"),
+        "excerpt": article_text[:260],
+        "text": article_text,
+        "content_html": "\n".join(blocks),
+    }
+
+
+def cached_article(db_path: str | Path, item_id: str) -> dict | None:
+    with connect_db(db_path) as conn:
+        row = conn.execute(
+            """
+            select item_id, url, final_url, title, site_name, byline, published_at,
+                   excerpt, text, content_html, fetched_at
+            from article_cache
+            where item_id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "item_id": row["item_id"],
+        "url": row["url"],
+        "final_url": row["final_url"],
+        "title": row["title"],
+        "site_name": row["site_name"],
+        "byline": row["byline"],
+        "published_at": row["published_at"],
+        "excerpt": row["excerpt"],
+        "text": row["text"],
+        "content_html": row["content_html"],
+        "fetched_at": row["fetched_at"],
+        "cache_status": "hit",
+    }
+
+
+def store_article(db_path: str | Path, article: dict) -> None:
+    with connect_db(db_path) as conn:
+        conn.execute(
+            """
+            insert into article_cache(
+              item_id, url, final_url, title, site_name, byline, published_at,
+              excerpt, text, content_html, fetched_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict(item_id) do update set
+              url = excluded.url,
+              final_url = excluded.final_url,
+              title = excluded.title,
+              site_name = excluded.site_name,
+              byline = excluded.byline,
+              published_at = excluded.published_at,
+              excerpt = excluded.excerpt,
+              text = excluded.text,
+              content_html = excluded.content_html,
+              fetched_at = excluded.fetched_at
+            """,
+            (
+                article["item_id"],
+                article["url"],
+                article["final_url"],
+                article["title"],
+                article["site_name"],
+                article.get("byline", ""),
+                article.get("published_at", ""),
+                article.get("excerpt", ""),
+                article.get("text", ""),
+                article.get("content_html", ""),
+                article["fetched_at"],
+            ),
+        )
+
+
+def find_news_item(config, requested_id: str) -> dict | None:
+    for mode in ("ai", "all"):
+        try:
+            items = load_latest_items(config, mode=mode)
+        except Exception:
+            items = []
+        for item in items:
+            identity = item_identity(item)
+            candidates = {identity, str(item.get("id") or ""), normalize_public_url(str(item.get("url") or ""))}
+            if requested_id in candidates:
+                return item
+    return None
+
+
+def fetch_clean_article(config, item: dict, timeout_seconds: int = 15) -> dict:
+    item_id = item_identity(item)
+    cached = cached_article(config.db_path, item_id)
+    if cached:
+        return {**cached, "item": item}
+
+    url = normalize_public_url(str(item.get("url") or ""))
+    if not _is_safe_public_url(url):
+        raise ValueError("Unsupported article URL")
+
+    response = httpx.get(
+        url,
+        timeout=timeout_seconds,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",
+            "Accept": "text/html,application/xhtml+xml",
+        },
+    )
+    response.raise_for_status()
+    extracted = extract_article_from_html(response.text, url=str(response.url), fallback_title=str(item.get("title") or ""))
+    if not extracted["text"]:
+        raise ValueError("No readable article body found")
+
+    article = {
+        **extracted,
+        "item_id": item_id,
+        "url": url,
+        "final_url": normalize_public_url(str(response.url)),
+        "site_name": str(item.get("site_name") or item.get("source") or ""),
+        "fetched_at": _now(),
+        "cache_status": "miss",
+        "item": item,
+    }
+    store_article(config.db_path, article)
+    return article

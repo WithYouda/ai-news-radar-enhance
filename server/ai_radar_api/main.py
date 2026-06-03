@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
+from .article_reader import fetch_clean_article, find_news_item
 from .assistant import answer_question
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
@@ -242,6 +243,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             for item in items[: config.max_context_items]
         ]
         return {"items": merged_items, "verified_items": list(verification_by_id.values())}
+
+    @app.get("/api/read/{item_id}")
+    def read_article(item_id: str) -> dict:
+        item = find_news_item(config, item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="News item not found")
+        try:
+            return fetch_clean_article(config, item)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"文章读取失败: {exc}") from exc
 
     def store_verification_result(item_id: str, item: dict, result: dict) -> dict:
         url = normalize_public_url(str(item.get("url") or result.get("url") or ""))

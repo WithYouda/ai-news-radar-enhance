@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ask-stream-d12" in html
+    assert "./assets/styles.css?v=reader-mvp-01" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ask-stream-d12" in html
+    assert "./assets/app.js?v=reader-mvp-01" in html
 
 
 def test_category_view_contract_exists():
@@ -242,9 +242,25 @@ def test_settings_view_contract_exists():
 
 def test_verify_action_is_mobile_scoped():
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
-    assert ".card-action {\n  display: none;" in css
+    assert ".card-actions {\n  display: none;" in css
     assert "@media (max-width: 760px)" in css
-    assert ".card-action {\n    display: inline-flex;" in css
+    assert ".card-actions {\n    display: inline-flex;" in css
+
+
+def test_clean_reader_contract_exists_for_news_cards():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="readerSheet"' in html
+    assert 'id="readerBody"' in html
+    assert "openReader(item)" in js
+    assert "loadCleanArticle" in js
+    assert "/api/read/" in js
+    assert "sha1Hex" in js
+    assert "reader-action" in js
+    assert ".reader-sheet" in css
+    assert ".reader-article" in css
+    assert "body.reader-open" in css
 
 
 def test_deep_verify_preserves_item_metadata_in_verification_payload():

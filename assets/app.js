@@ -55,6 +55,7 @@ const state = {
   activeConversationId: null,
   askHistoryLoaded: false,
   askHistoryVisible: false,
+  readerItem: null,
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -111,6 +112,13 @@ const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
 const askStreamingToggleEl = document.getElementById("askStreamingToggle");
 const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
+const readerSheetEl = document.getElementById("readerSheet");
+const readerCloseEl = document.getElementById("readerClose");
+const readerTitleEl = document.getElementById("readerTitle");
+const readerSourceEl = document.getElementById("readerSource");
+const readerBodyEl = document.getElementById("readerBody");
+const readerOriginalLinkEl = document.getElementById("readerOriginalLink");
+const readerAskButtonEl = document.getElementById("readerAskButton");
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -258,12 +266,18 @@ function askScopeLabel(scope) {
   return labels[scope] || "今日";
 }
 
+function askContextLabel(scope) {
+  if (scope.item_title) return `新闻 · ${scope.item_title}`;
+  if (scope.category) return `分类 · ${scope.category}`;
+  return askScopeLabel(scope.scope);
+}
+
 function openAskAi(extraContext = {}) {
   if (!askAiSheetEl) return;
   state.askContext = extraContext;
   state.activeConversationId = null;
   const scope = currentAskScope();
-  if (askAiContextEl) askAiContextEl.textContent = askScopeLabel(scope.scope);
+  if (askAiContextEl) askAiContextEl.textContent = askContextLabel(scope);
   if (askAiAnswerEl) {
     askAiAnswerEl.innerHTML = "";
     askAiAnswerEl.hidden = false;
@@ -1379,6 +1393,101 @@ function itemIdentity(item) {
   return item.item_id || item.id || item.url || itemTitleText(item);
 }
 
+function normalizePublicUrl(url) {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    if (!parsed.protocol || !parsed.host) return String(url || "").trim();
+    const params = new URLSearchParams(parsed.search);
+    Array.from(params.keys()).forEach((key) => {
+      const lower = key.toLowerCase();
+      if (lower.startsWith("utm_") || ["fbclid", "gclid", "igshid", "mc_cid", "mc_eid"].includes(lower)) {
+        params.delete(key);
+      }
+    });
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
+    parsed.hash = "";
+    parsed.search = params.toString();
+    if (parsed.pathname !== "/") parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString();
+  } catch (_) {
+    return String(url || "").trim();
+  }
+}
+
+async function sha1Hex(text) {
+  const encoder = new TextEncoder();
+  const digest = await window.crypto.subtle.digest("SHA-1", encoder.encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function readerItemId(item) {
+  if (item.item_id || item.id) return item.item_id || item.id;
+  const url = normalizePublicUrl(item.url || "");
+  if (!url || !window.crypto?.subtle) return itemIdentity(item);
+  return sha1Hex(url);
+}
+
+function closeReader() {
+  if (!readerSheetEl) return;
+  readerSheetEl.hidden = true;
+  document.body.classList.remove("reader-open");
+}
+
+function renderReaderLoading(item) {
+  if (readerTitleEl) readerTitleEl.textContent = itemTitleText(item);
+  if (readerSourceEl) readerSourceEl.textContent = item.site_name || item.source || "AI News Radar";
+  if (readerOriginalLinkEl) {
+    readerOriginalLinkEl.href = item.url || "#";
+    readerOriginalLinkEl.hidden = !item.url;
+  }
+  if (readerBodyEl) {
+    readerBodyEl.innerHTML = '<div class="reader-state">正在清洗原文...</div>';
+  }
+}
+
+function renderReaderArticle(payload) {
+  if (!readerBodyEl) return;
+  if (readerTitleEl) readerTitleEl.textContent = payload.title || itemTitleText(payload.item || {});
+  if (readerSourceEl) {
+    const meta = [payload.site_name, payload.published_at ? fmtTime(payload.published_at) : "", payload.cache_status === "hit" ? "已缓存" : "新抓取"]
+      .filter(Boolean)
+      .join(" · ");
+    readerSourceEl.textContent = meta || "AI News Radar";
+  }
+  if (readerOriginalLinkEl) readerOriginalLinkEl.href = payload.final_url || payload.url || "#";
+  readerBodyEl.innerHTML = payload.content_html || `<p>${escapeHtml(payload.text || "未能提取正文。")}</p>`;
+}
+
+async function loadCleanArticle(item) {
+  if (!apiBaseUrl) throw new Error("AI 后端未配置，暂时无法清洗原文。");
+  const id = await readerItemId(item);
+  return apiFetch(`/api/read/${encodeURIComponent(id)}`);
+}
+
+async function openReader(item) {
+  if (!readerSheetEl) return;
+  state.readerItem = item;
+  renderReaderLoading(item);
+  readerSheetEl.hidden = false;
+  document.body.classList.add("reader-open");
+  try {
+    const payload = await loadCleanArticle(item);
+    renderReaderArticle(payload);
+  } catch (err) {
+    if (readerBodyEl) {
+      readerBodyEl.innerHTML = `
+        <div class="reader-state reader-error">
+          <strong>暂时读不到干净正文</strong>
+          <p>${escapeHtml(err.message || "文章读取失败。")}</p>
+        </div>
+      `;
+    }
+  }
+}
+
 async function loadVerificationSummary() {
   if (!apiBaseUrl) return { items: [], unavailable: true };
   try {
@@ -1789,6 +1898,16 @@ function renderItemNode(item) {
     titleEl.textContent = item.title || zh || en;
   }
   titleEl.href = item.url;
+  const readerBtn = document.createElement("button");
+  readerBtn.type = "button";
+  readerBtn.className = "card-action reader-action";
+  readerBtn.textContent = "阅读";
+  readerBtn.disabled = !apiBaseUrl;
+  readerBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openReader(item);
+  });
   const verifyBtn = document.createElement("button");
   verifyBtn.type = "button";
   verifyBtn.className = "card-action verify-action";
@@ -1811,7 +1930,10 @@ function renderItemNode(item) {
       verifyBtn.textContent = "重试核验";
     }
   });
-  node.appendChild(verifyBtn);
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  actions.append(readerBtn, verifyBtn);
+  node.appendChild(actions);
   return node;
 }
 
@@ -2254,6 +2376,16 @@ if (askAiButtonEl) {
   });
 }
 
+if (readerCloseEl) readerCloseEl.addEventListener("click", closeReader);
+if (readerAskButtonEl) {
+  readerAskButtonEl.addEventListener("click", async () => {
+    const item = state.readerItem || {};
+    openAskAi({
+      item_id: await readerItemId(item),
+      item_title: itemTitleText(item),
+    });
+  });
+}
 if (askAiCloseEl) askAiCloseEl.addEventListener("click", closeAskAi);
 if (askAiMessagesButtonEl) askAiMessagesButtonEl.addEventListener("click", () => setAskPanelView("messages"));
 if (askAiHistoryButtonEl) askAiHistoryButtonEl.addEventListener("click", toggleAskHistory);

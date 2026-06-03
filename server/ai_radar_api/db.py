@@ -92,6 +92,23 @@ create table if not exists ask_messages (
 
 create index if not exists idx_ask_messages_conversation_id
 on ask_messages(conversation_id, id);
+
+create table if not exists article_cache (
+  item_id text primary key,
+  url text not null,
+  final_url text not null,
+  title text not null,
+  site_name text,
+  byline text,
+  published_at text,
+  excerpt text not null,
+  text text not null,
+  content_html text not null,
+  fetched_at text not null
+);
+
+create index if not exists idx_article_cache_fetched_at
+on article_cache(fetched_at);
 """
 
 

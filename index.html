@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=ask-stream-d12" />
+    <link rel="stylesheet" href="./assets/styles.css?v=reader-mvp-01" />
   </head>
   <body>
     <main class="shell">
@@ -171,6 +171,23 @@
 
     </main>
 
+    <section id="readerSheet" class="reader-sheet" hidden aria-label="干净阅读">
+      <div class="reader-panel">
+        <header class="reader-head">
+          <div>
+            <span id="readerSource" class="reader-source">AI News Radar</span>
+            <h2 id="readerTitle">干净阅读</h2>
+          </div>
+          <button id="readerClose" class="reader-close" type="button" aria-label="关闭阅读">关闭</button>
+        </header>
+        <div class="reader-toolbar">
+          <a id="readerOriginalLink" href="#" target="_blank" rel="noopener noreferrer">原文</a>
+          <button id="readerAskButton" type="button">问 AI</button>
+        </div>
+        <article id="readerBody" class="reader-article"></article>
+      </div>
+    </section>
+
     <section id="askAiSheet" class="ask-ai-sheet" hidden aria-label="问 AI">
       <div class="ask-ai-panel">
         <div class="ask-ai-head">
@@ -222,7 +239,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=ask-stream-d12" defer></script>
+    <script src="./assets/app.js?v=reader-mvp-01" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
