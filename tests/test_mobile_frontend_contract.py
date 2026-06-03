@@ -295,6 +295,21 @@ def test_ask_ai_sheet_supports_smooth_drag_to_dismiss():
     assert ".ask-ai-sheet.empty-thread .ask-ai-body" in css
 
 
+def test_ask_ai_drag_contract_uses_top_drag_zone_without_blocking_chat_scroll():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'class="ask-ai-head sheet-drag-zone"' in html
+    assert 'class="ask-ai-tools sheet-drag-zone"' in html
+    assert "const ASK_DRAG_ACTIVATION_PX" in js
+    assert "startScrollTop" in js[js.index("function handleAskPanelDragStart") : js.index("function handleAskPanelDragEnd")]
+    assert "delta < ASK_DRAG_ACTIVATION_PX" in js
+    assert ".ask-ai-head,\n.ask-ai-tools {\n  touch-action: none;" in css
+    assert ".ask-ai-thread,\n.ask-ai-history-list {\n  min-height: 0;\n  overflow: auto;\n  touch-action: pan-y;" in css
+    assert ".ask-ai-sheet.empty-thread .ask-ai-body" in css
+    assert "askAiSheetEl.classList.add(\"empty-thread\")" in js
+
+
 def test_reader_sheet_supports_drag_to_dismiss_and_floating_ask():
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
@@ -306,6 +321,33 @@ def test_reader_sheet_supports_drag_to_dismiss_and_floating_ask():
     assert ".reader-panel.dragging" in css
     assert "transform: translate3d(0, var(--reader-drag-y), 0)" in css
     assert ".reader-ask-fab" in css
+
+
+def test_reader_drag_contract_allows_body_scroll_and_top_pull_to_close():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'class="reader-head sheet-drag-zone"' in html
+    assert 'class="reader-toolbar sheet-drag-zone"' in html
+    assert "const READER_DRAG_ACTIVATION_PX" in js
+    assert "startScrollTop" in js[js.index("function handleReaderPanelDragStart") : js.index("function handleReaderPanelDragEnd")]
+    assert "readerDragState.active" in js
+    assert "delta < READER_DRAG_ACTIVATION_PX" in js
+    assert ".reader-head,\n.reader-toolbar {\n  touch-action: none;" in css
+    assert ".reader-article" in css and "touch-action: pan-y" in css
+    assert "overscroll-behavior: contain" in css
+
+
+def test_clean_reader_translation_button_and_cleaned_text_fallback_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    translate_fn = js[js.index("async function translateReaderArticle") : js.index("async function loadCleanArticle")]
+    render_fn = js[js.index("function renderReaderArticle") : js.index("function cleanedTextForTranslation")]
+    assert "isReaderTranslationAvailable(payload)" in render_fn
+    assert "readerTranslateButtonEl.hidden = !isReaderTranslationAvailable(payload)" in render_fn
+    assert "cleanedTextForTranslation()" in translate_fn
+    assert "translate.google.com" in translate_fn
+    assert "&text=" in translate_fn
+    assert "&u=" not in translate_fn
 
 
 def test_news_title_click_opens_clean_reader_instead_of_original_page():

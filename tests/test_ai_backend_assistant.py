@@ -150,3 +150,35 @@ def test_answer_question_filters_citations_to_question_matches(tmp_path):
         "OpenAI releases model",
         "OpenAI updates API",
     ]
+
+
+def test_single_article_context_and_citations_include_original_url_once(tmp_path):
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    url = "https://example.com/article"
+    items = [
+        {
+            "title": "Single article",
+            "url": url,
+            "site_name": "Example",
+            "article_text": f"The cleaned article body mentions the original page {url} inside copied boilerplate.",
+        }
+    ]
+
+    class FakeProvider:
+        async def chat(self, messages, temperature=0.2):
+            prompt = "\n".join(message["content"] for message in messages)
+            assert prompt.count(url) == 1
+            return '{"title":"单篇总结","answer":"总结正文"}'
+
+    result = anyio.run(answer_question, config, "总结这篇文章", items, FakeProvider())
+
+    assert result["citations"] == [{"title": "Single article", "url": url, "source": "Example"}]

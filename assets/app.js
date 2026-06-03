@@ -124,10 +124,14 @@ const readerOriginalLinkEl = document.getElementById("readerOriginalLink");
 const readerAskButtonEl = document.getElementById("readerAskButton");
 const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
 const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
+const ASK_DRAG_ACTIVATION_PX = 8;
 const ASK_DRAG_CLOSE_THRESHOLD = 132;
+const READER_DRAG_ACTIVATION_PX = 8;
 const READER_DRAG_CLOSE_THRESHOLD = 128;
 let askDragState = null;
 let readerDragState = null;
+let askCloseTimer = null;
+let readerCloseTimer = null;
 
 const SOURCE_KINDS = {
   official_ai: { label: "官方", tone: "official" },
@@ -283,6 +287,7 @@ function askContextLabel(scope) {
 
 function openAskAi(extraContext = {}) {
   if (!askAiSheetEl) return;
+  if (askCloseTimer) window.clearTimeout(askCloseTimer);
   state.askContext = extraContext;
   state.activeConversationId = null;
   const scope = currentAskScope();
@@ -293,7 +298,7 @@ function openAskAi(extraContext = {}) {
     if (!apiBaseUrl) askAiAnswerEl.textContent = "AI 后端未配置。";
   }
   setAskPanelView("messages");
-  askAiSheetEl.classList.toggle("empty-thread", Boolean(apiBaseUrl));
+  askAiSheetEl.classList.add("empty-thread");
   askAiSheetEl.classList.remove("open");
   askAiSheetEl.hidden = false;
   resetAskPanelDrag();
@@ -302,12 +307,28 @@ function openAskAi(extraContext = {}) {
   if (askAiInputEl) askAiInputEl.focus();
 }
 
-function closeAskAi() {
+function finishCloseAskAi() {
   if (!askAiSheetEl) return;
   resetAskPanelDrag();
   askAiSheetEl.classList.remove("open", "empty-thread");
   askAiSheetEl.hidden = true;
   document.body.classList.remove("ask-ai-open");
+}
+
+function closeAskAi() {
+  if (!askAiSheetEl) return;
+  if (askCloseTimer) window.clearTimeout(askCloseTimer);
+  if (askAiSheetEl.hidden || !askAiPanelEl) {
+    finishCloseAskAi();
+    return;
+  }
+  askAiPanelEl.classList.remove("dragging");
+  askAiPanelEl.classList.add("settling");
+  askAiPanelEl.style.setProperty("--ask-drag-y", "100vh");
+  askAiSheetEl.style.setProperty("--ask-backdrop-opacity", "0");
+  askAiSheetEl.classList.remove("open");
+  document.body.classList.remove("ask-ai-open");
+  askCloseTimer = window.setTimeout(finishCloseAskAi, 220);
 }
 
 function resetAskPanelDrag() {
@@ -319,28 +340,35 @@ function resetAskPanelDrag() {
 }
 
 function canStartAskPanelDrag(event) {
+  if (event.button !== undefined && event.button !== 0) return false;
   const blocked = event.target.closest?.(
     ".ask-ai-thread, .ask-ai-history-list, .ask-ai-composer, textarea, input, button, a, .ask-ai-message-actions"
   );
-  return !blocked;
+  return !blocked && Boolean(event.target.closest?.(".sheet-drag-zone, .ask-ai-panel"));
 }
 
 function handleAskPanelDragStart(event) {
   if (!askAiPanelEl || !canStartAskPanelDrag(event)) return;
+  const scrollEl = event.target.closest?.(".ask-ai-thread, .ask-ai-history-list");
   askDragState = {
     pointerId: event.pointerId,
     startY: event.clientY,
+    startScrollTop: scrollEl?.scrollTop || 0,
     currentY: 0,
+    active: false,
   };
-  askAiPanelEl.setPointerCapture?.(event.pointerId);
-  askAiPanelEl.classList.add("dragging");
   askAiPanelEl.classList.remove("settling");
 }
 
 function handleAskPanelDragMove(event) {
   if (!askDragState || event.pointerId !== askDragState.pointerId || !askAiPanelEl) return;
   const delta = Math.max(0, event.clientY - askDragState.startY);
-  if (delta <= 0) return;
+  if (!askDragState.active) {
+    if (delta < ASK_DRAG_ACTIVATION_PX) return;
+    askDragState.active = true;
+    askAiPanelEl.setPointerCapture?.(event.pointerId);
+    askAiPanelEl.classList.add("dragging");
+  }
   askDragState.currentY = delta;
   askAiPanelEl.style.setProperty("--ask-drag-y", `${delta}px`);
   askAiSheetEl?.style.setProperty("--ask-backdrop-opacity", String(Math.max(0.28, 1 - delta / 420)));
@@ -350,7 +378,7 @@ function handleAskPanelDragMove(event) {
 function handleAskPanelDragEnd(event) {
   if (!askDragState || event.pointerId !== askDragState.pointerId || !askAiPanelEl) return;
   const shouldClose = askDragState.currentY >= ASK_DRAG_CLOSE_THRESHOLD;
-  askAiPanelEl.releasePointerCapture?.(event.pointerId);
+  if (askDragState.active) askAiPanelEl.releasePointerCapture?.(event.pointerId);
   askAiPanelEl.classList.remove("dragging");
   askAiPanelEl.classList.add("settling");
   if (shouldClose) {
@@ -362,6 +390,13 @@ function handleAskPanelDragEnd(event) {
   askDragState = null;
 }
 
+function finishCloseReader() {
+  if (!readerSheetEl) return;
+  resetReaderPanelDrag();
+  readerSheetEl.hidden = true;
+  document.body.classList.remove("reader-open");
+}
+
 function resetReaderPanelDrag() {
   readerDragState = null;
   if (!readerPanelEl) return;
@@ -370,6 +405,7 @@ function resetReaderPanelDrag() {
 }
 
 function canStartReaderPanelDrag(event) {
+  if (event.button !== undefined && event.button !== 0) return false;
   if (event.target.closest?.("textarea, input, button, a")) return false;
   if (event.target.closest?.(".reader-article")) {
     return !readerBodyEl || readerBodyEl.scrollTop <= 0;
@@ -379,20 +415,27 @@ function canStartReaderPanelDrag(event) {
 
 function handleReaderPanelDragStart(event) {
   if (!readerPanelEl || !canStartReaderPanelDrag(event)) return;
+  const scrollEl = event.target.closest?.(".reader-article");
   readerDragState = {
     pointerId: event.pointerId,
     startY: event.clientY,
+    startScrollTop: scrollEl?.scrollTop || 0,
     currentY: 0,
+    active: false,
   };
-  readerPanelEl.setPointerCapture?.(event.pointerId);
-  readerPanelEl.classList.add("dragging");
   readerPanelEl.classList.remove("settling");
 }
 
 function handleReaderPanelDragMove(event) {
   if (!readerDragState || event.pointerId !== readerDragState.pointerId || !readerPanelEl) return;
   const delta = Math.max(0, event.clientY - readerDragState.startY);
-  if (delta <= 0) return;
+  if (readerDragState.startScrollTop > 0) return;
+  if (!readerDragState.active) {
+    if (delta < READER_DRAG_ACTIVATION_PX) return;
+    readerDragState.active = true;
+    readerPanelEl.setPointerCapture?.(event.pointerId);
+    readerPanelEl.classList.add("dragging");
+  }
   readerDragState.currentY = delta;
   readerPanelEl.style.setProperty("--reader-drag-y", `${delta}px`);
   event.preventDefault();
@@ -401,7 +444,7 @@ function handleReaderPanelDragMove(event) {
 function handleReaderPanelDragEnd(event) {
   if (!readerDragState || event.pointerId !== readerDragState.pointerId || !readerPanelEl) return;
   const shouldClose = readerDragState.currentY >= READER_DRAG_CLOSE_THRESHOLD;
-  readerPanelEl.releasePointerCapture?.(event.pointerId);
+  if (readerDragState.active) readerPanelEl.releasePointerCapture?.(event.pointerId);
   readerPanelEl.classList.remove("dragging");
   readerPanelEl.classList.add("settling");
   if (shouldClose) {
@@ -1551,9 +1594,16 @@ async function readerItemId(item) {
 
 function closeReader() {
   if (!readerSheetEl) return;
-  resetReaderPanelDrag();
-  readerSheetEl.hidden = true;
+  if (readerCloseTimer) window.clearTimeout(readerCloseTimer);
+  if (readerSheetEl.hidden || !readerPanelEl) {
+    finishCloseReader();
+    return;
+  }
+  readerPanelEl.classList.remove("dragging");
+  readerPanelEl.classList.add("settling");
+  readerPanelEl.style.setProperty("--reader-drag-y", "100vh");
   document.body.classList.remove("reader-open");
+  readerCloseTimer = window.setTimeout(finishCloseReader, 220);
 }
 
 function renderReaderLoading(item) {
@@ -1580,6 +1630,13 @@ function renderReaderLoading(item) {
   }
 }
 
+function isReaderTranslationAvailable(payload) {
+  const language = String(payload?.language || "").trim().toLowerCase();
+  if (payload?.translation_available === true) return true;
+  if (payload?.translation_available === false) return false;
+  return Boolean(language && !["unknown", "zh", "zh-cn", "zh-tw"].includes(language));
+}
+
 function renderReaderArticle(payload) {
   if (!readerBodyEl) return;
   state.readerArticle = payload;
@@ -1592,7 +1649,7 @@ function renderReaderArticle(payload) {
   }
   if (readerOriginalLinkEl) readerOriginalLinkEl.href = payload.final_url || payload.url || "#";
   if (readerTranslateButtonEl) {
-    readerTranslateButtonEl.hidden = !payload.translation_available;
+    readerTranslateButtonEl.hidden = !isReaderTranslationAvailable(payload);
     readerTranslateButtonEl.disabled = false;
     readerTranslateButtonEl.textContent = "翻译";
   }
@@ -1652,6 +1709,7 @@ async function loadCleanArticle(item) {
 
 async function openReader(item) {
   if (!readerSheetEl) return;
+  if (readerCloseTimer) window.clearTimeout(readerCloseTimer);
   state.readerItem = item;
   resetReaderPanelDrag();
   renderReaderLoading(item);
