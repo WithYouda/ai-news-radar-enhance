@@ -24,6 +24,13 @@ ASK_PROTOCOL_PROMPT = (
     "不要在回答末尾追加无关链接、推荐链接或和答案无关的链接。"
 )
 
+ASK_STREAM_PROTOCOL_PROMPT = (
+    "流式回答时直接输出给用户看的 Markdown 正文，不要输出 JSON。"
+    "回答涉及新闻事实时，优先使用新闻上下文中的编号和 URL 做引用，格式可以是 [1](https://...)。"
+    "如果问题只针对单篇新闻或单篇文章，最多引用该文章链接一次，不要反复插入同一个链接。"
+    "不要在回答末尾追加无关链接、推荐链接或和答案无关的链接。"
+)
+
 
 def format_conversation_history(conversation_messages: list[dict] | None) -> str:
     lines = []
@@ -49,6 +56,35 @@ def build_ask_messages(
         {
             "role": "system",
             "content": f"{base_prompt}\n{ASK_PROTOCOL_PROMPT}",
+        },
+    ]
+    for message in conversation_messages or []:
+        role = message.get("role")
+        content = str(message.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+    history = format_conversation_history(conversation_messages)
+    history_block = f"\n\n历史对话：\n{history}" if history else ""
+    messages.append(
+        {
+            "role": "user",
+            "content": f"问题：{question}{history_block}\n\n新闻上下文：\n{context}",
+        }
+    )
+    return messages
+
+
+def build_ask_stream_messages(
+    question: str,
+    context: str,
+    conversation_messages: list[dict] | None = None,
+    system_prompt: str | None = None,
+) -> list[dict]:
+    base_prompt = str(system_prompt or "").strip() or DEFAULT_ASK_SYSTEM_PROMPT
+    messages = [
+        {
+            "role": "system",
+            "content": f"{base_prompt}\n{ASK_STREAM_PROTOCOL_PROMPT}",
         },
     ]
     for message in conversation_messages or []:
@@ -169,6 +205,34 @@ async def answer_question(
     return {
         "answer": answer,
         "title": title,
+        "citations": citation_items(ranked_items),
+        "model": config.ai_model,
+    }
+
+
+def prepare_streaming_answer(
+    config: AppConfig,
+    question: str,
+    items: list[dict],
+    conversation_messages: list[dict] | None = None,
+    system_prompt: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    ranked_items = relevant_context_items(items, question)
+    context = build_context(ranked_items, question=question, max_items=config.max_context_items)
+    messages = build_ask_stream_messages(
+        question,
+        context,
+        conversation_messages=conversation_messages,
+        system_prompt=system_prompt,
+    )
+    return messages, ranked_items
+
+
+def finalize_streaming_answer(config: AppConfig, answer_text: str, ranked_items: list[dict]) -> dict:
+    answer = str(answer_text or "").strip() or "没有返回答案。"
+    return {
+        "answer": answer,
+        "title": _fallback_title(answer),
         "citations": citation_items(ranked_items),
         "model": config.ai_model,
     }

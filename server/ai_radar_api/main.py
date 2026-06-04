@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .article_reader import fetch_clean_article, find_news_item
 from .ai_profiles import delete_ai_profile, get_ai_profile_for_use, list_ai_profiles, save_ai_profile
-from .assistant import answer_question, translate_clean_text
+from .assistant import answer_question, finalize_streaming_answer, prepare_streaming_answer, translate_clean_text
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
 from .config import AppConfig
@@ -502,15 +502,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     def sse_event(event: str, data: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-    def answer_stream_chunks(answer: str) -> list[str]:
-        chunks = []
-        for block in str(answer or "").split("\n\n"):
-            text = block.strip()
-            if text:
-                chunks.append(f"{text}\n\n")
-        return chunks or [str(answer or "")]
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
     @app.post("/api/ask")
     async def ask(payload: AskRequest, session: dict = Depends(require_session)) -> dict:
@@ -520,11 +512,70 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.post("/api/ask/stream")
     async def ask_stream(payload: AskRequest, session: dict = Depends(require_session)) -> StreamingResponse:
         del session
-        result = await run_ask_payload(payload)
+        try:
+            scope_payload = {
+                "scope": payload.scope,
+                "category": payload.category,
+                "item_id": payload.item_id,
+            }
+            items, context_source = scoped_ask_items(scope_payload)
+            items = attach_clean_article_context(scope_payload, items)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"后端无法加载新闻数据: {exc}") from exc
+
+        existing_conversation = get_ask_conversation(config.db_path, payload.conversation_id) if payload.conversation_id else None
+        conversation_messages = [
+            {"role": message.get("role"), "content": message.get("content")}
+            for message in (existing_conversation or {}).get("messages", [])
+            if message.get("role") in {"user", "assistant"} and message.get("content")
+        ]
+        settings = get_settings(config.db_path)
+        ask_system_prompt = str(settings.get("ask_system_prompt") or "")
+        provider = reading_assistant_provider(settings)
+        messages, ranked_items = prepare_streaming_answer(
+            config,
+            payload.question,
+            items,
+            conversation_messages=conversation_messages,
+            system_prompt=ask_system_prompt,
+        )
+        if payload.item_id and items:
+            scope_payload["item_title"] = items[0].get("title") or items[0].get("title_zh") or items[0].get("title_en")
 
         async def events():
-            for chunk in answer_stream_chunks(str(result.get("answer") or "")):
-                yield sse_event("delta", {"text": chunk})
+            answer_parts: list[str] = []
+            try:
+                async for chunk in provider.stream_chat(messages, temperature=0.2):
+                    text = str(chunk or "")
+                    if not text:
+                        continue
+                    answer_parts.append(text)
+                    yield sse_event("delta", {"text": text})
+            except AIProviderUnavailable as exc:
+                yield sse_event("error", {"message": str(exc)})
+                return
+            result = finalize_streaming_answer(config, "".join(answer_parts), ranked_items)
+            result["context_item_count"] = len(items)
+            result["context_source"] = context_source
+            try:
+                conversation = store_ask_conversation(
+                    config.db_path,
+                    conversation_id=payload.conversation_id if existing_conversation else None,
+                    question=payload.question,
+                    answer=str(result.get("answer") or ""),
+                    title=str(result.get("title") or ""),
+                    scope_payload=scope_payload,
+                    citations=list(result.get("citations") or []),
+                    model=str(result.get("model") or config.ai_model),
+                    context_source=context_source,
+                    context_item_count=len(items),
+                )
+                result["history_saved"] = True
+                result["conversation_id"] = conversation["conversation_id"]
+                result["messages"] = conversation.get("messages", [])
+                result["title"] = conversation.get("title") or result.get("title")
+            except Exception:
+                result["history_saved"] = False
             yield sse_event("done", result)
 
         return StreamingResponse(events(), media_type="text/event-stream")

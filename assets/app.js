@@ -1163,6 +1163,9 @@ async function submitAskAiStream(question, pendingRow) {
         streamedText += String(event.payload?.text || "");
         updateStreamingBubble(pendingRow, streamedText);
       }
+      if (event.type === "error") {
+        throw new Error(event.payload?.message || "流式输出失败");
+      }
       if (event.type === "done") {
         donePayload = event.payload;
       }
@@ -1995,6 +1998,8 @@ async function translateReaderArticle() {
   readerBodyEl.setAttribute("translate", "yes");
   readerTranslateButtonEl.disabled = true;
   readerTranslateButtonEl.textContent = "翻译中";
+  state.translationProviderMode = translationProviderModeSelectEl?.value || state.translationProviderMode;
+  state.translationProviderId = translationProviderSelectEl?.value || state.translationProviderId;
   if (state.translationProviderMode !== "ai") {
     const translatorAvailable = window.Translator?.availability
       ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
@@ -2026,6 +2031,7 @@ async function translateReaderArticle() {
     return;
   }
   try {
+    await saveSettings();
     const translatedText = await requestCleanTextTranslation(cleanedTextForTranslation(), sourceLanguage);
     renderTranslatedReaderArticle(translatedText);
   } catch (err) {
@@ -3039,16 +3045,25 @@ if (translationProviderModeSelectEl) {
   translationProviderModeSelectEl.addEventListener("change", () => {
     state.translationProviderMode = translationProviderModeSelectEl.value || "browser";
     syncTranslationProviderMode();
+    saveSettings();
   });
 }
 if (translationProviderSelectEl) {
   translationProviderSelectEl.addEventListener("change", () => {
     state.translationProviderId = translationProviderSelectEl.value || "";
+    saveSettings();
   });
 }
 if (readingAssistantProviderSelectEl) {
   readingAssistantProviderSelectEl.addEventListener("change", () => {
     state.readingAssistantProviderId = readingAssistantProviderSelectEl.value || "env";
+    saveSettings();
+  });
+}
+if (askStreamingToggleEl) {
+  askStreamingToggleEl.addEventListener("change", () => {
+    state.askStreamingEnabled = Boolean(askStreamingToggleEl.checked);
+    saveSettings();
   });
 }
 if (aiProfilesListEl) {

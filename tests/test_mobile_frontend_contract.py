@@ -191,6 +191,15 @@ def test_ask_ai_streaming_setting_and_stream_submit_contract():
     assert "state.askStreamingEnabled" in js
     assert "submitAskAiStream" in js
     assert 'apiStream("/api/ask/stream"' in js
+    assert 'askStreamingToggleEl.addEventListener("change"' in js
+    assert "state.askStreamingEnabled = Boolean(askStreamingToggleEl.checked)" in js
+
+
+def test_ask_ai_streaming_error_event_is_handled_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    stream_fn = js[js.index("async function submitAskAiStream") : js.index("function setSettingsStatus")]
+    assert 'event.type === "error"' in stream_fn
+    assert "event.payload?.message" in stream_fn
 
 
 def test_ask_ai_quote_is_sent_with_question_and_can_be_cleared():
@@ -365,6 +374,15 @@ def test_reader_translation_toggle_contract():
     assert "requestCleanTextTranslation" in translate_fn
 
 
+def test_reader_ai_translation_waits_for_current_settings_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    translate_fn = js[js.index("async function translateReaderArticle") : js.index("async function loadCleanArticle")]
+    ai_mode_index = translate_fn.index('state.translationProviderMode !== "ai"')
+    save_index = translate_fn.index("await saveSettings()")
+    request_index = translate_fn.index("requestCleanTextTranslation")
+    assert ai_mode_index < save_index < request_index
+
+
 def test_reader_summary_and_fact_check_actions_contract():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
@@ -400,6 +418,16 @@ def test_settings_ai_profiles_contract():
     assert "reading_assistant_provider_id" in js
     assert ".settings-section" in css
     assert ".ai-profile-row" in css
+
+
+def test_provider_usage_controls_autosave_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    translation_mode_listener = js[js.index('translationProviderModeSelectEl.addEventListener("change"') :]
+    translation_select_listener = js[js.index('translationProviderSelectEl.addEventListener("change"') :]
+    reading_select_listener = js[js.index('readingAssistantProviderSelectEl.addEventListener("change"') :]
+    assert "saveSettings()" in translation_mode_listener.split("});", 1)[0]
+    assert "saveSettings()" in translation_select_listener.split("});", 1)[0]
+    assert "saveSettings()" in reading_select_listener.split("});", 1)[0]
 
 
 def test_news_title_click_opens_clean_reader_instead_of_original_page():

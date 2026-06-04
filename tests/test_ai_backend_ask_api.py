@@ -356,16 +356,12 @@ def test_ask_stream_endpoint_emits_answer_and_done_events(monkeypatch, tmp_path)
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([{"title": "Model update", "url": "https://example.com/model", "ai_score": 0.9}], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
-        return {
-            "answer": "第一段。\n\n第二段。",
-            "title": "模型更新",
-            "citations": [],
-            "model": config.ai_model,
-        }
+    async def fake_stream_chat(self, messages, temperature=0.2):
+        yield "第一段。"
+        yield "\n\n第二段。"
 
     monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
-    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+    monkeypatch.setattr("server.ai_radar_api.provider.AIProvider.stream_chat", fake_stream_chat, raising=False)
 
     client = make_client(tmp_path)
     login(client)
@@ -378,4 +374,41 @@ def test_ask_stream_endpoint_emits_answer_and_done_events(monkeypatch, tmp_path)
     assert '第一段。' in body
     assert 'event: done' in body
     history = client.get("/api/ask/history").json()["items"]
-    assert history[0]["title"] == "模型更新"
+    assert "第一段" in history[0]["answer_preview"]
+    detail = client.get(f"/api/ask/history/{history[0]['conversation_id']}").json()
+    assert detail["messages"][-1]["content"] == "第一段。\n\n第二段。"
+
+
+def test_ask_stream_endpoint_uses_provider_streaming(monkeypatch, tmp_path):
+    captured = {"stream_called": False}
+
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([{"title": "Streaming model update", "url": "https://example.com/stream", "ai_score": 0.9}], "local")
+
+    async def fail_full_answer(*args, **kwargs):
+        raise AssertionError("stream endpoint must not wait for full answer_question")
+
+    async def fake_stream_chat(self, messages, temperature=0.2):
+        captured["stream_called"] = True
+        captured["messages"] = messages
+        yield "第一段"
+        yield "第二段"
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fail_full_answer)
+    monkeypatch.setattr("server.ai_radar_api.provider.AIProvider.stream_chat", fake_stream_chat, raising=False)
+
+    client = make_client(tmp_path)
+    login(client)
+
+    with client.stream("POST", "/api/ask/stream", json={"question": "说说模型更新", "scope": "today"}) as res:
+        body = "".join(res.iter_text())
+
+    assert res.status_code == 200
+    assert captured["stream_called"] is True
+    assert "不要输出 JSON" in captured["messages"][0]["content"]
+    assert '"text":"第一段"' in body
+    assert '"text":"第二段"' in body
+    assert 'event: done' in body
+    detail = client.get("/api/ask/history").json()["items"][0]
+    assert "第一段第二段" in detail["answer_preview"]
