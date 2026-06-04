@@ -10,12 +10,13 @@ from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup, Comment
+from readability import Document
 
 from .db import connect_db
 from .radar_data import item_identity, load_latest_items, normalize_public_url
 
 
-BLOCK_TAGS = ("h2", "h3", "p", "blockquote", "pre", "ul", "ol")
+BLOCK_TAGS = ("h2", "h3", "p", "blockquote", "pre", "ul", "ol", "figure")
 DROP_SELECTORS = (
     "script",
     "style",
@@ -97,11 +98,13 @@ READER_AUXILIARY_RE = re.compile(
     flags=re.I,
 )
 RECOMMENDATION_HEADING_RE = re.compile(
-    r"^(recommended|related|more from|more stories|read next|you might also like|popular|latest|"
+    r"^(recommended|related|also read|around the web|elsewhere|more from|more stories|read next|you might also like|popular|latest|"
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
     flags=re.I,
 )
 GOOGLE_NEWS_BATCH_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
+MAX_FETCH_REDIRECTS = 4
+GOOGLE_NEWS_TIMEOUT_SECONDS = 1.0
 
 
 def _now() -> str:
@@ -132,6 +135,41 @@ def _is_safe_public_url(url: str) -> bool:
     except ValueError:
         return True
     return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+
+
+def _bounded_timeout(timeout_seconds: int | float) -> httpx.Timeout:
+    value = max(1.0, float(timeout_seconds or 6))
+    return httpx.Timeout(
+        timeout=value,
+        connect=min(2.0, value),
+        read=min(5.0, value),
+        write=min(2.0, value),
+        pool=1.0,
+    )
+
+
+def _http_get(
+    url: str,
+    *,
+    timeout_seconds: int | float = 6,
+    follow_redirects: bool = True,
+    headers: dict | None = None,
+    max_redirects: int = MAX_FETCH_REDIRECTS,
+) -> httpx.Response:
+    with httpx.Client(timeout=_bounded_timeout(timeout_seconds), max_redirects=max_redirects) as client:
+        return client.get(url, follow_redirects=follow_redirects, headers=headers)
+
+
+def _http_post(
+    url: str,
+    *,
+    timeout_seconds: int | float = 6,
+    params: dict | None = None,
+    data: dict | None = None,
+    headers: dict | None = None,
+) -> httpx.Response:
+    with httpx.Client(timeout=_bounded_timeout(timeout_seconds), max_redirects=2) as client:
+        return client.post(url, params=params, data=data, headers=headers)
 
 
 def _meta_content(soup: BeautifulSoup, *selectors: str) -> str:
@@ -177,6 +215,27 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
         if signature and NEGATIVE_RE.search(signature) and not POSITIVE_RE.search(signature):
             node.decompose()
     return soup
+
+
+def _normalize_lazy_images(html_text: str) -> str:
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    for img in soup.find_all("img"):
+        if img.get("src"):
+            continue
+        for attr in ("data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"):
+            value = str(img.get(attr) or "").strip()
+            if not value:
+                continue
+            img["src"] = _srcset_url(value) if "srcset" in attr else value
+            break
+    return str(soup)
+
+
+def _readability_html(html_text: str) -> str:
+    try:
+        return str(Document(_normalize_lazy_images(html_text)).summary(html_partial=True) or "")
+    except Exception:
+        return ""
 
 
 def _looks_boilerplate(text: str) -> bool:
@@ -281,11 +340,50 @@ def _inline_html(node, base_url: str) -> str:
     return _compact_text("".join(parts))
 
 
+def _srcset_url(value: str) -> str:
+    candidates = []
+    for part in str(value or "").split(","):
+        url = part.strip().split(" ", 1)[0].strip()
+        if url:
+            candidates.append(url)
+    return candidates[-1] if candidates else ""
+
+
+def _image_url(node, base_url: str) -> str:
+    for attr in ("src", "data-src", "data-original", "data-lazy-src"):
+        value = str(node.get(attr) or "").strip()
+        if value:
+            return _absolute_link(value, base_url)
+    for attr in ("srcset", "data-srcset"):
+        value = _srcset_url(str(node.get(attr) or ""))
+        if value:
+            return _absolute_link(value, base_url)
+    return ""
+
+
+def _image_figure_html(img, base_url: str, caption: str = "") -> tuple[str, str]:
+    src = _image_url(img, base_url)
+    if not src:
+        return "", ""
+    alt = _compact_text(img.get("alt", ""))
+    image_html = f'<img src="{html.escape(src, quote=True)}"'
+    if alt:
+        image_html += f' alt="{html.escape(alt, quote=True)}"'
+    image_html += ">"
+    clean_caption = _compact_text(caption)
+    caption_html = f"<figcaption>{html.escape(clean_caption)}</figcaption>" if clean_caption else ""
+    return f"<figure>{image_html}{caption_html}</figure>", clean_caption or alt
+
+
 def _block_html(node, base_url: str) -> tuple[str, str]:
     name = getattr(node, "name", "")
     if name in {"h2", "h3", "p", "blockquote", "pre"}:
-        inner = _inline_html(node, base_url) if name != "pre" else html.escape(node.get_text("\n", strip=True))
         text = _compact_text(node.get_text(" ", strip=True))
+        if name == "p" and not text:
+            img = node.find("img")
+            if img:
+                return _image_figure_html(img, base_url)
+        inner = _inline_html(node, base_url) if name != "pre" else html.escape(node.get_text("\n", strip=True))
         if not text:
             return "", ""
         return f"<{name}>{inner}</{name}>", text
@@ -301,11 +399,20 @@ def _block_html(node, base_url: str) -> tuple[str, str]:
         if not items:
             return "", ""
         return f"<{name}>{''.join(items)}</{name}>", "\n".join(texts)
+    if name == "figure":
+        img = node.find("img")
+        if not img:
+            return "", ""
+        caption_node = node.find("figcaption")
+        caption = _compact_text(caption_node.get_text(" ", strip=True) if caption_node else "")
+        return _image_figure_html(img, base_url, caption)
     return "", ""
 
 
 def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
-    soup = _clean_soup(html_text)
+    metadata_soup = BeautifulSoup(html_text or "", "html.parser")
+    reader_html = _readability_html(html_text)
+    soup = _clean_soup(reader_html or html_text)
     container = _best_container(soup)
     raw_text = _compact_text(container.get_text(" ", strip=True))
     blocks = []
@@ -319,7 +426,7 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
             break
         if _looks_boilerplate(text):
             continue
-        if node.name == "p" and len(text) < 24:
+        if node.name == "p" and len(text) < 24 and not block_html.startswith("<figure>"):
             continue
         seen.add(text)
         blocks.append(block_html)
@@ -328,13 +435,13 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
             break
     article_text = "\n\n".join(texts)
     return {
-        "title": _title(soup, fallback_title),
-        "byline": _meta_content(soup, "meta[name='author']", "meta[property='article:author']"),
-        "published_at": _meta_content(soup, "meta[property='article:published_time']", "meta[name='date']"),
+        "title": _title(metadata_soup, fallback_title),
+        "byline": _meta_content(metadata_soup, "meta[name='author']", "meta[property='article:author']"),
+        "published_at": _meta_content(metadata_soup, "meta[property='article:published_time']", "meta[name='date']"),
         "excerpt": article_text[:260],
         "text": article_text,
         "content_html": "\n".join(blocks),
-        **_article_metadata(soup, raw_text, article_text),
+        **_article_metadata(metadata_soup, raw_text, article_text),
     }
 
 
@@ -548,10 +655,11 @@ def _decoded_google_news_url(response_text: str) -> str:
 def resolve_google_news_url(url: str, timeout_seconds: int = 6) -> str:
     if not _is_google_news_url(url):
         return ""
-    response = httpx.get(
+    response = _http_get(
         url,
-        timeout=timeout_seconds,
+        timeout_seconds=min(timeout_seconds, GOOGLE_NEWS_TIMEOUT_SECONDS),
         follow_redirects=True,
+        max_redirects=1,
         headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"},
     )
     response.raise_for_status()
@@ -563,11 +671,11 @@ def resolve_google_news_url(url: str, timeout_seconds: int = 6) -> str:
     if not node:
         return ""
     request_body = _google_news_decode_request(str(node.get("data-n-a-id") or ""), str(node.get("data-n-a-ts") or ""), str(node.get("data-n-a-sg") or ""), url)
-    decode_response = httpx.post(
+    decode_response = _http_post(
         GOOGLE_NEWS_BATCH_URL,
         params={"rpcids": "Fbv4je"},
         data={"f.req": request_body},
-        timeout=timeout_seconds,
+        timeout_seconds=min(timeout_seconds, GOOGLE_NEWS_TIMEOUT_SECONDS),
         headers={
             "User-Agent": "Mozilla/5.0",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -590,16 +698,23 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         raise ValueError("Unsupported article URL")
 
     fetch_url = url
-    if _is_google_news_url(url):
+    from_google_news = _is_google_news_url(url)
+    if from_google_news:
         try:
-            fetch_url = resolve_google_news_url(url, timeout_seconds=timeout_seconds) or url
-        except Exception:
-            fetch_url = url
+            fetch_url = resolve_google_news_url(url, timeout_seconds=min(timeout_seconds, GOOGLE_NEWS_TIMEOUT_SECONDS))
+        except Exception as exc:
+            article = _fallback_article(item, url=url, final_url=url, reason=f"Google News resolution failed: {exc}")
+            store_article(config.db_path, article)
+            return article
+        if not fetch_url or _is_google_news_url(fetch_url):
+            article = _fallback_article(item, url=url, final_url=url, reason="Google News did not resolve to a publisher URL")
+            store_article(config.db_path, article)
+            return article
 
     try:
-        response = httpx.get(
+        response = _http_get(
             fetch_url,
-            timeout=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, 3) if from_google_news else timeout_seconds,
             follow_redirects=True,
             headers={
                 "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",

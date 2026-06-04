@@ -178,6 +178,41 @@ def test_extract_article_removes_related_recommended_and_extension_reading_block
     assert "扩展阅读内容" not in payload["text"]
 
 
+def test_extract_article_keeps_article_images_and_drops_unlabeled_recommendations():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <header>Navigation chrome</header>
+            <main>
+              <article>
+                <h1>Model launch details</h1>
+                <p>The real article opens with concrete product details, release timing, and migration notes for developers evaluating this model launch.</p>
+                <figure>
+                  <img src="/images/model-demo.jpg" alt="Model demo screenshot">
+                  <figcaption>Model demo screenshot from the official launch article.</figcaption>
+                </figure>
+                <p><img data-src="/images/benchmark-chart.jpg" alt="Benchmark chart"></p>
+                <p>The second real paragraph explains benchmark caveats, rollout constraints, and the teams affected by the API change.</p>
+                <h3>Also read</h3>
+                <p>This unrelated story is long enough to look like article text, but it points readers to a different article and must not survive reader extraction.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/model-launch",
+        fallback_title="Model launch",
+    )
+
+    assert "real article opens" in payload["text"]
+    assert "second real paragraph" in payload["text"]
+    assert "unrelated story" not in payload["text"]
+    assert '<figure><img src="https://example.com/images/model-demo.jpg" alt="Model demo screenshot">' in payload["content_html"]
+    assert "<figcaption>Model demo screenshot from the official launch article.</figcaption>" in payload["content_html"]
+    assert '<figure><img src="https://example.com/images/benchmark-chart.jpg" alt="Benchmark chart"></figure>' in payload["content_html"]
+
+
 def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
     captured = {}
 
@@ -207,8 +242,8 @@ def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
         captured["post_data"] = kwargs.get("data") or {}
         return DecodeResponse()
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.post", fake_post)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_post", fake_post)
 
     resolved = resolve_google_news_url("https://news.google.com/read/article-id?hl=en-US&gl=US&ceid=US:en")
 
@@ -254,13 +289,50 @@ def test_fetch_clean_article_resolves_google_news_url_before_extracting(monkeypa
         return Response()
 
     monkeypatch.setattr("server.ai_radar_api.article_reader.resolve_google_news_url", lambda url, timeout_seconds=6: "https://publisher.example/story")
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
 
     payload = fetch_clean_article(config, item)
 
     assert payload["url"] == "https://news.google.com/read/article-id"
     assert payload["final_url"] == "https://publisher.example/story"
     assert "publisher article body" in payload["text"]
+
+
+def test_fetch_clean_article_does_not_fetch_google_news_wrapper_when_resolution_fails(monkeypatch, tmp_path):
+    item = {
+        "title": "Google News unresolved item",
+        "url": "https://news.google.com/read/article-id",
+        "site_name": "Google News",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+
+    def fail_resolve(url, timeout_seconds=6):
+        raise httpx.ConnectTimeout("google news decode timed out")
+
+    fetch_calls = []
+
+    def fail_get(*args, **kwargs):
+        fetch_calls.append(args[0] if args else "")
+        raise AssertionError("fetch_clean_article must not fetch the Google News wrapper as article body")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.resolve_google_news_url", fail_resolve)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["access_status"] == "unavailable"
+    assert "Google News" in payload["fetch_error"]
+    assert fetch_calls == []
 
 
 def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypatch, tmp_path):
@@ -284,7 +356,7 @@ def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypa
         calls += 1
         return Response()
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
     client = TestClient(create_app(config), base_url="https://testserver")
     identity = item_identity(item)
 
@@ -326,7 +398,7 @@ def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(
         calls += 1
         return Response()
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
     client = TestClient(create_app(config), base_url="https://testserver")
     identity = item_identity(item)
 
@@ -384,7 +456,7 @@ def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, t
         calls += 1
         return Response()
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
     client = TestClient(app, base_url="https://testserver")
 
     res = client.get(f"/api/read/{identity}")
@@ -482,7 +554,7 @@ def test_ask_item_scope_retries_cached_unavailable_article_text(monkeypatch, tmp
         captured["item"] = items[0]
         return {"answer": "ok", "title": "正文上下文", "citations": [], "model": config.ai_model}
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader.httpx.get", fake_get)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
     monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
     monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
 

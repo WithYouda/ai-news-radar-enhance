@@ -3,4 +3,7 @@ uvicorn[standard]
 httpx
 pydantic
 beautifulsoup4==4.12.3
+readability-lxml==0.8.1
+lxml_html_clean==0.4.3
+chardet==5.2.0
 cryptography==42.0.8
