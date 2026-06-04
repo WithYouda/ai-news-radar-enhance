@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ai-actions-0604" in html
+    assert "./assets/styles.css?v=ai-actions-0604-streamfix" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ai-actions-0604" in html
+    assert "./assets/app.js?v=ai-actions-0604-streamfix" in html
 
 
 def test_category_view_contract_exists():
