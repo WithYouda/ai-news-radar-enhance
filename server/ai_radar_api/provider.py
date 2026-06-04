@@ -30,31 +30,40 @@ def _responses_content(payload: dict) -> str:
 
 
 class AIProvider:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, profile: dict | None = None):
         self.config = config
+        self.profile = profile or {}
 
     async def chat(self, messages: list[dict], temperature: float = 0.2) -> str:
-        if not self.config.ai_base_url or not self.config.ai_api_key:
+        api_base_url = str(self.profile.get("base_url") or self.config.ai_base_url or "").rstrip("/")
+        api_key = str(self.profile.get("api_key") or self.config.ai_api_key or "")
+        ai_model = str(self.profile.get("model") or self.config.ai_model)
+        api_format = str(self.profile.get("type") or self.config.ai_api_format).strip().lower().replace("-", "_")
+        timeout = float(self.profile.get("timeout_seconds") or 45)
+        headers = dict(self.profile.get("headers") or {})
+        if api_key and "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {api_key}"
+        if not api_base_url or not api_key:
             raise AIProviderUnavailable("AI_BASE_URL and AI_API_KEY are required")
 
         try:
-            async with httpx.AsyncClient(timeout=45) as client:
-                if self.config.ai_api_format == "responses":
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                if api_format == "responses":
                     response = await client.post(
-                        f"{self.config.ai_base_url}/responses",
-                        headers={"Authorization": f"Bearer {self.config.ai_api_key}"},
+                        f"{api_base_url}/responses",
+                        headers=headers,
                         json={
-                            "model": self.config.ai_model,
+                            "model": ai_model,
                             "input": messages,
                             "temperature": temperature,
                         },
                     )
                 else:
                     response = await client.post(
-                        f"{self.config.ai_base_url}/chat/completions",
-                        headers={"Authorization": f"Bearer {self.config.ai_api_key}"},
+                        f"{api_base_url}/chat/completions",
+                        headers=headers,
                         json={
-                            "model": self.config.ai_model,
+                            "model": ai_model,
                             "messages": messages,
                             "temperature": temperature,
                         },
@@ -66,7 +75,7 @@ class AIProvider:
             payload = response.json()
         except ValueError as exc:
             raise AIProviderUnavailable("AI provider returned invalid JSON") from exc
-        if self.config.ai_api_format == "responses":
+        if api_format == "responses":
             return _responses_content(payload)
         try:
             content = payload["choices"][0]["message"]["content"]

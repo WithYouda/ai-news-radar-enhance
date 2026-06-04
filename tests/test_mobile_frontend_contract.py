@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=reader-mvp-03" in html
+    assert "./assets/styles.css?v=ai-actions-0604" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=reader-mvp-03" in html
+    assert "./assets/app.js?v=ai-actions-0604" in html
 
 
 def test_category_view_contract_exists():
@@ -349,6 +349,57 @@ def test_clean_reader_translation_button_and_cleaned_text_fallback_contract():
     assert "requestCleanTextTranslation" in translate_fn
     assert "translate.google.com" not in translate_fn
     assert "&u=" not in translate_fn
+
+
+def test_reader_translation_toggle_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "readerOriginalHtml" in js
+    assert "readerTranslatedHtml" in js
+    assert "readerShowingTranslation" in js
+    assert "showOriginalReaderArticle" in js
+    assert "showTranslatedReaderArticle" in js
+    assert 'readerTranslateButtonEl.textContent = "原文"' in js
+    assert 'readerTranslateButtonEl.textContent = "中文"' in js
+    translate_fn = js[js.index("async function translateReaderArticle") : js.index("async function loadCleanArticle")]
+    assert "state.readerTranslatedHtml" in translate_fn
+    assert "requestCleanTextTranslation" in translate_fn
+
+
+def test_reader_summary_and_fact_check_actions_contract():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="readerSummaryButton"' in html
+    assert 'id="readerFactCheckButton"' in html
+    assert "summarizeReaderArticle" in js
+    assert "factCheckReaderArticle" in js
+    assert "openAskAiForReaderArticle" in js
+    assert "请用中文总结这篇文章" in js
+    assert "基于当前雷达上下文的事实交叉核验" in js
+    assert "readerSummaryButtonEl.addEventListener" in js
+    assert "readerFactCheckButtonEl.addEventListener" in js
+    assert ".reader-toolbar button" in css
+
+
+def test_settings_ai_profiles_contract():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'id="aiProfilesList"' in html
+    assert 'id="aiProfileNameInput"' in html
+    assert 'id="aiProfileHeadersInput"' in html
+    assert 'id="translationProviderModeSelect"' in html
+    assert 'id="translationProviderSelect"' in html
+    assert 'id="readingAssistantProviderSelect"' in html
+    assert "loadAiProfiles" in js
+    assert "saveAiProfile" in js
+    assert "testAiProfile" in js
+    assert "deleteAiProfile" in js
+    assert "/api/ai-profiles" in js
+    assert "translation_provider_mode" in js
+    assert "reading_assistant_provider_id" in js
+    assert ".settings-section" in css
+    assert ".ai-profile-row" in css
 
 
 def test_news_title_click_opens_clean_reader_instead_of_original_page():

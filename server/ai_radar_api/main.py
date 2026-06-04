@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .article_reader import fetch_clean_article, find_news_item
+from .ai_profiles import delete_ai_profile, get_ai_profile_for_use, list_ai_profiles, save_ai_profile
 from .assistant import answer_question, translate_clean_text
 from .auth import create_session, delete_session, store_session, validate_session
 from .classifier import classify_item
@@ -29,7 +30,7 @@ from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .settings import get_settings, update_settings
 from .taxonomy import list_taxonomy, seed_default_taxonomy
-from .provider import AIProviderUnavailable
+from .provider import AIProvider, AIProviderUnavailable
 from .verification import fetch_and_verify
 
 
@@ -78,6 +79,18 @@ class AskMessageUpdateRequest(BaseModel):
 class TranslateRequest(BaseModel):
     text: str
     source_language: str = "auto"
+
+
+class AIProfileRequest(BaseModel):
+    id: str | None = None
+    name: str
+    type: str = "chat_completions"
+    base_url: str
+    model: str
+    api_key: str = ""
+    headers_json: str = ""
+    timeout_seconds: int = 45
+    enabled: bool = True
 
 
 def item_matches_category(item: dict, category: str) -> bool:
@@ -140,6 +153,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         enriched["article_text"] = text
         enriched["article_access_status"] = article.get("access_status") or "open"
         return [enriched]
+
+    def reading_assistant_provider(settings: dict | None = None) -> AIProvider:
+        settings = settings or get_settings(config.db_path)
+        profile = get_ai_profile_for_use(config, str(settings.get("reading_assistant_provider_id") or "env"))
+        return AIProvider(config, profile=profile)
+
+    def translation_provider(settings: dict | None = None) -> AIProvider:
+        settings = settings or get_settings(config.db_path)
+        if settings.get("translation_provider_mode") != "ai":
+            raise ValueError("AI translation is not enabled")
+        profile_id = str(settings.get("translation_provider_id") or "env")
+        profile = get_ai_profile_for_use(config, profile_id)
+        if profile is None:
+            raise ValueError("AI translation provider is not available")
+        return AIProvider(config, profile=profile)
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
@@ -362,6 +390,52 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         result["deep_verified"] = True
         return store_verification_result(verification_storage_id(item_id, payload, item), item, result)
 
+    @app.get("/api/ai-profiles")
+    def ai_profiles(session: dict = Depends(require_session)) -> dict:
+        del session
+        return {"items": list_ai_profiles(config)}
+
+    @app.post("/api/ai-profiles")
+    def create_ai_profile(payload: AIProfileRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        try:
+            return save_ai_profile(config, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/api/ai-profiles/{profile_id}")
+    def update_ai_profile(profile_id: str, payload: AIProfileRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        try:
+            return save_ai_profile(config, {**payload.model_dump(), "id": profile_id})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/ai-profiles/{profile_id}")
+    def remove_ai_profile(profile_id: str, session: dict = Depends(require_session)) -> dict:
+        del session
+        if not delete_ai_profile(config, profile_id):
+            raise HTTPException(status_code=404, detail="AI profile not found")
+        return {"ok": True}
+
+    @app.post("/api/ai-profiles/{profile_id}/test")
+    async def test_ai_profile(profile_id: str, session: dict = Depends(require_session)) -> dict:
+        del session
+        profile = get_ai_profile_for_use(config, profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="AI profile not found")
+        try:
+            await AIProvider(config, profile=profile).chat(
+                [
+                    {"role": "system", "content": "You are testing an AI provider connection."},
+                    {"role": "user", "content": "Reply with ok."},
+                ],
+                temperature=0,
+            )
+        except AIProviderUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"ok": True, "model": profile.get("model") or config.ai_model}
+
     async def run_ask_payload(payload: AskRequest) -> dict:
         try:
             scope_payload = {
@@ -380,7 +454,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 for message in (existing_conversation or {}).get("messages", [])
                 if message.get("role") in {"user", "assistant"} and message.get("content")
             ]
-            ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
+            settings = get_settings(config.db_path)
+            ask_system_prompt = str(settings.get("ask_system_prompt") or "")
+            provider = reading_assistant_provider(settings)
             if conversation_messages:
                 result = await answer_question(
                     config,
@@ -388,9 +464,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     items,
                     conversation_messages=conversation_messages,
                     system_prompt=ask_system_prompt,
+                    provider=provider,
                 )
             else:
-                result = await answer_question(config, payload.question, items, system_prompt=ask_system_prompt)
+                result = await answer_question(
+                    config,
+                    payload.question,
+                    items,
+                    system_prompt=ask_system_prompt,
+                    provider=provider,
+                )
             result["context_item_count"] = len(items)
             result["context_source"] = context_source
             if payload.item_id and items:
@@ -453,10 +536,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if not text:
             raise HTTPException(status_code=400, detail="No cleaned text to translate")
         try:
-            translation = await translate_clean_text(config, text, source_language=payload.source_language)
+            provider = translation_provider(get_settings(config.db_path))
+            translation = await translate_clean_text(config, text, source_language=payload.source_language, provider=provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {"translation": translation, "model": config.ai_model}
+        return {"translation": translation, "model": provider.profile.get("model") or config.ai_model}
 
     @app.get("/api/ask/history")
     def ask_history(session: dict = Depends(require_session)) -> dict:
@@ -506,7 +592,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             for message in messages[:target_index]
             if message.get("role") in {"user", "assistant"} and message.get("content")
         ]
-        ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
+        settings = get_settings(config.db_path)
+        ask_system_prompt = str(settings.get("ask_system_prompt") or "")
         try:
             result = await answer_question(
                 config,
@@ -514,6 +601,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 items,
                 conversation_messages=previous_messages,
                 system_prompt=ask_system_prompt,
+                provider=reading_assistant_provider(settings),
             )
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -575,7 +663,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             if message.get("role") in {"user", "assistant"} and message.get("content")
         ]
         question = str(messages[user_index].get("content") or "")
-        ask_system_prompt = str(get_settings(config.db_path).get("ask_system_prompt") or "")
+        settings = get_settings(config.db_path)
+        ask_system_prompt = str(settings.get("ask_system_prompt") or "")
         try:
             result = await answer_question(
                 config,
@@ -583,6 +672,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 items,
                 conversation_messages=previous_messages,
                 system_prompt=ask_system_prompt,
+                provider=reading_assistant_provider(settings),
             )
         except AIProviderUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

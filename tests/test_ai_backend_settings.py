@@ -14,6 +14,9 @@ def test_settings_default_deep_verification_is_limited(tmp_path):
     assert settings["ask_streaming_enabled"] is False
     assert "ask_system_prompt" in settings
     assert "AI News Radar" in settings["ask_system_prompt"]
+    assert settings["translation_provider_mode"] == "browser"
+    assert settings["translation_provider_id"] == ""
+    assert settings["reading_assistant_provider_id"] == "env"
 
 
 def test_update_settings_persists_values(tmp_path):
@@ -45,3 +48,32 @@ def test_update_settings_persists_ask_streaming_toggle(tmp_path):
     settings = get_settings(db_path)
 
     assert settings["ask_streaming_enabled"] is True
+
+
+def test_update_settings_persists_provider_usage(tmp_path):
+    db_path = tmp_path / "radar.db"
+
+    update_settings(
+        db_path,
+        {
+            "translation_provider_mode": "ai",
+            "translation_provider_id": "translate-profile",
+            "reading_assistant_provider_id": "reader-profile",
+        },
+    )
+    settings = get_settings(db_path)
+
+    assert settings["translation_provider_mode"] == "ai"
+    assert settings["translation_provider_id"] == "translate-profile"
+    assert settings["reading_assistant_provider_id"] == "reader-profile"
+
+
+def test_update_settings_rejects_invalid_translation_mode(tmp_path):
+    db_path = tmp_path / "radar.db"
+
+    try:
+        update_settings(db_path, {"translation_provider_mode": "google-page"})
+    except ValueError as exc:
+        assert "translation_provider_mode" in str(exc)
+    else:
+        raise AssertionError("invalid translation mode should be rejected")

@@ -32,7 +32,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -215,7 +216,8 @@ button {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -227,6 +229,7 @@ select {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible,
 summary:focus-visible {
   outline: 2px solid rgba(18, 106, 115, 0.35);
@@ -1412,11 +1415,17 @@ body.reader-open {
 
 .reader-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   align-items: center;
   padding: 0 22px 12px;
   border-bottom: 1px solid #eee7dc;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.reader-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .reader-toolbar button {
@@ -2172,6 +2181,88 @@ body.ask-ai-open {
   margin-top: 14px;
 }
 
+.settings-section {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.settings-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.settings-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.settings-section-head span {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ai-profile-form {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-profiles-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(217, 214, 206, 0.72);
+}
+
+.ai-profile-row strong,
+.ai-profile-row span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-profile-row strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.ai-profile-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ai-profile-actions,
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-profile-actions {
+  justify-content: flex-end;
+}
+
 .settings-panel button {
   min-height: 40px;
   border: 1px solid rgba(18, 106, 115, 0.38);
@@ -2180,6 +2271,7 @@ body.ask-ai-open {
   color: #fff;
   background: var(--accent);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .settings-panel button:disabled {
@@ -2372,6 +2464,23 @@ body.ask-ai-open {
 
   .reader-toolbar {
     padding: 0 16px 10px;
+  }
+
+  .ai-profile-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .ai-profile-actions,
+  .settings-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ai-profile-actions button,
+  .settings-actions button {
+    min-width: 0;
+    padding-inline: 8px;
   }
 
   .reader-article {

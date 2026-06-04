@@ -422,7 +422,7 @@ def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_p
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([item], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
         captured["item"] = items[0]
         return {"answer": "ok", "title": "正文上下文", "citations": [], "model": config.ai_model}
 
@@ -478,7 +478,7 @@ def test_ask_item_scope_retries_cached_unavailable_article_text(monkeypatch, tmp
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([item], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
         captured["item"] = items[0]
         return {"answer": "ok", "title": "正文上下文", "citations": [], "model": config.ai_model}
 

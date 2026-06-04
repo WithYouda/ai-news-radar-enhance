@@ -112,6 +112,20 @@ create table if not exists article_cache (
 
 create index if not exists idx_article_cache_fetched_at
 on article_cache(fetched_at);
+
+create table if not exists ai_provider_profiles (
+  id text primary key,
+  name text not null,
+  type text not null,
+  base_url text not null,
+  model text not null,
+  api_key_encrypted text not null default '',
+  headers_encrypted text not null default '',
+  timeout_seconds integer not null default 45,
+  enabled integer not null default 1,
+  created_at text not null,
+  updated_at text not null
+);
 """
 
 

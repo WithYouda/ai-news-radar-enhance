@@ -14,6 +14,7 @@ def make_client(tmp_path):
         ai_base_url="https://api.example.com/v1",
         ai_api_key="sk-test",
         ai_model="test-model",
+        encryption_key="test-master-key",
     )
     return TestClient(create_app(config), base_url="https://testserver")
 
@@ -45,7 +46,7 @@ def test_ask_category_scope_matches_legacy_ai_labels(monkeypatch, tmp_path):
             "local",
         )
 
-    async def fake_answer_question(config, question, items, system_prompt=None):
+    async def fake_answer_question(config, question, items, system_prompt=None, provider=None):
         captured["items"] = items
         return {"answer": "ok", "citations": [], "model": config.ai_model}
 
@@ -76,7 +77,7 @@ def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
             "local",
         )
 
-    async def fake_answer_question(config, question, items, system_prompt=None):
+    async def fake_answer_question(config, question, items, system_prompt=None, provider=None):
         return {
             "answer": "最值得关注的是 New model release。",
             "title": "模型发布重点",
@@ -120,7 +121,7 @@ def test_ask_persists_history_with_labels(monkeypatch, tmp_path):
 def test_translate_endpoint_uses_cleaned_article_text(monkeypatch, tmp_path):
     captured = {}
 
-    async def fake_translate_clean_text(config, text, source_language="auto"):
+    async def fake_translate_clean_text(config, text, source_language="auto", provider=None):
         captured["text"] = text
         captured["source_language"] = source_language
         return "这是一段站内翻译。"
@@ -129,6 +130,14 @@ def test_translate_endpoint_uses_cleaned_article_text(monkeypatch, tmp_path):
 
     client = make_client(tmp_path)
     login(client)
+    client.put(
+        "/api/settings",
+        json={
+            "translation_provider_mode": "ai",
+            "translation_provider_id": "env",
+            "reading_assistant_provider_id": "env",
+        },
+    )
 
     res = client.post(
         "/api/translate",
@@ -147,13 +156,60 @@ def test_translate_endpoint_uses_cleaned_article_text(monkeypatch, tmp_path):
     assert res.json()["translation"] == "这是一段站内翻译。"
 
 
+def test_translate_endpoint_uses_selected_translation_profile(monkeypatch, tmp_path):
+    captured = {}
+
+    async def fake_translate_clean_text(config, text, source_language="auto", provider=None):
+        captured["profile"] = provider.profile
+        return "翻译完成"
+
+    monkeypatch.setattr("server.ai_radar_api.main.translate_clean_text", fake_translate_clean_text)
+
+    client = make_client(tmp_path)
+    login(client)
+    profile = client.post(
+        "/api/ai-profiles",
+        json={
+            "name": "Translate AI",
+            "type": "chat_completions",
+            "base_url": "https://translate.example.com/v1",
+            "model": "translate-model",
+            "api_key": "sk-translate",
+        },
+    ).json()
+    client.put(
+        "/api/settings",
+        json={
+            "translation_provider_mode": "ai",
+            "translation_provider_id": profile["id"],
+            "reading_assistant_provider_id": "env",
+        },
+    )
+
+    res = client.post("/api/translate", json={"text": "Cleaned article body", "source_language": "en"})
+
+    assert res.status_code == 200
+    assert captured["profile"]["api_key"] == "sk-translate"
+    assert captured["profile"]["model"] == "translate-model"
+
+
+def test_translate_endpoint_rejects_browser_mode_ai_request(tmp_path):
+    client = make_client(tmp_path)
+    login(client)
+
+    res = client.post("/api/translate", json={"text": "Cleaned article body", "source_language": "en"})
+
+    assert res.status_code == 400
+    assert "AI translation is not enabled" in res.text
+
+
 def test_ask_appends_existing_conversation_and_sends_history_to_ai(monkeypatch, tmp_path):
     captured = []
 
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([{"title": "OpenAI API update", "url": "https://example.com/api", "ai_score": 0.9}], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
         captured.append({"question": question, "messages": conversation_messages or []})
         return {
             "answer": f"回答：{question}",
@@ -193,13 +249,54 @@ def test_ask_appends_existing_conversation_and_sends_history_to_ai(monkeypatch, 
     ]
 
 
+def test_ask_uses_selected_reading_assistant_profile(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_load_latest_items_with_source(config, mode="ai"):
+        return ([{"title": "Reader profile story", "url": "https://example.com/profile", "ai_score": 0.9}], "local")
+
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
+        captured["profile"] = provider.profile
+        return {"answer": "ok", "title": "阅读助手", "citations": [], "model": "reader-model"}
+
+    monkeypatch.setattr("server.ai_radar_api.main.load_latest_items_with_source", fake_load_latest_items_with_source)
+    monkeypatch.setattr("server.ai_radar_api.main.answer_question", fake_answer_question)
+
+    client = make_client(tmp_path)
+    login(client)
+    profile = client.post(
+        "/api/ai-profiles",
+        json={
+            "name": "Reader AI",
+            "type": "responses",
+            "base_url": "https://reader.example.com/v1",
+            "model": "reader-model",
+            "api_key": "sk-reader",
+        },
+    ).json()
+    client.put(
+        "/api/settings",
+        json={
+            "translation_provider_mode": "browser",
+            "translation_provider_id": "",
+            "reading_assistant_provider_id": profile["id"],
+        },
+    )
+
+    res = client.post("/api/ask", json={"question": "总结这篇", "scope": "today"})
+
+    assert res.status_code == 200
+    assert captured["profile"]["api_key"] == "sk-reader"
+    assert captured["profile"]["type"] == "responses"
+
+
 def test_ask_message_edit_delete_and_regenerate(monkeypatch, tmp_path):
     captured = []
 
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([{"title": "Model update", "url": "https://example.com/model", "ai_score": 0.9}], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
         captured.append({"question": question, "messages": conversation_messages or []})
         return {
             "answer": f"回答：{question}",
@@ -259,7 +356,7 @@ def test_ask_stream_endpoint_emits_answer_and_done_events(monkeypatch, tmp_path)
     def fake_load_latest_items_with_source(config, mode="ai"):
         return ([{"title": "Model update", "url": "https://example.com/model", "ai_score": 0.9}], "local")
 
-    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None):
+    async def fake_answer_question(config, question, items, conversation_messages=None, system_prompt=None, provider=None):
         return {
             "answer": "第一段。\n\n第二段。",
             "title": "模型更新",

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .db import connect_db
+from .db import init_db
 from .assistant import DEFAULT_ASK_SYSTEM_PROMPT
 
 
@@ -16,11 +17,16 @@ DEFAULT_SETTINGS = {
     "mobile_default_view": "today",
     "ask_streaming_enabled": False,
     "ask_system_prompt": DEFAULT_ASK_SYSTEM_PROMPT,
+    "translation_provider_mode": "browser",
+    "translation_provider_id": "",
+    "reading_assistant_provider_id": "env",
 }
 VALID_DEEP_VERIFICATION_SCOPES = {"bole_picks_and_topic_top_n"}
+VALID_TRANSLATION_PROVIDER_MODES = {"browser", "ai"}
 
 
 def get_settings(db_path: str | Path) -> dict:
+    init_db(db_path)
     with connect_db(db_path) as conn:
         row = conn.execute("select value_json from settings where key = ?", (SETTINGS_KEY,)).fetchone()
     if row is None:
@@ -40,10 +46,14 @@ def update_settings(db_path: str | Path, values: dict) -> dict:
     merged.update(values)
     if merged["deep_verification_scope"] not in VALID_DEEP_VERIFICATION_SCOPES:
         raise ValueError("deep_verification_scope is not supported in V1")
+    if merged["translation_provider_mode"] not in VALID_TRANSLATION_PROVIDER_MODES:
+        raise ValueError("translation_provider_mode is not supported")
     merged["deep_verification_top_n"] = int(merged["deep_verification_top_n"])
     merged["deep_verification_enabled"] = bool(merged["deep_verification_enabled"])
     merged["ask_streaming_enabled"] = bool(merged.get("ask_streaming_enabled"))
     merged["ask_system_prompt"] = str(merged.get("ask_system_prompt") or DEFAULT_ASK_SYSTEM_PROMPT).strip()
+    merged["translation_provider_id"] = str(merged.get("translation_provider_id") or "").strip()
+    merged["reading_assistant_provider_id"] = str(merged.get("reading_assistant_provider_id") or "env").strip() or "env"
     with connect_db(db_path) as conn:
         conn.execute(
             """

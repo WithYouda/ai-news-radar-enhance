@@ -1,6 +1,19 @@
 const appConfig = window.AI_NEWS_RADAR_CONFIG || {};
 const apiBaseUrl = String(appConfig.apiBaseUrl || "").replace(/\/$/, "");
 
+const READER_SUMMARY_PROMPT = `请用中文总结这篇文章：
+1. 核心信息
+2. 对 AI/科技行业的影响
+3. 需要注意的不确定点
+4. 如果正文信息不足，请明确说明`;
+
+const READER_FACT_CHECK_PROMPT = `请对这篇文章做基于当前雷达上下文的事实交叉核验：
+1. 提取关键事实主张
+2. 判断哪些主张能从当前文章或相关新闻上下文得到支持
+3. 标记无法确认、可能夸大、来源不清、时间不清的问题
+4. 不要编造证据；证据不足时明确说证据不足
+5. 最后给出可信度：高/中/低，并说明原因`;
+
 async function apiFetch(path, options = {}) {
   if (!apiBaseUrl) throw new Error("AI 后端未配置");
   let res;
@@ -57,6 +70,14 @@ const state = {
   askHistoryVisible: false,
   readerItem: null,
   readerArticle: null,
+  readerOriginalHtml: "",
+  readerOriginalText: "",
+  readerTranslatedHtml: "",
+  readerShowingTranslation: false,
+  aiProfiles: [],
+  translationProviderMode: "browser",
+  translationProviderId: "",
+  readingAssistantProviderId: "env",
   waytoagiData: null,
   sourceStatus: null,
   generatedAt: null,
@@ -114,6 +135,22 @@ const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
 const askStreamingToggleEl = document.getElementById("askStreamingToggle");
 const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
+const aiProfilesMetaEl = document.getElementById("aiProfilesMeta");
+const aiProfilesListEl = document.getElementById("aiProfilesList");
+const aiProfileIdInputEl = document.getElementById("aiProfileIdInput");
+const aiProfileNameInputEl = document.getElementById("aiProfileNameInput");
+const aiProfileTypeSelectEl = document.getElementById("aiProfileTypeSelect");
+const aiProfileBaseUrlInputEl = document.getElementById("aiProfileBaseUrlInput");
+const aiProfileModelInputEl = document.getElementById("aiProfileModelInput");
+const aiProfileApiKeyInputEl = document.getElementById("aiProfileApiKeyInput");
+const aiProfileHeadersInputEl = document.getElementById("aiProfileHeadersInput");
+const aiProfileTimeoutInputEl = document.getElementById("aiProfileTimeoutInput");
+const saveAiProfileButtonEl = document.getElementById("saveAiProfileButton");
+const testAiProfileButtonEl = document.getElementById("testAiProfileButton");
+const resetAiProfileFormButtonEl = document.getElementById("resetAiProfileFormButton");
+const translationProviderModeSelectEl = document.getElementById("translationProviderModeSelect");
+const translationProviderSelectEl = document.getElementById("translationProviderSelect");
+const readingAssistantProviderSelectEl = document.getElementById("readingAssistantProviderSelect");
 const readerSheetEl = document.getElementById("readerSheet");
 const readerPanelEl = readerSheetEl?.querySelector(".reader-panel");
 const readerCloseEl = document.getElementById("readerClose");
@@ -123,6 +160,8 @@ const readerBodyEl = document.getElementById("readerBody");
 const readerOriginalLinkEl = document.getElementById("readerOriginalLink");
 const readerAskButtonEl = document.getElementById("readerAskButton");
 const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
+const readerSummaryButtonEl = document.getElementById("readerSummaryButton");
+const readerFactCheckButtonEl = document.getElementById("readerFactCheckButton");
 const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
 const ASK_DRAG_ACTIVATION_PX = 8;
 const ASK_DRAG_CLOSE_THRESHOLD = 132;
@@ -1079,6 +1118,42 @@ async function submitAskAi() {
   }
 }
 
+async function submitAskPresetQuestion(questionText) {
+  if (!askAiAnswerEl) return;
+  const question = strTrim(questionText);
+  if (!question) return;
+  if (!apiBaseUrl) {
+    askAiAnswerEl.textContent = "AI 后端未配置。";
+    return;
+  }
+  if (askAiSubmitEl) askAiSubmitEl.disabled = true;
+  setAskPanelView("messages");
+  const pendingRow = renderAskLoading(question);
+  clearAskQuote();
+  try {
+    if (state.askStreamingEnabled) {
+      await submitAskAiStream(question, pendingRow);
+      return;
+    }
+    const payload = await apiFetch("/api/ask", {
+      method: "POST",
+      body: JSON.stringify(askRequestBody(question)),
+    });
+    state.activeConversationId = payload?.conversation_id || state.activeConversationId;
+    renderAskAnswer(payload);
+    if (payload?.history_saved) {
+      state.askHistoryLoaded = false;
+      if (state.askHistoryVisible) loadAskHistory(true);
+    }
+  } catch (err) {
+    const pending = askAiAnswerEl.querySelector(".ask-ai-message.pending");
+    if (pending) pending.remove();
+    appendAskMessage("ai", err.message || "请求失败。");
+  } finally {
+    if (askAiSubmitEl) askAiSubmitEl.disabled = false;
+  }
+}
+
 async function submitAskAiStream(question, pendingRow) {
   let streamedText = "";
   let donePayload = null;
@@ -1128,6 +1203,181 @@ function applySettings(settings) {
   if (askSystemPromptInputEl) {
     askSystemPromptInputEl.value = String(settings.ask_system_prompt || "");
   }
+  state.translationProviderMode = settings.translation_provider_mode || "browser";
+  state.translationProviderId = settings.translation_provider_id || "";
+  state.readingAssistantProviderId = settings.reading_assistant_provider_id || "env";
+  if (translationProviderModeSelectEl) translationProviderModeSelectEl.value = state.translationProviderMode;
+  if (translationProviderSelectEl) translationProviderSelectEl.value = state.translationProviderId || "env";
+  if (readingAssistantProviderSelectEl) readingAssistantProviderSelectEl.value = state.readingAssistantProviderId || "env";
+  syncTranslationProviderMode();
+}
+
+function aiProviderOptions() {
+  const envProfile = { id: "env", name: "环境变量 AI", readonly: true };
+  const seen = new Set(["env"]);
+  const storedProfiles = (state.aiProfiles || []).filter((profile) => {
+    if (!profile?.id || seen.has(profile.id)) return false;
+    seen.add(profile.id);
+    return true;
+  });
+  return [envProfile, ...storedProfiles];
+}
+
+function syncTranslationProviderMode() {
+  if (!translationProviderModeSelectEl || !translationProviderSelectEl) return;
+  const useAi = translationProviderModeSelectEl.value === "ai";
+  translationProviderSelectEl.disabled = !useAi;
+  if (!useAi) {
+    translationProviderSelectEl.value = "";
+    return;
+  }
+  if (!translationProviderSelectEl.value) {
+    translationProviderSelectEl.value = state.translationProviderId || "env";
+  }
+}
+
+function renderProviderOptions() {
+  const options = aiProviderOptions();
+  [translationProviderSelectEl, readingAssistantProviderSelectEl].forEach((selectEl) => {
+    if (!selectEl) return;
+    const current = selectEl === translationProviderSelectEl ? state.translationProviderId || "env" : state.readingAssistantProviderId || "env";
+    selectEl.innerHTML = options
+      .map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name || profile.id)}</option>`)
+      .join("");
+    selectEl.value = current;
+    if (!selectEl.value && options.length) selectEl.value = options[0].id;
+  });
+  syncTranslationProviderMode();
+}
+
+function resetAiProfileForm() {
+  if (aiProfileIdInputEl) aiProfileIdInputEl.value = "";
+  if (aiProfileNameInputEl) aiProfileNameInputEl.value = "";
+  if (aiProfileTypeSelectEl) aiProfileTypeSelectEl.value = "chat_completions";
+  if (aiProfileBaseUrlInputEl) aiProfileBaseUrlInputEl.value = "";
+  if (aiProfileModelInputEl) aiProfileModelInputEl.value = "";
+  if (aiProfileApiKeyInputEl) aiProfileApiKeyInputEl.value = "";
+  if (aiProfileHeadersInputEl) aiProfileHeadersInputEl.value = "";
+  if (aiProfileTimeoutInputEl) aiProfileTimeoutInputEl.value = "45";
+}
+
+function fillAiProfileForm(profile) {
+  if (!profile || profile.readonly) return;
+  if (aiProfileIdInputEl) aiProfileIdInputEl.value = profile.id || "";
+  if (aiProfileNameInputEl) aiProfileNameInputEl.value = profile.name || "";
+  if (aiProfileTypeSelectEl) aiProfileTypeSelectEl.value = profile.type || "chat_completions";
+  if (aiProfileBaseUrlInputEl) aiProfileBaseUrlInputEl.value = profile.base_url || "";
+  if (aiProfileModelInputEl) aiProfileModelInputEl.value = profile.model || "";
+  if (aiProfileApiKeyInputEl) aiProfileApiKeyInputEl.value = "";
+  if (aiProfileHeadersInputEl) aiProfileHeadersInputEl.value = "";
+  if (aiProfileTimeoutInputEl) aiProfileTimeoutInputEl.value = String(profile.timeout_seconds || 45);
+}
+
+function renderAiProfiles() {
+  if (aiProfilesMetaEl) aiProfilesMetaEl.textContent = `${state.aiProfiles.length} 个配置`;
+  if (!aiProfilesListEl) return;
+  aiProfilesListEl.innerHTML = "";
+  state.aiProfiles.forEach((profile) => {
+    const row = document.createElement("div");
+    row.className = "ai-profile-row";
+    row.dataset.profileId = profile.id;
+    const meta = [profile.type, profile.model, profile.has_api_key ? "已保存 key" : "无 key"].filter(Boolean).join(" · ");
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(profile.name || profile.id)}</strong>
+        <span>${escapeHtml(meta)}</span>
+      </div>
+      <div class="ai-profile-actions">
+        <button type="button" data-action="edit" ${profile.readonly ? "disabled" : ""}>编辑</button>
+        <button type="button" data-action="test">测试</button>
+        <button type="button" data-action="delete" ${profile.readonly ? "disabled" : ""}>删除</button>
+      </div>
+    `;
+    aiProfilesListEl.appendChild(row);
+  });
+  renderProviderOptions();
+}
+
+async function loadAiProfiles() {
+  if (!apiBaseUrl) return;
+  try {
+    const payload = await apiFetch("/api/ai-profiles");
+    state.aiProfiles = Array.isArray(payload.items) ? payload.items : [];
+    renderAiProfiles();
+  } catch (err) {
+    if (aiProfilesMetaEl) aiProfilesMetaEl.textContent = "AI 配置加载失败";
+  }
+}
+
+function aiProfilePayload() {
+  const headersText = aiProfileHeadersInputEl?.value.trim() || "";
+  if (headersText) JSON.parse(headersText);
+  return {
+    name: aiProfileNameInputEl?.value.trim() || "",
+    type: aiProfileTypeSelectEl?.value || "chat_completions",
+    base_url: aiProfileBaseUrlInputEl?.value.trim() || "",
+    model: aiProfileModelInputEl?.value.trim() || "",
+    api_key: aiProfileApiKeyInputEl?.value || "",
+    headers_json: headersText,
+    timeout_seconds: Number(aiProfileTimeoutInputEl?.value || 45),
+    enabled: true,
+  };
+}
+
+async function saveAiProfile() {
+  if (!apiBaseUrl) return;
+  const profileId = aiProfileIdInputEl?.value.trim();
+  let payload;
+  try {
+    payload = aiProfilePayload();
+  } catch (_) {
+    setSettingsStatus("请求头 JSON 格式错误");
+    return;
+  }
+  const path = profileId ? `/api/ai-profiles/${encodeURIComponent(profileId)}` : "/api/ai-profiles";
+  const method = profileId ? "PUT" : "POST";
+  if (saveAiProfileButtonEl) saveAiProfileButtonEl.disabled = true;
+  setSettingsStatus("保存 AI 配置中...");
+  try {
+    await apiFetch(path, { method, body: JSON.stringify(payload) });
+    resetAiProfileForm();
+    await loadAiProfiles();
+    setSettingsStatus("AI 配置已保存");
+  } catch (err) {
+    setSettingsStatus(err.message || "AI 配置保存失败");
+  } finally {
+    if (saveAiProfileButtonEl) saveAiProfileButtonEl.disabled = false;
+  }
+}
+
+async function testAiProfile(profileId = aiProfileIdInputEl?.value.trim()) {
+  if (!apiBaseUrl || !profileId) {
+    setSettingsStatus("请先选择或保存 AI 配置");
+    return;
+  }
+  if (testAiProfileButtonEl) testAiProfileButtonEl.disabled = true;
+  setSettingsStatus("测试连接中...");
+  try {
+    await apiFetch(`/api/ai-profiles/${encodeURIComponent(profileId)}/test`, { method: "POST" });
+    setSettingsStatus("AI 连接正常");
+  } catch (err) {
+    setSettingsStatus(err.message || "AI 连接失败");
+  } finally {
+    if (testAiProfileButtonEl) testAiProfileButtonEl.disabled = false;
+  }
+}
+
+async function deleteAiProfile(profileId) {
+  if (!apiBaseUrl || !profileId) return;
+  setSettingsStatus("删除 AI 配置中...");
+  try {
+    await apiFetch(`/api/ai-profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" });
+    resetAiProfileForm();
+    await loadAiProfiles();
+    setSettingsStatus("AI 配置已删除");
+  } catch (err) {
+    setSettingsStatus(err.message || "删除失败");
+  }
 }
 
 async function loginAdmin() {
@@ -1167,6 +1417,7 @@ async function loadSettings() {
     await apiFetch("/api/me");
     const settings = await apiFetch("/api/settings");
     applySettings(settings);
+    await loadAiProfiles();
     setSettingsStatus("已登录");
     return settings;
   } catch (_) {
@@ -1181,6 +1432,7 @@ async function saveSettings() {
     return;
   }
   const topN = Math.max(1, Math.min(10, Number(deepVerificationTopNEl?.value || 3)));
+  const translationMode = translationProviderModeSelectEl?.value || "browser";
   if (saveSettingsButtonEl) saveSettingsButtonEl.disabled = true;
   setSettingsStatus("保存中...");
   try {
@@ -1192,6 +1444,9 @@ async function saveSettings() {
         deep_verification_top_n: topN,
         ask_streaming_enabled: Boolean(askStreamingToggleEl?.checked),
         ask_system_prompt: askSystemPromptInputEl?.value || "",
+        translation_provider_mode: translationMode,
+        translation_provider_id: translationMode === "ai" ? translationProviderSelectEl?.value || "env" : "",
+        reading_assistant_provider_id: readingAssistantProviderSelectEl?.value || "env",
       }),
     });
     applySettings(settings);
@@ -1608,6 +1863,10 @@ function closeReader() {
 
 function renderReaderLoading(item) {
   state.readerArticle = null;
+  state.readerOriginalHtml = "";
+  state.readerOriginalText = "";
+  state.readerTranslatedHtml = "";
+  state.readerShowingTranslation = false;
   if (readerTitleEl) readerTitleEl.textContent = itemTitleText(item);
   if (readerSourceEl) readerSourceEl.textContent = item.site_name || item.source || "AI News Radar";
   if (readerOriginalLinkEl) {
@@ -1660,6 +1919,10 @@ function renderReaderArticle(payload) {
   readerBodyEl.lang = payload.language || "";
   readerBodyEl.setAttribute("translate", "yes");
   readerBodyEl.innerHTML = payload.content_html || `<p>${escapeHtml(payload.text || "未能提取正文。")}</p>`;
+  state.readerOriginalHtml = readerBodyEl.innerHTML;
+  state.readerOriginalText = payload.text || readerBodyEl.textContent || "";
+  state.readerTranslatedHtml = "";
+  state.readerShowingTranslation = false;
 }
 
 function cleanedTextForTranslation() {
@@ -1687,45 +1950,111 @@ function renderTranslatedReaderArticle(translatedText) {
   readerBodyEl.innerHTML = blocks.length
     ? blocks.map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`).join("")
     : "<p>未能生成译文。</p>";
+  state.readerTranslatedHtml = readerBodyEl.innerHTML;
+  state.readerShowingTranslation = true;
   readerBodyEl.lang = "zh";
+  if (readerTranslateButtonEl) {
+    readerTranslateButtonEl.textContent = "原文";
+    readerTranslateButtonEl.disabled = false;
+  }
+}
+
+function showOriginalReaderArticle() {
+  if (!readerBodyEl || !state.readerOriginalHtml) return;
+  readerBodyEl.innerHTML = state.readerOriginalHtml;
+  readerBodyEl.lang = state.readerArticle?.language || "";
+  state.readerShowingTranslation = false;
+  if (readerTranslateButtonEl) {
+    readerTranslateButtonEl.textContent = "中文";
+    readerTranslateButtonEl.disabled = false;
+  }
+}
+
+function showTranslatedReaderArticle() {
+  if (!readerBodyEl || !state.readerTranslatedHtml) return;
+  readerBodyEl.innerHTML = state.readerTranslatedHtml;
+  readerBodyEl.lang = "zh";
+  state.readerShowingTranslation = true;
+  if (readerTranslateButtonEl) {
+    readerTranslateButtonEl.textContent = "原文";
+    readerTranslateButtonEl.disabled = false;
+  }
 }
 
 async function translateReaderArticle() {
   if (!readerBodyEl || !readerTranslateButtonEl) return;
+  if (state.readerShowingTranslation) {
+    showOriginalReaderArticle();
+    return;
+  }
+  if (state.readerTranslatedHtml) {
+    showTranslatedReaderArticle();
+    return;
+  }
   const sourceLanguage = state.readerArticle?.language || readerBodyEl.lang || "en";
   readerBodyEl.setAttribute("translate", "yes");
   readerTranslateButtonEl.disabled = true;
   readerTranslateButtonEl.textContent = "翻译中";
-  const translatorAvailable = window.Translator?.availability
-    ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
-    : "unknown";
-  if (window.Translator?.create && translatorAvailable !== "unavailable") {
-    try {
-      const translator = await window.Translator.create({
-        sourceLanguage,
-        targetLanguage: "zh",
-      });
-      const nodes = Array.from(readerBodyEl.querySelectorAll("h2, h3, p, li, blockquote"))
-        .filter((node) => node.textContent.trim());
-      for (const node of nodes) {
-        node.textContent = await translator.translate(node.textContent);
+  if (state.translationProviderMode !== "ai") {
+    const translatorAvailable = window.Translator?.availability
+      ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
+      : "unavailable";
+    if (window.Translator?.create && translatorAvailable !== "unavailable") {
+      try {
+        const translator = await window.Translator.create({
+          sourceLanguage,
+          targetLanguage: "zh",
+        });
+        const nodes = Array.from(readerBodyEl.querySelectorAll("h2, h3, p, li, blockquote"))
+          .filter((node) => node.textContent.trim());
+        for (const node of nodes) {
+          node.textContent = await translator.translate(node.textContent);
+        }
+        state.readerTranslatedHtml = readerBodyEl.innerHTML;
+        state.readerShowingTranslation = true;
+        readerBodyEl.lang = "zh";
+        readerTranslateButtonEl.textContent = "原文";
+        readerTranslateButtonEl.disabled = false;
+        return;
+      } catch (_) {
+        // Fall through to a visible failure state below.
       }
-      readerBodyEl.lang = "zh";
-      readerTranslateButtonEl.textContent = "已翻译";
-      return;
-    } catch (_) {
-      // Fall through to the server-side cleaned-text translator.
     }
+    readerTranslateButtonEl.textContent = "翻译失败";
+    readerTranslateButtonEl.title = "当前浏览器未提供可调用的内置翻译能力";
+    readerTranslateButtonEl.disabled = false;
+    return;
   }
   try {
     const translatedText = await requestCleanTextTranslation(cleanedTextForTranslation(), sourceLanguage);
     renderTranslatedReaderArticle(translatedText);
-    readerTranslateButtonEl.textContent = "已翻译";
   } catch (err) {
     readerTranslateButtonEl.textContent = "翻译失败";
     readerTranslateButtonEl.title = err.message || "翻译失败";
     readerTranslateButtonEl.disabled = false;
   }
+}
+
+async function readerAskContext() {
+  const article = state.readerArticle || {};
+  const item = state.readerItem || article.item || article || {};
+  return {
+    item_id: await readerItemId(item),
+    item_title: article.title || itemTitleText(item),
+  };
+}
+
+async function openAskAiForReaderArticle(question) {
+  openAskAi(await readerAskContext());
+  await submitAskPresetQuestion(question);
+}
+
+async function summarizeReaderArticle() {
+  await openAskAiForReaderArticle(READER_SUMMARY_PROMPT);
+}
+
+async function factCheckReaderArticle() {
+  await openAskAiForReaderArticle(READER_FACT_CHECK_PROMPT);
 }
 
 async function loadCleanArticle(item) {
@@ -2660,6 +2989,8 @@ if (readerPanelEl) {
   readerPanelEl.addEventListener("pointercancel", handleReaderPanelDragEnd);
 }
 if (readerTranslateButtonEl) readerTranslateButtonEl.addEventListener("click", translateReaderArticle);
+if (readerSummaryButtonEl) readerSummaryButtonEl.addEventListener("click", summarizeReaderArticle);
+if (readerFactCheckButtonEl) readerFactCheckButtonEl.addEventListener("click", factCheckReaderArticle);
 if (readerAskButtonEl) {
   readerAskButtonEl.addEventListener("click", async () => {
     const item = state.readerItem || {};
@@ -2701,6 +3032,45 @@ if (askAiInputEl) {
 
 if (loginButtonEl) loginButtonEl.addEventListener("click", loginAdmin);
 if (saveSettingsButtonEl) saveSettingsButtonEl.addEventListener("click", saveSettings);
+if (saveAiProfileButtonEl) saveAiProfileButtonEl.addEventListener("click", saveAiProfile);
+if (testAiProfileButtonEl) testAiProfileButtonEl.addEventListener("click", () => testAiProfile());
+if (resetAiProfileFormButtonEl) resetAiProfileFormButtonEl.addEventListener("click", resetAiProfileForm);
+if (translationProviderModeSelectEl) {
+  translationProviderModeSelectEl.addEventListener("change", () => {
+    state.translationProviderMode = translationProviderModeSelectEl.value || "browser";
+    syncTranslationProviderMode();
+  });
+}
+if (translationProviderSelectEl) {
+  translationProviderSelectEl.addEventListener("change", () => {
+    state.translationProviderId = translationProviderSelectEl.value || "";
+  });
+}
+if (readingAssistantProviderSelectEl) {
+  readingAssistantProviderSelectEl.addEventListener("change", () => {
+    state.readingAssistantProviderId = readingAssistantProviderSelectEl.value || "env";
+  });
+}
+if (aiProfilesListEl) {
+  aiProfilesListEl.addEventListener("click", (event) => {
+    const button = event.target.closest?.("button[data-action]");
+    if (!button) return;
+    const row = button.closest(".ai-profile-row");
+    const profileId = row?.dataset.profileId || "";
+    const action = button.dataset.action;
+    const profile = state.aiProfiles.find((item) => item.id === profileId);
+    if (action === "edit" && profile) {
+      fillAiProfileForm(profile);
+    }
+    if (action === "test") {
+      testAiProfile(profileId);
+    }
+    if (action === "delete" && profileId) {
+      if (window.confirm && !window.confirm("删除这个 AI 配置？")) return;
+      deleteAiProfile(profileId);
+    }
+  });
+}
 if (adminPasswordInputEl) {
   adminPasswordInputEl.addEventListener("keydown", (event) => {
     if (event.key === "Enter") loginAdmin();

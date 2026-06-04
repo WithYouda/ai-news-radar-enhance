@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=reader-mvp-03" />
+    <link rel="stylesheet" href="./assets/styles.css?v=ai-actions-0604" />
   </head>
   <body>
     <main class="shell">
@@ -147,25 +147,95 @@
           <span id="settingsStatus">未登录</span>
         </div>
         <div class="settings-panel">
-          <input id="adminPasswordInput" type="password" placeholder="管理员密码" />
-          <button id="loginButton" type="button">登录</button>
-          <label class="settings-toggle">
-            <input id="deepVerificationToggle" type="checkbox" />
-            <span>默认深度核验伯乐精选与分类 Top N</span>
-          </label>
-          <label class="settings-toggle">
-            <input id="askStreamingToggle" type="checkbox" />
-            <span>Ask AI 流式输出</span>
-          </label>
-          <label class="field">
-            <span>Top N</span>
-            <input id="deepVerificationTopN" type="number" min="1" max="10" value="3" />
-          </label>
-          <label class="field">
-            <span>Ask AI 系统提示词</span>
-            <textarea id="askSystemPromptInput" rows="7" placeholder="设置 Ask AI 的系统提示词"></textarea>
-          </label>
-          <button id="saveSettingsButton" type="button">保存设置</button>
+          <section class="settings-section">
+            <input id="adminPasswordInput" type="password" placeholder="管理员密码" />
+            <button id="loginButton" type="button">登录</button>
+          </section>
+          <section class="settings-section">
+            <div class="settings-section-head">
+              <h3>AI 配置</h3>
+              <span id="aiProfilesMeta">未加载</span>
+            </div>
+            <div id="aiProfilesList" class="ai-profiles-list"></div>
+            <div class="ai-profile-form">
+              <input id="aiProfileIdInput" type="hidden" />
+              <label class="field">
+                <span>名称</span>
+                <input id="aiProfileNameInput" type="text" placeholder="阅读助手 / 翻译 AI" />
+              </label>
+              <label class="field">
+                <span>接口类型</span>
+                <select id="aiProfileTypeSelect">
+                  <option value="chat_completions">Chat Completions</option>
+                  <option value="responses">Responses</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Base URL</span>
+                <input id="aiProfileBaseUrlInput" type="url" placeholder="https://api.example.com/v1" />
+              </label>
+              <label class="field">
+                <span>模型</span>
+                <input id="aiProfileModelInput" type="text" placeholder="gpt-4.1-mini" />
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input id="aiProfileApiKeyInput" type="password" placeholder="留空则保留已有 key" />
+              </label>
+              <label class="field">
+                <span>请求头 JSON</span>
+                <textarea id="aiProfileHeadersInput" rows="4" placeholder='{"X-Custom-Header":"value"}'></textarea>
+              </label>
+              <label class="field">
+                <span>超时秒数</span>
+                <input id="aiProfileTimeoutInput" type="number" min="5" max="180" value="45" />
+              </label>
+              <div class="settings-actions">
+                <button id="saveAiProfileButton" type="button">保存 AI 配置</button>
+                <button id="testAiProfileButton" type="button">测试连接</button>
+                <button id="resetAiProfileFormButton" type="button">清空</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section">
+            <div class="settings-section-head">
+              <h3>用途选择</h3>
+            </div>
+            <label class="field">
+              <span>翻译</span>
+              <select id="translationProviderModeSelect">
+                <option value="browser">浏览器内置</option>
+                <option value="ai">AI 翻译</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>翻译 AI</span>
+              <select id="translationProviderSelect"></select>
+            </label>
+            <label class="field">
+              <span>阅读助手 AI</span>
+              <select id="readingAssistantProviderSelect"></select>
+            </label>
+          </section>
+          <section class="settings-section">
+            <label class="settings-toggle">
+              <input id="deepVerificationToggle" type="checkbox" />
+              <span>默认深度核验伯乐精选与分类 Top N</span>
+            </label>
+            <label class="settings-toggle">
+              <input id="askStreamingToggle" type="checkbox" />
+              <span>Ask AI 流式输出</span>
+            </label>
+            <label class="field">
+              <span>Top N</span>
+              <input id="deepVerificationTopN" type="number" min="1" max="10" value="3" />
+            </label>
+            <label class="field">
+              <span>Ask AI 系统提示词</span>
+              <textarea id="askSystemPromptInput" rows="7" placeholder="设置 Ask AI 的系统提示词"></textarea>
+            </label>
+            <button id="saveSettingsButton" type="button">保存设置</button>
+          </section>
         </div>
       </section>
 
@@ -183,6 +253,8 @@
         <div class="reader-toolbar sheet-drag-zone">
           <a id="readerOriginalLink" href="#" target="_blank" rel="noopener noreferrer">原文</a>
           <button id="readerTranslateButton" type="button" hidden>翻译</button>
+          <button id="readerSummaryButton" type="button">总结</button>
+          <button id="readerFactCheckButton" type="button">核验</button>
           <span id="readerAccessBadge" class="reader-access-badge" hidden></span>
         </div>
         <article id="readerBody" class="reader-article" translate="yes"></article>
@@ -241,7 +313,7 @@
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=reader-mvp-03" defer></script>
+    <script src="./assets/app.js?v=ai-actions-0604" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
