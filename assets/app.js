@@ -1998,7 +1998,7 @@ async function translateReaderArticle() {
   if (state.translationProviderMode !== "ai") {
     const translatorAvailable = window.Translator?.availability
       ? await window.Translator.availability({ sourceLanguage, targetLanguage: "zh" }).catch(() => "unavailable")
-      : "unavailable";
+      : "unknown";
     if (window.Translator?.create && translatorAvailable !== "unavailable") {
       try {
         const translator = await window.Translator.create({
