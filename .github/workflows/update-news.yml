@@ -2,6 +2,9 @@ name: Update AI News Snapshot
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
   schedule:
     - cron: "17,47 * * * *"
 
