@@ -285,6 +285,13 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert ".reader-access-badge" in css
     assert ".reader-close" in css and "white-space: nowrap" in css
     assert "body.reader-open" in css
+    assert ".reader-article img" in css
+    assert "max-width: 100%" in css
+    assert ".reader-article figure" in css
+    assert ".reader-article pre" in css
+    assert "overflow-x: auto" in css
+    assert ".reader-article pre code" in css
+    assert ".reader-article code" in css
 
 
 def test_ask_ai_sheet_supports_smooth_drag_to_dismiss():

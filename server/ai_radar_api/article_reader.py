@@ -340,6 +340,12 @@ def _inline_html(node, base_url: str) -> str:
     return _compact_text("".join(parts))
 
 
+def _pre_text(node) -> str:
+    source = node.find("code") or node
+    text = str(source.get_text("", strip=False) or "")
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+
+
 def _srcset_url(value: str) -> str:
     candidates = []
     for part in str(value or "").split(","):
@@ -383,7 +389,7 @@ def _block_html(node, base_url: str) -> tuple[str, str]:
             img = node.find("img")
             if img:
                 return _image_figure_html(img, base_url)
-        inner = _inline_html(node, base_url) if name != "pre" else html.escape(node.get_text("\n", strip=True))
+        inner = _inline_html(node, base_url) if name != "pre" else html.escape(_pre_text(node))
         if not text:
             return "", ""
         return f"<{name}>{inner}</{name}>", text

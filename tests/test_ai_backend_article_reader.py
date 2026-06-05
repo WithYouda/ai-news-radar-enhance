@@ -213,6 +213,34 @@ def test_extract_article_keeps_article_images_and_drops_unlabeled_recommendation
     assert '<figure><img src="https://example.com/images/benchmark-chart.jpg" alt="Benchmark chart"></figure>' in payload["content_html"]
 
 
+def test_extract_article_keeps_github_style_code_blocks_intact():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <article>
+                <p>The README introduces the project and then shows setup instructions.</p>
+                <pre><code><span>from</span> <span>fastapi</span> <span>import</span> <span>FastAPI</span>
+<span>app = FastAPI()</span>
+<span>@app.get("/")</span>
+<span>def read_root():</span>
+<span>    return {"hello": "world"}</span></code></pre>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://example.com/fastapi-readme",
+        fallback_title="README",
+    )
+
+    assert "The README introduces" in payload["text"]
+    assert "<pre>from fastapi import FastAPI" in payload["content_html"]
+    assert 'def read_root():' in payload["content_html"]
+    assert "from\nfastapi\nimport" not in payload["content_html"]
+
+
 def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
     captured = {}
 
