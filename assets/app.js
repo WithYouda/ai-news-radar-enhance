@@ -2483,6 +2483,15 @@ function renderBolePicks() {
   bolePicksListEl.appendChild(list);
 }
 
+function itemImageUrl(item) {
+  const raw = String(item.image_url || item.thumbnail_url || item.media_url || "").trim();
+  if (!/^https?:\/\//i.test(raw)) return "";
+  if (/(^|\/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|placehold\.co|1x1|^data:/i.test(raw)) {
+    return "";
+  }
+  return raw;
+}
+
 function renderItemNode(item) {
   const node = itemTpl.content.firstElementChild.cloneNode(true);
   node.querySelector(".site").textContent = item.site_name;
@@ -2509,6 +2518,21 @@ function renderItemNode(item) {
     titleEl.textContent = item.title || zh || en;
   }
   bindReaderLink(titleEl, item);
+  const thumbEl = node.querySelector(".card-thumb");
+  const thumbUrl = itemImageUrl(item);
+  node.classList.toggle("has-thumb", Boolean(thumbUrl));
+  if (thumbEl && thumbUrl) {
+    thumbEl.src = thumbUrl;
+    thumbEl.hidden = false;
+    thumbEl.addEventListener(
+      "error",
+      () => {
+        thumbEl.hidden = true;
+        node.classList.remove("has-thumb");
+      },
+      { once: true },
+    );
+  }
   const readerBtn = document.createElement("button");
   readerBtn.type = "button";
   readerBtn.className = "card-action reader-action";

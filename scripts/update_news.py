@@ -144,6 +144,25 @@ class RawItem:
     meta: dict[str, Any]
 
 
+PLACEHOLDER_IMAGE_RE = re.compile(
+    r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|placehold\.co|1x1",
+    flags=re.I,
+)
+IMAGE_SOURCE_ATTRS = (
+    "data-src",
+    "data-original",
+    "data-lazy-src",
+    "data-hi-res-src",
+    "data-url",
+    "data-image",
+    "data-image-src",
+    "data-original-src",
+    "data-canonical-src",
+    "src",
+)
+SRCSET_SOURCE_ATTRS = ("srcset", "data-srcset")
+
+
 def utc_now() -> datetime:
     return datetime.now(tz=UTC)
 
@@ -207,6 +226,125 @@ def host_of_url(raw_url: str) -> str:
         return urlparse(raw_url).netloc.lower()
     except Exception:
         return ""
+
+
+def srcset_url(value: str) -> str:
+    candidates: list[str] = []
+    for part in str(value or "").split(","):
+        url = part.strip().split(" ", 1)[0].strip()
+        if url:
+            candidates.append(url)
+    return candidates[-1] if candidates else ""
+
+
+def looks_placeholder_image_url(value: str) -> bool:
+    raw = str(value or "").strip()
+    if not raw or raw in {"#", "about:blank"}:
+        return True
+    if raw.lower().startswith("data:"):
+        return True
+    return bool(PLACEHOLDER_IMAGE_RE.search(raw))
+
+
+def normalize_public_image_url(value: str, base_url: str = "") -> str:
+    raw = str(value or "").strip()
+    if not raw or looks_placeholder_image_url(raw):
+        return ""
+    absolute = urljoin(base_url, raw) if base_url else raw
+    normalized = normalize_url(absolute)
+    if not normalized.startswith(("http://", "https://")):
+        return ""
+    if looks_placeholder_image_url(normalized):
+        return ""
+    return normalized
+
+
+def image_url_from_img(img: Any, base_url: str = "") -> str:
+    if not img:
+        return ""
+    for attr in IMAGE_SOURCE_ATTRS:
+        url = normalize_public_image_url(str(img.get(attr) or ""), base_url)
+        if url:
+            return url
+    for attr in SRCSET_SOURCE_ATTRS:
+        url = normalize_public_image_url(srcset_url(str(img.get(attr) or "")), base_url)
+        if url:
+            return url
+    return ""
+
+
+def feed_entry_image_url(entry: Any, base_url: str = "") -> str:
+    for key in ("media_content", "media_thumbnail"):
+        values = entry.get(key) or []
+        if isinstance(values, dict):
+            values = [values]
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            url = normalize_public_image_url(str(value.get("url") or value.get("href") or ""), base_url)
+            if url:
+                return url
+    for link in entry.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        rel = str(link.get("rel") or "").lower()
+        mime = str(link.get("type") or "").lower()
+        if rel not in {"enclosure", "image", "thumbnail"} and not mime.startswith("image/"):
+            continue
+        url = normalize_public_image_url(str(link.get("href") or ""), base_url)
+        if url:
+            return url
+    for key in ("summary", "description", "content"):
+        value = entry.get(key)
+        if isinstance(value, list):
+            value = " ".join(str(part.get("value") if isinstance(part, dict) else part) for part in value)
+        soup = BeautifulSoup(str(value or ""), "html.parser")
+        url = image_url_from_img(soup.find("img"), base_url)
+        if url:
+            return url
+    return ""
+
+
+def public_raw_meta_fields(raw: RawItem) -> dict[str, Any]:
+    image_url = normalize_public_image_url(str(raw.meta.get("image_url") or ""), raw.url)
+    return {"image_url": image_url} if image_url else {}
+
+
+def merge_raw_item_into_archive(archive: dict[str, dict[str, Any]], raw: RawItem, now: datetime | None) -> str:
+    title = raw.title.strip()
+    url = normalize_url(raw.url)
+    if not title or not url or not url.startswith("http"):
+        return ""
+
+    item_id = make_item_id(raw.site_id, raw.source, title, url)
+    public_meta = public_raw_meta_fields(raw)
+    existing = archive.get(item_id)
+    if existing is None:
+        archive[item_id] = {
+            "id": item_id,
+            "site_id": raw.site_id,
+            "site_name": raw.site_name,
+            "source": raw.source,
+            "title": title,
+            "url": url,
+            "published_at": iso(raw.published_at),
+            "first_seen_at": iso(now),
+            "last_seen_at": iso(now),
+            **public_meta,
+        }
+    else:
+        existing["site_id"] = raw.site_id
+        existing["site_name"] = raw.site_name
+        existing["source"] = raw.source
+        existing["title"] = title
+        existing["url"] = url
+        if raw.published_at:
+            # OPML RSS may fix previously wrong publish times; allow overwrite.
+            if raw.site_id == "opmlrss" or not existing.get("published_at"):
+                existing["published_at"] = iso(raw.published_at)
+        existing["last_seen_at"] = iso(now)
+        existing.update(public_meta)
+    return item_id
 
 
 def first_non_empty(*values: Any) -> str:
@@ -1238,6 +1376,13 @@ def fetch_feed_as_official_items(
         if published < now - timedelta(days=OFFICIAL_AI_MAX_AGE_DAYS):
             continue
 
+        meta = {
+            "feed_url": feed_url,
+            "feed_home": feed.get("html_url") or "",
+        }
+        image_url = feed_entry_image_url(entry, link)
+        if image_url:
+            meta["image_url"] = image_url
         out.append(
             RawItem(
                 site_id=site_id,
@@ -1246,10 +1391,7 @@ def fetch_feed_as_official_items(
                 title=maybe_fix_mojibake(title),
                 url=link,
                 published_at=published,
-                meta={
-                    "feed_url": feed_url,
-                    "feed_home": feed.get("html_url") or "",
-                },
+                meta=meta,
             )
         )
 
@@ -1606,6 +1748,10 @@ def fetch_aibase(session: requests.Session, now: datetime) -> list[RawItem]:
             time_text = time_tag.get_text(" ", strip=True)
 
         published = parse_date_any(time_text, now)
+        image_url = image_url_from_img(a.select_one("img"), "https://www.aibase.com")
+        meta = {"time_hint": time_text}
+        if image_url:
+            meta["image_url"] = image_url
         out.append(
             RawItem(
                 site_id=site_id,
@@ -1614,7 +1760,7 @@ def fetch_aibase(session: requests.Session, now: datetime) -> list[RawItem]:
                 title=title,
                 url=urljoin("https://www.aibase.com", href),
                 published_at=published,
-                meta={"time_hint": time_text},
+                meta=meta,
             )
         )
 
@@ -1656,6 +1802,10 @@ def parse_aihot_feed_items(feed_content: bytes, now: datetime, feed_url: str = A
             entry.get("author"),
             source_name,
         )
+        meta = {"feed_url": feed_url}
+        image_url = feed_entry_image_url(entry, link)
+        if image_url:
+            meta["image_url"] = image_url
         out.append(
             RawItem(
                 site_id=site_id,
@@ -1664,7 +1814,7 @@ def parse_aihot_feed_items(feed_content: bytes, now: datetime, feed_url: str = A
                 title=title,
                 url=link,
                 published_at=published,
-                meta={"feed_url": feed_url},
+                meta=meta,
             )
         )
 
@@ -2177,6 +2327,13 @@ def fetch_opml_rss(
                     )
                     if not published:
                         continue
+                    meta = {
+                        "feed_url": feed_url,
+                        "feed_home": feed.get("html_url") or "",
+                    }
+                    image_url = feed_entry_image_url(entry, link)
+                    if image_url:
+                        meta["image_url"] = image_url
                     local_items.append(
                         RawItem(
                             site_id="opmlrss",
@@ -2185,10 +2342,7 @@ def fetch_opml_rss(
                             title=title,
                             url=link,
                             published_at=published,
-                            meta={
-                                "feed_url": feed_url,
-                                "feed_home": feed.get("html_url") or "",
-                            },
+                            meta=meta,
                         )
                     )
             else:
@@ -3040,40 +3194,9 @@ def main() -> int:
     seen_this_run: set[str] = set()
 
     for raw in raw_items:
-        title = raw.title.strip()
-        url = normalize_url(raw.url)
-        if not title or not url:
-            continue
-        if not url.startswith("http"):
-            continue
-
-        item_id = make_item_id(raw.site_id, raw.source, title, url)
-        seen_this_run.add(item_id)
-
-        existing = archive.get(item_id)
-        if existing is None:
-            archive[item_id] = {
-                "id": item_id,
-                "site_id": raw.site_id,
-                "site_name": raw.site_name,
-                "source": raw.source,
-                "title": title,
-                "url": url,
-                "published_at": iso(raw.published_at),
-                "first_seen_at": iso(now),
-                "last_seen_at": iso(now),
-            }
-        else:
-            existing["site_id"] = raw.site_id
-            existing["site_name"] = raw.site_name
-            existing["source"] = raw.source
-            existing["title"] = title
-            existing["url"] = url
-            if raw.published_at:
-                # OPML RSS may fix previously wrong publish times; allow overwrite.
-                if raw.site_id == "opmlrss" or not existing.get("published_at"):
-                    existing["published_at"] = iso(raw.published_at)
-            existing["last_seen_at"] = iso(now)
+        item_id = merge_raw_item_into_archive(archive, raw, now)
+        if item_id:
+            seen_this_run.add(item_id)
 
     # Prune old archive
     keep_after = now - timedelta(days=args.archive_days)

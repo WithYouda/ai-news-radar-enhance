@@ -1,15 +1,19 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from scripts.update_news import (
+    RawItem,
     build_agentmail_digest_payload,
     build_latest_payloads,
     dedupe_items_by_title_url,
     fetch_agentmail_digest,
+    fetch_aibase,
     fetch_aihot,
     is_ai_related_record,
     is_hubtoday_generic_anchor_title,
     is_hubtoday_placeholder_title,
+    merge_raw_item_into_archive,
     maybe_fetch_agentmail_digest,
     maybe_fetch_x_api_updates,
     maybe_fix_mojibake,
@@ -25,6 +29,51 @@ from scripts.update_news import (
 
 
 class TopicFilterTests(unittest.TestCase):
+    def test_fetch_aibase_extracts_card_image_url(self):
+        class FakeResponse:
+            text = """
+            <a href="/news/123">
+              <div><img src="/uploads/agent-suite.jpg" alt="Agent suite"></div>
+              <h3>Tencent launches enterprise Agent suite</h3>
+              <div class="text-sm text-gray-400"><span>1小时前</span></div>
+            </a>
+            """
+
+            def raise_for_status(self):
+                return None
+
+        class FakeSession:
+            def get(self, url, timeout=30):
+                self.requested_url = url
+                return FakeResponse()
+
+        session = FakeSession()
+        items = fetch_aibase(session, now=datetime(2026, 6, 5, tzinfo=timezone.utc))
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].meta["image_url"], "https://www.aibase.com/uploads/agent-suite.jpg")
+
+    def test_merge_raw_item_into_archive_preserves_public_image_url(self):
+        archive = {}
+        raw = RawItem(
+            site_id="aibase",
+            site_name="AIbase",
+            source="AIbase",
+            title="Tencent launches enterprise Agent suite",
+            url="https://www.aibase.com/news/123",
+            published_at=None,
+            meta={
+                "image_url": "https://www.aibase.com/uploads/agent-suite.jpg",
+                "feed_url": "https://private.example.com/feed.xml",
+            },
+        )
+
+        item_id = merge_raw_item_into_archive(archive, raw, now=None)
+
+        self.assertIn(item_id, archive)
+        self.assertEqual(archive[item_id]["image_url"], "https://www.aibase.com/uploads/agent-suite.jpg")
+        self.assertNotIn("feed_url", archive[item_id])
+
     def test_accepts_ai_keyword(self):
         rec = {
             "site_id": "techurls",

@@ -29,9 +29,9 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=ai-actions-0604-streamfix" in html
+    assert "./assets/styles.css?v=reader-images-0605" in html
     assert "./assets/config.js?v=info-arch-0602" in html
-    assert "./assets/app.js?v=ai-actions-0604-streamfix" in html
+    assert "./assets/app.js?v=reader-images-0605" in html
 
 
 def test_category_view_contract_exists():
@@ -292,6 +292,18 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert "overflow-x: auto" in css
     assert ".reader-article pre code" in css
     assert ".reader-article code" in css
+
+
+def test_news_cards_render_optional_item_thumbnail():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert 'class="card-thumb"' in html
+    assert "function itemImageUrl" in js
+    assert "item.image_url" in js
+    assert "thumbEl.src = thumbUrl" in js
+    assert ".news-card.has-thumb .news-card-content" in css
+    assert "aspect-ratio: 4 / 3;" in css
 
 
 def test_ask_ai_sheet_supports_smooth_drag_to_dismiss():

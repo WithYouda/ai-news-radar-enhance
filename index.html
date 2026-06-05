@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=ai-actions-0604-streamfix" />
+    <link rel="stylesheet" href="./assets/styles.css?v=reader-images-0605" />
   </head>
   <body>
     <main class="shell">
@@ -302,18 +302,23 @@
 
     <template id="itemTpl">
       <article class="news-card">
-        <div class="meta-row">
-          <span class="site"></span>
-          <span class="category"></span>
-          <span class="source"></span>
-          <time class="time"></time>
+        <div class="news-card-content">
+          <div class="card-copy">
+            <div class="meta-row">
+              <span class="site"></span>
+              <span class="category"></span>
+              <span class="source"></span>
+              <time class="time"></time>
+            </div>
+            <a class="title" target="_blank" rel="noopener noreferrer"></a>
+          </div>
+          <img class="card-thumb" alt="" loading="lazy" decoding="async" hidden />
         </div>
-        <a class="title" target="_blank" rel="noopener noreferrer"></a>
       </article>
     </template>
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
-    <script src="./assets/app.js?v=ai-actions-0604-streamfix" defer></script>
+    <script src="./assets/app.js?v=reader-images-0605" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
