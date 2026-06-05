@@ -6,7 +6,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup, Comment
@@ -110,6 +110,28 @@ PLACEHOLDER_IMAGE_RE = re.compile(
     r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|1x1",
     flags=re.I,
 )
+READER_UI_IMAGE_SRC_RE = re.compile(
+    r"(^|/)(wechat[-_]?share|share|arrow[-_]?grey|close|emoji|default|qr[-_][^/?#]*|code_production|jingzhun|krspace|kr\.)([-_.][^/?#]+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|"
+    r"/(general|common|resource/web|36kr-web/static)/.*(wechat[-_]?share|share|arrow|close|emoji|default|qr[-_])",
+    flags=re.I,
+)
+READER_UI_IMAGE_SIGNATURE_RE = re.compile(r"分享到|分享|二维码|扫码|客户端|wechat|weixin|share|close|arrow|avatar", flags=re.I)
+IMAGE_SIZE_QUERY_KEYS = {
+    "auto",
+    "crop",
+    "dpr",
+    "fit",
+    "format",
+    "h",
+    "height",
+    "name",
+    "q",
+    "quality",
+    "resize",
+    "size",
+    "w",
+    "width",
+}
 X_ERROR_SHELL_RE = re.compile(
     r"something went wrong,?\s+but don.?t fret.*give it another shot|this browser is no longer supported",
     flags=re.I,
@@ -400,6 +422,40 @@ def _looks_placeholder_image_src(value: str) -> bool:
     return bool(PLACEHOLDER_IMAGE_RE.search(raw))
 
 
+def _canonical_image_key(value: str) -> str:
+    raw = html.unescape(str(value or "").strip())
+    if not raw:
+        return ""
+    parsed = urlsplit(raw)
+    path = parsed.path or ""
+    if re.search(r"\.(avif|gif|jpe?g|png|svg|webp)$", path, flags=re.I):
+        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in IMAGE_SIZE_QUERY_KEYS
+    ]
+    return urlunsplit((parsed.scheme, parsed.netloc, path, urlencode(query_items), ""))
+
+
+def _looks_reader_ui_image(node, src: str) -> bool:
+    if READER_UI_IMAGE_SRC_RE.search(src):
+        return True
+    signature = " ".join(
+        [
+            str(node.get("alt") or ""),
+            str(node.get("title") or ""),
+            str(node.get("id") or ""),
+            " ".join(str(value) for value in node.get("class", []) if value),
+        ]
+    )
+    if not signature or not READER_UI_IMAGE_SIGNATURE_RE.search(signature):
+        return False
+    parsed = urlsplit(str(src or ""))
+    asset_hint = " ".join([parsed.netloc, parsed.path])
+    return bool(re.search(r"jrj|36kr|static|resource|common|general|assets?", asset_hint, flags=re.I))
+
+
 def _append_image_source(values: list[str], value: str) -> None:
     raw = str(value or "").strip()
     if raw and not _looks_placeholder_image_src(raw):
@@ -437,7 +493,7 @@ def _image_url(node, base_url: str) -> str:
 
 def _image_figure_html(img, base_url: str, caption: str = "") -> tuple[str, str]:
     src = _image_url(img, base_url)
-    if not src:
+    if not src or _looks_reader_ui_image(img, src):
         return "", ""
     alt = _compact_text(img.get("alt", ""))
     image_html = f'<img src="{html.escape(src, quote=True)}"'
@@ -554,71 +610,18 @@ def _extract_36kr_newsflash(html_text: str, *, url: str, fallback_title: str = "
     }
 
 
-def _json_ld_image_leaf_values(value):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for key, child in value.items():
-            if str(key).lower() in {"url", "contenturl"} and isinstance(child, str):
-                yield child
-            elif str(key).lower() == "image":
-                yield from _json_ld_image_leaf_values(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _json_ld_image_leaf_values(child)
-
-
-def _json_ld_image_values(value):
-    if isinstance(value, dict):
-        if "image" in value:
-            yield from _json_ld_image_leaf_values(value.get("image"))
-        for key in ("@graph", "mainEntity", "primaryImageOfPage"):
-            if key in value:
-                yield from _json_ld_image_values(value.get(key))
-    elif isinstance(value, list):
-        for child in value:
-            yield from _json_ld_image_values(child)
-
-
-def _metadata_image_url(soup: BeautifulSoup, base_url: str) -> str:
-    selectors = (
-        "meta[property='og:image:secure_url']",
-        "meta[property='og:image:url']",
-        "meta[property='og:image']",
-        "meta[name='twitter:image']",
-        "meta[property='twitter:image']",
-        "meta[name='image']",
-        "link[rel='image_src']",
-    )
-    for selector in selectors:
-        node = soup.select_one(selector)
-        value = node.get("content") if node and node.name == "meta" else node.get("href") if node else ""
-        if not value or _looks_placeholder_image_src(str(value)):
-            continue
-        href = _absolute_link(str(value), base_url)
-        if href:
-            return href
-    for script in soup.find_all("script", attrs={"type": re.compile(r"ld\+json", re.I)}):
-        try:
-            data = json.loads(script.string or script.get_text("", strip=False) or "")
-        except json.JSONDecodeError:
-            continue
-        for value in _json_ld_image_values(data):
-            if not value or _looks_placeholder_image_src(str(value)):
-                continue
-            href = _absolute_link(str(value), base_url)
-            if href:
-                return href
-    return ""
-
-
 def _article_image_count(article: dict) -> int:
-    return str(article.get("content_html") or "").lower().count("<img")
+    keys = {
+        _canonical_image_key(match.group(1))
+        for match in HTML_IMAGE_SRC_RE.finditer(str(article.get("content_html") or ""))
+    }
+    keys.discard("")
+    return len(keys)
 
 
 def _image_key_from_block(block_html: str) -> str:
     match = HTML_IMAGE_SRC_RE.search(str(block_html or ""))
-    return html.unescape(match.group(1)).strip() if match else ""
+    return _canonical_image_key(match.group(1)) if match else ""
 
 
 def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSoup, url: str, title: str) -> dict:
@@ -692,8 +695,6 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
         original_article = _article_from_clean_soup(_clean_soup(html_text), metadata_soup=metadata_soup, url=url, title=title)
         if _should_use_original_candidate(article, original_article):
             article = original_article
-    if not _article_has_image(article):
-        article, _ = _with_lead_image_src(article, _metadata_image_url(metadata_soup, url), title)
     return article
 
 
@@ -729,46 +730,6 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     }
     article["translation_available"] = article["language"] not in {"", "unknown", "zh", "zh-cn", "zh-tw"}
     return article
-
-
-def _article_has_image(article: dict) -> bool:
-    return "<img" in str(article.get("content_html") or "").lower()
-
-
-def _item_image_url(item: dict) -> str:
-    for key in ("image_url", "thumbnail_url", "media_url"):
-        value = str(item.get(key) or "").strip()
-        if not value or _looks_placeholder_image_src(value):
-            continue
-        href = _absolute_link(value, str(item.get("url") or ""))
-        if href:
-            return href
-    return ""
-
-
-def _lead_image_html(src: str, title: str) -> str:
-    alt = _compact_text(title)
-    image_html = f'<img src="{html.escape(src, quote=True)}"'
-    if alt:
-        image_html += f' alt="{html.escape(alt, quote=True)}"'
-    image_html += ">"
-    return f"<figure>{image_html}</figure>"
-
-
-def _with_lead_image_src(article: dict, src: str, title: str) -> tuple[dict, bool]:
-    if _article_has_image(article):
-        return article, False
-    if not src:
-        return article, False
-    updated = dict(article)
-    lead_html = _lead_image_html(src, title)
-    body_html = str(updated.get("content_html") or "").strip()
-    updated["content_html"] = f"{lead_html}\n{body_html}" if body_html else lead_html
-    return updated, True
-
-
-def _with_item_lead_image(article: dict, item: dict) -> tuple[dict, bool]:
-    return _with_lead_image_src(article, _item_image_url(item), str(article.get("title") or item.get("title") or ""))
 
 
 def _should_retry_cached_article(article: dict) -> bool:
@@ -824,12 +785,6 @@ def store_article(db_path: str | Path, article: dict) -> None:
                 article["fetched_at"],
             ),
         )
-
-
-def _store_article_with_item_lead_image(config, article: dict, item: dict) -> dict:
-    article, _ = _with_item_lead_image(article, item)
-    store_article(config.db_path, article)
-    return article
 
 
 def _fallback_article(item: dict, *, url: str, final_url: str, reason: str, status_code: int | None = None) -> dict:
@@ -1009,10 +964,6 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
     if cached and not _should_retry_cached_article(cached):
-        if str(cached.get("access_status") or "").strip().lower() == "open":
-            cached, changed = _with_item_lead_image(cached, item)
-            if changed:
-                store_article(config.db_path, cached)
         return {**cached, "item": item}
 
     url = normalize_public_url(str(item.get("url") or ""))
@@ -1084,4 +1035,5 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         "cache_status": "miss",
         "item": item,
     }
-    return _store_article_with_item_lead_image(config, article, item)
+    store_article(config.db_path, article)
+    return article

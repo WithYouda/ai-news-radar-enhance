@@ -308,6 +308,28 @@ practically possible:
 - classify hard paywalls, login walls, and strong anti-bot pages as restricted
 - do not bypass mandatory payment or login restrictions
 
+### Full Article Image Reconciliation
+
+Later, treat image placement as a dedicated extraction project rather than a
+small reader patch. The goal is to preserve body images in their original
+reading order without injecting metadata thumbnails, feed cards, UI icons, ads,
+or broken placeholders.
+
+The work should be staged because complete cross-site support is expensive:
+
+- keep the current lightweight reader path as the default for weak servers
+- compare current output against mature extractors on a fixed regression corpus
+- reconcile images from the original DOM only when they can be anchored to
+  accepted article text or trusted article containers
+- canonicalize image URLs so size variants do not create duplicate figures
+- add site-specific adapters only for high-signal sources with repeat failures
+- add an X/Twitter-specific JSON fallback for public post text and media instead
+  of trying to clean x.com client shells
+- record extraction quality signals, including text length, image count,
+  duplicate count, blocked status, and fallback reason
+- keep a rollback path so noisy image rules can be disabled without changing the
+  whole reader
+
 ### Stored Article Analysis
 
 Later, cache article-level summary and fact-check results so repeat opens can

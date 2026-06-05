@@ -328,7 +328,7 @@ def test_extract_article_keeps_image_without_alt_out_of_article_text():
     assert "model-sample.jpg" not in payload["text"]
 
 
-def test_extract_article_adds_metadata_lead_image_when_body_has_no_images():
+def test_extract_article_does_not_add_metadata_lead_image_when_body_has_no_images():
     payload = extract_article_from_html(
         """
         <html lang="en">
@@ -347,7 +347,8 @@ def test_extract_article_adds_metadata_lead_image_when_body_has_no_images():
         fallback_title="Visual model",
     )
 
-    assert payload["content_html"].startswith('<figure><img src="https://example.com/images/social-card.jpg"')
+    assert "<figure>" not in payload["content_html"]
+    assert "social-card.jpg" not in payload["content_html"]
     assert "model release" in payload["text"]
 
 
@@ -439,6 +440,89 @@ def test_extract_article_deduplicates_nested_figure_image():
     assert payload["content_html"].count("<figure>") == 1
     assert payload["content_html"].count("product-demo.jpg") == 1
     assert "Product demo from the launch article." in payload["text"]
+
+
+def test_extract_article_deduplicates_image_size_variants():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The article explains the launch with enough product and deployment detail to remain readable.</p>
+              <figure>
+                <img src="https://cdn.example.com/images/product-demo.jpg?width=1200&quality=90" alt="Product demo">
+              </figure>
+              <figure>
+                <img src="https://cdn.example.com/images/product-demo.jpg?width=640&quality=80" alt="Product demo">
+              </figure>
+              <p>The next paragraph explains why the visual example matters to the product announcement.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/product-demo",
+        fallback_title="Product demo",
+    )
+
+    assert payload["content_html"].count("<figure>") == 1
+    assert payload["content_html"].count("product-demo.jpg") == 1
+
+
+def test_extract_article_keeps_distinct_query_backed_images():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The article explains the launch with enough product and deployment detail to remain readable.</p>
+              <figure>
+                <img src="https://cdn.example.com/render?image=first&w=1200" alt="First product view">
+              </figure>
+              <figure>
+                <img src="https://cdn.example.com/render?image=second&w=1200" alt="Second product view">
+              </figure>
+              <p>The next paragraph explains why both visual examples matter to the product announcement.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/product-demo",
+        fallback_title="Product demo",
+    )
+
+    assert payload["content_html"].count("<figure>") == 2
+    assert "image=first" in payload["content_html"]
+    assert "image=second" in payload["content_html"]
+
+
+def test_extract_article_drops_reader_ui_images_from_body():
+    payload = extract_article_from_html(
+        """
+        <html lang="zh-CN">
+          <body>
+            <article>
+              <p>在2026腾讯AI产业应用峰会现场，腾讯首席AI科学家对AI下半场给出两个核心判断，说明这是一篇真实正文。</p>
+              <img src="//i0cloud.jrjimg.cn/cloud/images/general/wechat-share.png" alt="分享到微信">
+              <img src="//i0cloud.jrjimg.cn/cloud/images/general/arrow-grey.png">
+              <img src="https://static.jrj.com.cn/resource/web/qr-jrj-app.png" alt="客户端下载二维码">
+              <figure>
+                <img src="https://static.example.com/articles/yao-stage.jpg" alt="大会现场">
+                <figcaption>大会现场图片。</figcaption>
+              </figure>
+              <p>第二段继续解释多模态、具身智能和未来产品机会，确保正文长度足以被清洗器选中。</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://stock.jrj.com.cn/2026/06/05132157349626.shtml",
+        fallback_title="姚顺雨判断AI下半场",
+    )
+
+    assert "wechat-share.png" not in payload["content_html"]
+    assert "arrow-grey.png" not in payload["content_html"]
+    assert "qr-jrj-app.png" not in payload["content_html"]
+    assert "yao-stage.jpg" in payload["content_html"]
+    assert payload["content_html"].count("<figure>") == 1
 
 
 def test_extract_article_preserves_unique_original_images_without_nested_duplicates(monkeypatch):
@@ -667,6 +751,37 @@ def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypa
     assert second.status_code == 200
     assert second.json()["cache_status"] == "hit"
     assert calls == 1
+
+
+def test_read_article_endpoint_does_not_add_item_image_when_fetched_body_has_no_images(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    item["image_url"] = "https://cdn.example.com/feed-card.jpg"
+    (config.data_dir / "latest-24h.json").write_text(json.dumps({"items": [item]}), encoding="utf-8")
+    (config.data_dir / "latest-24h-all.json").write_text(json.dumps({"items_all": [item]}), encoding="utf-8")
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Fetched clean title</h1>
+          <p>This extracted body is long enough to be useful, but it has no inline article images.</p>
+          <p>The feed card image should not be inserted into the clean reader as if it were body content.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", lambda *args, **kwargs: Response())
+    client = TestClient(create_app(config), base_url="https://testserver")
+    identity = item_identity(item)
+
+    res = client.get(f"/api/read/{identity}")
+
+    assert res.status_code == 200
+    assert res.json()["access_status"] == "open"
+    assert "feed-card.jpg" not in res.json()["content_html"]
+    assert "<figure>" not in res.json()["content_html"]
 
 
 def test_read_article_endpoint_rejects_unknown_item(tmp_path):
@@ -903,7 +1018,7 @@ def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, t
     assert calls == 1
 
 
-def test_read_article_endpoint_adds_item_image_to_cached_article_without_images(tmp_path):
+def test_read_article_endpoint_does_not_add_item_image_to_cached_article_without_images(tmp_path):
     config, item = _config(tmp_path)
     init_db(config.db_path)
     item["image_url"] = "https://cdn.example.com/lead-image.jpg"
@@ -931,7 +1046,8 @@ def test_read_article_endpoint_adds_item_image_to_cached_article_without_images(
     article = fetch_clean_article(config, item)
 
     assert article["cache_status"] == "hit"
-    assert article["content_html"].startswith('<figure><img src="https://cdn.example.com/lead-image.jpg"')
+    assert "lead-image.jpg" not in article["content_html"]
+    assert "<figure>" not in article["content_html"]
     assert "Cached article body" in article["text"]
 
 
