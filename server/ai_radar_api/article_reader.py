@@ -102,6 +102,22 @@ RECOMMENDATION_HEADING_RE = re.compile(
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
     flags=re.I,
 )
+PLACEHOLDER_IMAGE_RE = re.compile(
+    r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|1x1",
+    flags=re.I,
+)
+LAZY_IMAGE_ATTRS = (
+    "data-src",
+    "data-original",
+    "data-lazy-src",
+    "data-hi-res-src",
+    "data-url",
+    "data-image",
+    "data-image-src",
+    "data-original-src",
+    "data-canonical-src",
+)
+SRCSET_IMAGE_ATTRS = ("srcset", "data-srcset")
 GOOGLE_NEWS_BATCH_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
 MAX_FETCH_REDIRECTS = 4
 GOOGLE_NEWS_TIMEOUT_SECONDS = 1.0
@@ -220,13 +236,11 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
 def _normalize_lazy_images(html_text: str) -> str:
     soup = BeautifulSoup(html_text or "", "html.parser")
     for img in soup.find_all("img"):
-        if img.get("src"):
+        current_src = str(img.get("src") or "").strip()
+        if current_src and not _looks_placeholder_image_src(current_src):
             continue
-        for attr in ("data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"):
-            value = str(img.get(attr) or "").strip()
-            if not value:
-                continue
-            img["src"] = _srcset_url(value) if "srcset" in attr else value
+        for value in _image_source_values(img, include_src=False):
+            img["src"] = value
             break
     return str(soup)
 
@@ -355,15 +369,47 @@ def _srcset_url(value: str) -> str:
     return candidates[-1] if candidates else ""
 
 
-def _image_url(node, base_url: str) -> str:
-    for attr in ("src", "data-src", "data-original", "data-lazy-src"):
-        value = str(node.get(attr) or "").strip()
-        if value:
-            return _absolute_link(value, base_url)
-    for attr in ("srcset", "data-srcset"):
+def _looks_placeholder_image_src(value: str) -> bool:
+    raw = str(value or "").strip()
+    if not raw or raw in {"#", "about:blank"}:
+        return True
+    if raw.lower().startswith("data:"):
+        return True
+    return bool(PLACEHOLDER_IMAGE_RE.search(raw))
+
+
+def _append_image_source(values: list[str], value: str) -> None:
+    raw = str(value or "").strip()
+    if raw and not _looks_placeholder_image_src(raw):
+        values.append(raw)
+
+
+def _image_source_values(node, *, include_src: bool = True) -> list[str]:
+    values: list[str] = []
+    src = str(node.get("src") or "").strip()
+    if include_src:
+        _append_image_source(values, src)
+    for attr in LAZY_IMAGE_ATTRS:
+        _append_image_source(values, str(node.get(attr) or ""))
+    for attr in SRCSET_IMAGE_ATTRS:
         value = _srcset_url(str(node.get(attr) or ""))
-        if value:
-            return _absolute_link(value, base_url)
+        _append_image_source(values, value)
+    picture = node.find_parent("picture")
+    if picture:
+        for source in picture.find_all("source"):
+            for attr in SRCSET_IMAGE_ATTRS:
+                value = _srcset_url(str(source.get(attr) or ""))
+                _append_image_source(values, value)
+            for attr in LAZY_IMAGE_ATTRS:
+                _append_image_source(values, str(source.get(attr) or ""))
+    return values
+
+
+def _image_url(node, base_url: str) -> str:
+    for value in _image_source_values(node):
+        href = _absolute_link(value, base_url)
+        if href:
+            return href
     return ""
 
 

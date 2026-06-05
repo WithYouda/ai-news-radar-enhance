@@ -241,6 +241,51 @@ def test_extract_article_keeps_github_style_code_blocks_intact():
     assert "from\nfastapi\nimport" not in payload["content_html"]
 
 
+def test_extract_article_prefers_real_image_sources_over_placeholders():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <article>
+                <p>The article explains a model release with product screenshots, implementation details, and enough body text to be selected by the reader.</p>
+                <figure>
+                  <img src="/image.png" data-src="/assets/first-photo.jpg" alt="First real chart">
+                </figure>
+                <figure>
+                  <img src="/image.png" srcset="/assets/second-small.jpg 640w, /assets/second-large.jpg 1200w" alt="Second real chart">
+                </figure>
+                <figure>
+                  <picture>
+                    <source srcset="https://cdn.example.com/third-small.webp 640w, https://cdn.example.com/third-large.webp 1200w">
+                    <img src="/image.png" alt="Third real chart">
+                  </picture>
+                </figure>
+                <figure>
+                  <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-lazy-src="/assets/fourth-photo.jpg" alt="Fourth real chart">
+                </figure>
+                <figure>
+                  <img src="/assets/fifth-valid.jpg" data-src="/assets/fifth-lazy.jpg" alt="Fifth valid chart">
+                </figure>
+                <p>The second paragraph explains deployment risks, evaluation results, and user impact so the article remains long enough for extraction.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/model-images",
+        fallback_title="Model images",
+    )
+
+    assert "first-photo.jpg" in payload["content_html"]
+    assert "second-large.jpg" in payload["content_html"]
+    assert "third-large.webp" in payload["content_html"]
+    assert "fourth-photo.jpg" in payload["content_html"]
+    assert "fifth-valid.jpg" in payload["content_html"]
+    assert "fifth-lazy.jpg" not in payload["content_html"]
+    assert "image.png" not in payload["content_html"]
+
+
 def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
     captured = {}
 

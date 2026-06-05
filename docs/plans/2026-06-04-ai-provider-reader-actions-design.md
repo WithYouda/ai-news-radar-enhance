@@ -312,3 +312,19 @@ practically possible:
 
 Later, cache article-level summary and fact-check results so repeat opens can
 show previous analysis without another AI call.
+
+### Scout Skill Priority Steering
+
+Later, allow the user to direct AI through 伯乐Skill / Scout Skill to influence
+which articles receive higher priority for ranking and push delivery. The
+instruction path should produce auditable priority hints rather than opaque
+one-off prompt effects:
+
+- source/topic/user-intent rules that raise or lower article push priority
+- explicit reasons, confidence, and expiry for each priority hint
+- separation between public defaults and private user preference rules
+- UI visibility into why an article was promoted or deprioritized
+- rollback or disable controls when a priority rule becomes noisy
+
+These hints should adjust scoring and push scheduling, but should not silently
+overwrite source metadata or fact verification results.
