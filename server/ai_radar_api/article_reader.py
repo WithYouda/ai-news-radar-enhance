@@ -34,6 +34,9 @@ DROP_SELECTORS = (
     ".ad",
     ".ads",
     ".advertisement",
+    ".article-info",
+    ".article_info",
+    ".avatar",
     ".social",
     ".share",
     ".comments",
@@ -590,15 +593,11 @@ def _metadata_image_url(soup: BeautifulSoup, base_url: str) -> str:
     return ""
 
 
-def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
-    site_specific = _extract_36kr_newsflash(html_text, url=url, fallback_title=fallback_title)
-    if site_specific:
-        return site_specific
+def _article_image_count(article: dict) -> int:
+    return str(article.get("content_html") or "").lower().count("<img")
 
-    metadata_soup = BeautifulSoup(html_text or "", "html.parser")
-    title = _title(metadata_soup, fallback_title)
-    reader_html = _readability_html(html_text)
-    soup = _clean_soup(reader_html or html_text)
+
+def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSoup, url: str, title: str) -> dict:
     container = _best_container(soup)
     raw_text = _compact_text(container.get_text(" ", strip=True))
     blocks = []
@@ -638,6 +637,36 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
         "content_html": "\n".join(blocks),
         **_article_metadata(metadata_soup, raw_text, article_text),
     }
+    return article
+
+
+def _should_use_original_candidate(primary: dict, original: dict) -> bool:
+    primary_images = _article_image_count(primary)
+    original_images = _article_image_count(original)
+    if original_images <= max(primary_images, 1):
+        return False
+    primary_len = len(_compact_text(str(primary.get("text") or "")))
+    original_len = len(_compact_text(str(original.get("text") or "")))
+    if original_len < max(160, int(primary_len * 0.65)):
+        return False
+    if primary_len and original_len > int(primary_len * 1.25):
+        return False
+    return True
+
+
+def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
+    site_specific = _extract_36kr_newsflash(html_text, url=url, fallback_title=fallback_title)
+    if site_specific:
+        return site_specific
+
+    metadata_soup = BeautifulSoup(html_text or "", "html.parser")
+    title = _title(metadata_soup, fallback_title)
+    reader_html = _readability_html(html_text)
+    article = _article_from_clean_soup(_clean_soup(reader_html or html_text), metadata_soup=metadata_soup, url=url, title=title)
+    if reader_html:
+        original_article = _article_from_clean_soup(_clean_soup(html_text), metadata_soup=metadata_soup, url=url, title=title)
+        if _should_use_original_candidate(article, original_article):
+            article = original_article
     if not _article_has_image(article):
         article, _ = _with_lead_image_src(article, _metadata_image_url(metadata_soup, url), title)
     return article
@@ -940,9 +969,10 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
     if cached and not _should_retry_cached_article(cached):
-        cached, changed = _with_item_lead_image(cached, item)
-        if changed:
-            store_article(config.db_path, cached)
+        if str(cached.get("access_status") or "").strip().lower() == "open":
+            cached, changed = _with_item_lead_image(cached, item)
+            if changed:
+                store_article(config.db_path, cached)
         return {**cached, "item": item}
 
     url = normalize_public_url(str(item.get("url") or ""))
@@ -956,10 +986,12 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
             fetch_url = resolve_google_news_url(url, timeout_seconds=min(timeout_seconds, GOOGLE_NEWS_TIMEOUT_SECONDS))
         except Exception as exc:
             article = _fallback_article(item, url=url, final_url=url, reason=f"Google News resolution failed: {exc}")
-            return _store_article_with_item_lead_image(config, article, item)
+            store_article(config.db_path, article)
+            return article
         if not fetch_url or _is_google_news_url(fetch_url):
             article = _fallback_article(item, url=url, final_url=url, reason="Google News did not resolve to a publisher URL")
-            return _store_article_with_item_lead_image(config, article, item)
+            store_article(config.db_path, article)
+            return article
 
     try:
         response = _http_get(
@@ -976,11 +1008,13 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         final_url = str(getattr(getattr(exc, "response", None), "url", "") or url)
         article = _fallback_article(item, url=url, final_url=final_url, reason=str(exc), status_code=status_code)
-        return _store_article_with_item_lead_image(config, article, item)
+        store_article(config.db_path, article)
+        return article
     extracted = extract_article_from_html(response.text, url=str(response.url), fallback_title=str(item.get("title") or ""))
     if not extracted["text"]:
         article = _fallback_article(item, url=url, final_url=str(response.url), reason="No readable article body found")
-        return _store_article_with_item_lead_image(config, article, item)
+        store_article(config.db_path, article)
+        return article
 
     article = {
         **extracted,

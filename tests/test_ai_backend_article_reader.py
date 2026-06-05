@@ -3,6 +3,7 @@ import json
 import httpx
 from fastapi.testclient import TestClient
 
+import server.ai_radar_api.article_reader as article_reader
 from server.ai_radar_api.article_reader import extract_article_from_html, fetch_clean_article, resolve_google_news_url, store_article
 from server.ai_radar_api.config import AppConfig
 from server.ai_radar_api.db import init_db
@@ -375,6 +376,46 @@ def test_extract_article_does_not_use_json_ld_article_url_as_image():
     assert "model release" in payload["text"]
 
 
+def test_extract_article_uses_original_container_when_readability_drops_body_images(monkeypatch):
+    def fake_readability_html(_html):
+        return """
+        <div class="article">
+          <div class="article_info"><img class="avatar" src="/avatars/author.jpg"></div>
+          <p>The article body remains long enough to be selected, but the reader summary lost the actual screenshots that explain the launch.</p>
+          <p>The second paragraph keeps enough product context and implementation detail to represent the readable story.</p>
+        </div>
+        """
+
+    monkeypatch.setattr(article_reader, "_readability_html", fake_readability_html)
+
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <div class="article">
+                <div class="article_info"><img class="avatar" src="/avatars/author.jpg"></div>
+                <p>The article body remains long enough to be selected, but the reader summary lost the actual screenshots that explain the launch.</p>
+                <figure><img src="/images/first.webp"></figure>
+                <p>The second paragraph keeps enough product context and implementation detail to represent the readable story.</p>
+                <figure><img src="/images/second.webp"></figure>
+                <figure><img src="/images/third.webp"></figure>
+              </div>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/image-heavy-story",
+        fallback_title="Image heavy story",
+    )
+
+    assert "author.jpg" not in payload["content_html"]
+    assert payload["content_html"].count("<figure>") == 3
+    assert "first.webp" in payload["content_html"]
+    assert "second.webp" in payload["content_html"]
+    assert "third.webp" in payload["content_html"]
+
+
 def test_extract_article_uses_36kr_newsflash_detail_instead_of_ad_copy():
     payload = extract_article_from_html(
         """
@@ -597,10 +638,10 @@ def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(
     assert first.status_code == 200
     assert first.json()["access_status"] == "restricted"
     assert "原站限制" in first.json()["access_label"]
-    assert first.json()["content_html"].startswith('<figure><img src="https://cdn.example.com/blocked-lead.jpg"')
+    assert "<img" not in first.json()["content_html"]
     assert second.status_code == 200
     assert second.json()["cache_status"] == "hit"
-    assert second.json()["content_html"].startswith('<figure><img src="https://cdn.example.com/blocked-lead.jpg"')
+    assert "<img" not in second.json()["content_html"]
     assert calls == 1
 
 
