@@ -416,6 +416,76 @@ def test_extract_article_uses_original_container_when_readability_drops_body_ima
     assert "third.webp" in payload["content_html"]
 
 
+def test_extract_article_deduplicates_nested_figure_image():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The article explains the launch with enough product and deployment detail to remain readable.</p>
+              <figure>
+                <img src="/images/product-demo.jpg" alt="Product demo">
+                <figcaption>Product demo from the launch article.</figcaption>
+              </figure>
+              <p>The next paragraph explains why the visual example matters to the product announcement.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/product-demo",
+        fallback_title="Product demo",
+    )
+
+    assert payload["content_html"].count("<figure>") == 1
+    assert payload["content_html"].count("product-demo.jpg") == 1
+    assert "Product demo from the launch article." in payload["text"]
+
+
+def test_extract_article_preserves_unique_original_images_without_nested_duplicates(monkeypatch):
+    def fake_readability_html(_html):
+        return """
+        <article>
+          <p>The article body remains readable but the reader output kept only the first visual example.</p>
+          <figure>
+            <img src="/images/first.jpg" alt="First product view">
+            <figcaption>First product view.</figcaption>
+          </figure>
+          <p>The second paragraph keeps enough product detail for extraction.</p>
+        </article>
+        """
+
+    monkeypatch.setattr(article_reader, "_readability_html", fake_readability_html)
+
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The article body remains readable but the reader output kept only the first visual example.</p>
+              <figure>
+                <img src="/images/first.jpg" alt="First product view">
+                <figcaption>First product view.</figcaption>
+              </figure>
+              <p>The second paragraph keeps enough product detail for extraction.</p>
+              <figure>
+                <img src="/images/second.jpg" alt="Second product view">
+                <figcaption>Second product view.</figcaption>
+              </figure>
+              <p>The final paragraph explains the second visual in context.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/two-visuals",
+        fallback_title="Two visuals",
+    )
+
+    assert payload["content_html"].count("<figure>") == 2
+    assert payload["content_html"].count("first.jpg") == 1
+    assert payload["content_html"].count("second.jpg") == 1
+    assert "Second product view." in payload["text"]
+
+
 def test_extract_article_uses_36kr_newsflash_detail_instead_of_ad_copy():
     payload = extract_article_from_html(
         """
@@ -676,6 +746,106 @@ def test_fetch_clean_article_retries_transient_transport_timeout(monkeypatch, tm
     assert payload["cache_status"] == "miss"
     assert "retried article body" in payload["text"]
     assert len(calls) == 2
+
+
+def test_fetch_clean_article_treats_x_error_shell_as_unavailable(monkeypatch, tmp_path):
+    item = {
+        "title": "NotebookLM source attribution update",
+        "url": "https://x.com/NotebookLM/status/2062653124326863077",
+        "site_name": "X",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+
+    class Response:
+        url = item["url"]
+        text = """
+        <html><body><main>
+          <p>Something went wrong, but don’t fret — let’s give it another shot.</p>
+          <p>⚠️</p>
+        </main></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", lambda *args, **kwargs: Response())
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["access_status"] == "unavailable"
+    assert "Something went wrong" not in payload["text"]
+    assert "NotebookLM source attribution update" in payload["text"]
+    assert "<img" not in payload["content_html"]
+
+
+def test_fetch_clean_article_retries_cached_x_error_shell(monkeypatch, tmp_path):
+    item = {
+        "title": "NotebookLM source attribution update",
+        "url": "https://x.com/NotebookLM/status/2062653124326863077",
+        "site_name": "X",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "X",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "Something went wrong, but don’t fret — let’s give it another shot.",
+            "text": "Something went wrong, but don’t fret — let’s give it another shot.\n\n⚠️",
+            "content_html": "<p>Something went wrong, but don’t fret — let’s give it another shot.</p><p>⚠️</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": "2026-06-05T00:00:00Z",
+        },
+    )
+    calls = 0
+
+    class Response:
+        url = item["url"]
+        text = "<html><body><p>Something went wrong, but don’t fret — let’s give it another shot.</p><p>⚠️</p></body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert calls == 1
+    assert payload["access_status"] == "unavailable"
+    assert "Something went wrong" not in payload["text"]
 
 
 def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, tmp_path):

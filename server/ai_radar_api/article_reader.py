@@ -105,8 +105,13 @@ RECOMMENDATION_HEADING_RE = re.compile(
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
     flags=re.I,
 )
+HTML_IMAGE_SRC_RE = re.compile(r'<img\b[^>]*\bsrc="([^"]+)"', flags=re.I)
 PLACEHOLDER_IMAGE_RE = re.compile(
     r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|1x1",
+    flags=re.I,
+)
+X_ERROR_SHELL_RE = re.compile(
+    r"something went wrong,?\s+but don.?t fret.*give it another shot|this browser is no longer supported",
     flags=re.I,
 )
 LAZY_IMAGE_ATTRS = (
@@ -611,6 +616,11 @@ def _article_image_count(article: dict) -> int:
     return str(article.get("content_html") or "").lower().count("<img")
 
 
+def _image_key_from_block(block_html: str) -> str:
+    match = HTML_IMAGE_SRC_RE.search(str(block_html or ""))
+    return html.unescape(match.group(1)).strip() if match else ""
+
+
 def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSoup, url: str, title: str) -> dict:
     container = _best_container(soup)
     raw_text = _compact_text(container.get_text(" ", strip=True))
@@ -622,7 +632,8 @@ def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSou
         is_media = block_html.startswith("<figure>")
         if not block_html or (not text and not is_media):
             continue
-        seen_key = block_html if is_media else text
+        image_key = _image_key_from_block(block_html) if is_media else ""
+        seen_key = f"image:{image_key}" if image_key else block_html if is_media else text
         if seen_key in seen:
             continue
         if text and node.name in {"h2", "h3"} and RECOMMENDATION_HEADING_RE.search(text):
@@ -663,7 +674,7 @@ def _should_use_original_candidate(primary: dict, original: dict) -> bool:
     original_len = len(_compact_text(str(original.get("text") or "")))
     if original_len < max(160, int(primary_len * 0.65)):
         return False
-    if primary_len and original_len > int(primary_len * 1.25):
+    if primary_len and original_len > max(int(primary_len * 1.75), primary_len + 1200):
         return False
     return True
 
@@ -763,6 +774,8 @@ def _with_item_lead_image(article: dict, item: dict) -> tuple[dict, bool]:
 def _should_retry_cached_article(article: dict) -> bool:
     status = str(article.get("access_status") or "").strip().lower()
     if status == "unavailable":
+        return True
+    if _is_x_error_shell(str(article.get("url") or article.get("final_url") or ""), article):
         return True
     if status == "open" and len(_compact_text(str(article.get("text") or ""))) < 50:
         return True
@@ -867,6 +880,19 @@ def find_news_item(config, requested_id: str) -> dict | None:
 def _is_google_news_url(url: str) -> bool:
     host = (urlsplit(str(url or "")).hostname or "").lower()
     return host == "news.google.com" or host.endswith(".news.google.com")
+
+
+def _is_x_status_url(url: str) -> bool:
+    parsed = urlsplit(str(url or ""))
+    host = (parsed.hostname or "").lower()
+    return host in {"x.com", "twitter.com"} and "/status/" in parsed.path
+
+
+def _is_x_error_shell(url: str, article: dict) -> bool:
+    if not _is_x_status_url(url):
+        return False
+    text = _compact_text(str(article.get("text") or ""))
+    return bool(text and X_ERROR_SHELL_RE.search(text))
 
 
 def _google_news_locale(url: str) -> tuple[str, str, str]:
@@ -1041,8 +1067,10 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         store_article(config.db_path, article)
         return article
     extracted = extract_article_from_html(response.text, url=str(response.url), fallback_title=str(item.get("title") or ""))
-    if not extracted["text"]:
-        article = _fallback_article(item, url=url, final_url=str(response.url), reason="No readable article body found")
+    x_error_shell = _is_x_error_shell(str(response.url), extracted)
+    if not extracted["text"] or x_error_shell:
+        reason = "Publisher returned an X client-side error shell" if x_error_shell else "No readable article body found"
+        article = _fallback_article(item, url=url, final_url=str(response.url), reason=reason)
         store_article(config.db_path, article)
         return article
 
