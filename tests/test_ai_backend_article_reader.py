@@ -645,6 +645,39 @@ def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(
     assert calls == 1
 
 
+def test_fetch_clean_article_retries_transient_transport_timeout(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    calls = []
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Recovered article</h1>
+          <p>The retried article body is long enough to prove the transient network failure did not become a cached fallback.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise httpx.ConnectTimeout("handshake operation timed out")
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["access_status"] == "open"
+    assert payload["cache_status"] == "miss"
+    assert "retried article body" in payload["text"]
+    assert len(calls) == 2
+
+
 def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     app = create_app(config)

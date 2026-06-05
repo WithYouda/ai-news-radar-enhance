@@ -156,12 +156,17 @@ def _is_safe_public_url(url: str) -> bool:
     return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
 
 
-def _bounded_timeout(timeout_seconds: int | float) -> httpx.Timeout:
+def _bounded_timeout(
+    timeout_seconds: int | float,
+    *,
+    connect_limit: float = 2.0,
+    read_limit: float = 5.0,
+) -> httpx.Timeout:
     value = max(1.0, float(timeout_seconds or 6))
     return httpx.Timeout(
         timeout=value,
-        connect=min(2.0, value),
-        read=min(5.0, value),
+        connect=min(connect_limit, value),
+        read=min(read_limit, value),
         write=min(2.0, value),
         pool=1.0,
     )
@@ -174,8 +179,17 @@ def _http_get(
     follow_redirects: bool = True,
     headers: dict | None = None,
     max_redirects: int = MAX_FETCH_REDIRECTS,
+    connect_timeout_seconds: float = 2.0,
+    read_timeout_seconds: float = 5.0,
 ) -> httpx.Response:
-    with httpx.Client(timeout=_bounded_timeout(timeout_seconds), max_redirects=max_redirects) as client:
+    with httpx.Client(
+        timeout=_bounded_timeout(
+            timeout_seconds,
+            connect_limit=connect_timeout_seconds,
+            read_limit=read_timeout_seconds,
+        ),
+        max_redirects=max_redirects,
+    ) as client:
         return client.get(url, follow_redirects=follow_redirects, headers=headers)
 
 
@@ -993,16 +1007,32 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
             store_article(config.db_path, article)
             return article
 
+    fetch_headers = {
+        "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
     try:
-        response = _http_get(
-            fetch_url,
-            timeout_seconds=min(timeout_seconds, 3) if from_google_news else timeout_seconds,
-            follow_redirects=True,
-            headers={
-                "User-Agent": "AI-News-Radar/1.0 (+https://withyouda.github.io/ai-news-radar-enhance)",
-                "Accept": "text/html,application/xhtml+xml",
-            },
-        )
+        try:
+            response = _http_get(
+                fetch_url,
+                timeout_seconds=min(timeout_seconds, 3) if from_google_news else timeout_seconds,
+                follow_redirects=True,
+                headers=fetch_headers,
+            )
+        except httpx.TransportError:
+            if from_google_news:
+                raise
+            response = _http_get(
+                fetch_url,
+                timeout_seconds=max(float(timeout_seconds or 6), 8.0),
+                follow_redirects=True,
+                headers={
+                    **fetch_headers,
+                    "User-Agent": "Mozilla/5.0 (compatible; AI News Radar Reader)",
+                },
+                connect_timeout_seconds=4.0,
+                read_timeout_seconds=6.0,
+            )
         response.raise_for_status()
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
