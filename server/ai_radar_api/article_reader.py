@@ -16,7 +16,7 @@ from .db import connect_db
 from .radar_data import item_identity, load_latest_items, normalize_public_url
 
 
-BLOCK_TAGS = ("h2", "h3", "p", "blockquote", "pre", "ul", "ol", "figure")
+BLOCK_TAGS = ("h2", "h3", "p", "blockquote", "pre", "ul", "ol", "figure", "img")
 DROP_SELECTORS = (
     "script",
     "style",
@@ -427,8 +427,21 @@ def _image_figure_html(img, base_url: str, caption: str = "") -> tuple[str, str]
     return f"<figure>{image_html}{caption_html}</figure>", clean_caption or alt
 
 
+def _image_text_for_article(text: str) -> str:
+    clean = _compact_text(text)
+    if not clean:
+        return ""
+    if _looks_placeholder_image_src(clean):
+        return ""
+    if clean.lower() in {"image", "photo", "picture", "screenshot", "thumbnail"}:
+        return ""
+    return clean
+
+
 def _block_html(node, base_url: str) -> tuple[str, str]:
     name = getattr(node, "name", "")
+    if name == "img":
+        return _image_figure_html(node, base_url)
     if name in {"h2", "h3", "p", "blockquote", "pre"}:
         text = _compact_text(node.get_text(" ", strip=True))
         if name == "p" and not text:
@@ -461,8 +474,129 @@ def _block_html(node, base_url: str) -> tuple[str, str]:
     return "", ""
 
 
-def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
+def _paragraph_blocks(text: str) -> tuple[str, str]:
+    parts = [part.strip() for part in re.split(r"\n{2,}", str(text or "").strip()) if part.strip()]
+    if not parts and str(text or "").strip():
+        parts = [str(text).strip()]
+    content_html = "\n".join(f"<p>{html.escape(part)}</p>" for part in parts)
+    return content_html, "\n\n".join(_compact_text(part) for part in parts)
+
+
+def _initial_state_json(html_text: str) -> dict:
+    match = re.search(r"window\.initialState\s*=\s*(\{.*?\})\s*;?\s*</script>", html_text or "", flags=re.S)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _extract_36kr_newsflash(html_text: str, *, url: str, fallback_title: str = "") -> dict | None:
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    if not (host == "36kr.com" or host.endswith(".36kr.com")) or "/newsflashes/" not in str(url):
+        return None
+
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    state = _initial_state_json(html_text)
+    detail = (
+        state.get("newsflashDetail", {})
+        .get("detailData", {})
+        .get("data", {})
+        if isinstance(state, dict)
+        else {}
+    )
+    title = _compact_text(
+        str(detail.get("widgetTitle") or "")
+        or (soup.select_one(".item-title").get_text(" ", strip=True) if soup.select_one(".item-title") else "")
+        or _title(soup, fallback_title)
+    )
+    content = _compact_text(
+        str(detail.get("widgetContent") or "")
+        or (soup.select_one(".pre-item-des").get_text(" ", strip=True) if soup.select_one(".pre-item-des") else "")
+        or _meta_content(soup, "meta[name='description']", "meta[property='og:description']")
+    )
+    if not content:
+        return None
+
+    content_html, article_text = _paragraph_blocks(content)
     metadata_soup = BeautifulSoup(html_text or "", "html.parser")
+    return {
+        "title": title or _title(metadata_soup, fallback_title),
+        "byline": "",
+        "published_at": _meta_content(metadata_soup, "meta[property='article:published_time']", "meta[name='date']"),
+        "excerpt": article_text[:260],
+        "text": article_text,
+        "content_html": content_html,
+        **_article_metadata(metadata_soup, content, article_text),
+    }
+
+
+def _json_ld_image_leaf_values(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).lower() in {"url", "contenturl"} and isinstance(child, str):
+                yield child
+            elif str(key).lower() == "image":
+                yield from _json_ld_image_leaf_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _json_ld_image_leaf_values(child)
+
+
+def _json_ld_image_values(value):
+    if isinstance(value, dict):
+        if "image" in value:
+            yield from _json_ld_image_leaf_values(value.get("image"))
+        for key in ("@graph", "mainEntity", "primaryImageOfPage"):
+            if key in value:
+                yield from _json_ld_image_values(value.get(key))
+    elif isinstance(value, list):
+        for child in value:
+            yield from _json_ld_image_values(child)
+
+
+def _metadata_image_url(soup: BeautifulSoup, base_url: str) -> str:
+    selectors = (
+        "meta[property='og:image:secure_url']",
+        "meta[property='og:image:url']",
+        "meta[property='og:image']",
+        "meta[name='twitter:image']",
+        "meta[property='twitter:image']",
+        "meta[name='image']",
+        "link[rel='image_src']",
+    )
+    for selector in selectors:
+        node = soup.select_one(selector)
+        value = node.get("content") if node and node.name == "meta" else node.get("href") if node else ""
+        if not value or _looks_placeholder_image_src(str(value)):
+            continue
+        href = _absolute_link(str(value), base_url)
+        if href:
+            return href
+    for script in soup.find_all("script", attrs={"type": re.compile(r"ld\+json", re.I)}):
+        try:
+            data = json.loads(script.string or script.get_text("", strip=False) or "")
+        except json.JSONDecodeError:
+            continue
+        for value in _json_ld_image_values(data):
+            if not value or _looks_placeholder_image_src(str(value)):
+                continue
+            href = _absolute_link(str(value), base_url)
+            if href:
+                return href
+    return ""
+
+
+def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
+    site_specific = _extract_36kr_newsflash(html_text, url=url, fallback_title=fallback_title)
+    if site_specific:
+        return site_specific
+
+    metadata_soup = BeautifulSoup(html_text or "", "html.parser")
+    title = _title(metadata_soup, fallback_title)
     reader_html = _readability_html(html_text)
     soup = _clean_soup(reader_html or html_text)
     container = _best_container(soup)
@@ -472,22 +606,31 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
     seen = set()
     for node in container.find_all(BLOCK_TAGS):
         block_html, text = _block_html(node, url)
-        if not text or text in seen:
+        is_media = block_html.startswith("<figure>")
+        if not block_html or (not text and not is_media):
             continue
-        if node.name in {"h2", "h3"} and RECOMMENDATION_HEADING_RE.search(text):
+        seen_key = block_html if is_media else text
+        if seen_key in seen:
+            continue
+        if text and node.name in {"h2", "h3"} and RECOMMENDATION_HEADING_RE.search(text):
             break
-        if _looks_boilerplate(text):
+        if text and _looks_boilerplate(text):
             continue
         if node.name == "p" and len(text) < 24 and not block_html.startswith("<figure>"):
             continue
-        seen.add(text)
+        seen.add(seen_key)
         blocks.append(block_html)
-        texts.append(text)
+        if is_media:
+            image_text = _image_text_for_article(text)
+            if image_text:
+                texts.append(image_text)
+        elif text:
+            texts.append(text)
         if sum(len(part) for part in texts) >= 15000 or len(blocks) >= 80:
             break
     article_text = "\n\n".join(texts)
-    return {
-        "title": _title(metadata_soup, fallback_title),
+    article = {
+        "title": title,
         "byline": _meta_content(metadata_soup, "meta[name='author']", "meta[property='article:author']"),
         "published_at": _meta_content(metadata_soup, "meta[property='article:published_time']", "meta[name='date']"),
         "excerpt": article_text[:260],
@@ -495,6 +638,9 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
         "content_html": "\n".join(blocks),
         **_article_metadata(metadata_soup, raw_text, article_text),
     }
+    if not _article_has_image(article):
+        article, _ = _with_lead_image_src(article, _metadata_image_url(metadata_soup, url), title)
+    return article
 
 
 def cached_article(db_path: str | Path, item_id: str) -> dict | None:
@@ -531,8 +677,53 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     return article
 
 
+def _article_has_image(article: dict) -> bool:
+    return "<img" in str(article.get("content_html") or "").lower()
+
+
+def _item_image_url(item: dict) -> str:
+    for key in ("image_url", "thumbnail_url", "media_url"):
+        value = str(item.get(key) or "").strip()
+        if not value or _looks_placeholder_image_src(value):
+            continue
+        href = _absolute_link(value, str(item.get("url") or ""))
+        if href:
+            return href
+    return ""
+
+
+def _lead_image_html(src: str, title: str) -> str:
+    alt = _compact_text(title)
+    image_html = f'<img src="{html.escape(src, quote=True)}"'
+    if alt:
+        image_html += f' alt="{html.escape(alt, quote=True)}"'
+    image_html += ">"
+    return f"<figure>{image_html}</figure>"
+
+
+def _with_lead_image_src(article: dict, src: str, title: str) -> tuple[dict, bool]:
+    if _article_has_image(article):
+        return article, False
+    if not src:
+        return article, False
+    updated = dict(article)
+    lead_html = _lead_image_html(src, title)
+    body_html = str(updated.get("content_html") or "").strip()
+    updated["content_html"] = f"{lead_html}\n{body_html}" if body_html else lead_html
+    return updated, True
+
+
+def _with_item_lead_image(article: dict, item: dict) -> tuple[dict, bool]:
+    return _with_lead_image_src(article, _item_image_url(item), str(article.get("title") or item.get("title") or ""))
+
+
 def _should_retry_cached_article(article: dict) -> bool:
-    return str(article.get("access_status") or "").strip().lower() == "unavailable"
+    status = str(article.get("access_status") or "").strip().lower()
+    if status == "unavailable":
+        return True
+    if status == "open" and len(_compact_text(str(article.get("text") or ""))) < 50:
+        return True
+    return False
 
 
 def store_article(db_path: str | Path, article: dict) -> None:
@@ -577,6 +768,12 @@ def store_article(db_path: str | Path, article: dict) -> None:
                 article["fetched_at"],
             ),
         )
+
+
+def _store_article_with_item_lead_image(config, article: dict, item: dict) -> dict:
+    article, _ = _with_item_lead_image(article, item)
+    store_article(config.db_path, article)
+    return article
 
 
 def _fallback_article(item: dict, *, url: str, final_url: str, reason: str, status_code: int | None = None) -> dict:
@@ -743,6 +940,9 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
     cached = cached_article(config.db_path, item_id)
     if cached and not _should_retry_cached_article(cached):
+        cached, changed = _with_item_lead_image(cached, item)
+        if changed:
+            store_article(config.db_path, cached)
         return {**cached, "item": item}
 
     url = normalize_public_url(str(item.get("url") or ""))
@@ -756,12 +956,10 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
             fetch_url = resolve_google_news_url(url, timeout_seconds=min(timeout_seconds, GOOGLE_NEWS_TIMEOUT_SECONDS))
         except Exception as exc:
             article = _fallback_article(item, url=url, final_url=url, reason=f"Google News resolution failed: {exc}")
-            store_article(config.db_path, article)
-            return article
+            return _store_article_with_item_lead_image(config, article, item)
         if not fetch_url or _is_google_news_url(fetch_url):
             article = _fallback_article(item, url=url, final_url=url, reason="Google News did not resolve to a publisher URL")
-            store_article(config.db_path, article)
-            return article
+            return _store_article_with_item_lead_image(config, article, item)
 
     try:
         response = _http_get(
@@ -778,13 +976,11 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         final_url = str(getattr(getattr(exc, "response", None), "url", "") or url)
         article = _fallback_article(item, url=url, final_url=final_url, reason=str(exc), status_code=status_code)
-        store_article(config.db_path, article)
-        return article
+        return _store_article_with_item_lead_image(config, article, item)
     extracted = extract_article_from_html(response.text, url=str(response.url), fallback_title=str(item.get("title") or ""))
     if not extracted["text"]:
         article = _fallback_article(item, url=url, final_url=str(response.url), reason="No readable article body found")
-        store_article(config.db_path, article)
-        return article
+        return _store_article_with_item_lead_image(config, article, item)
 
     article = {
         **extracted,
@@ -796,5 +992,4 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
         "cache_status": "miss",
         "item": item,
     }
-    store_article(config.db_path, article)
-    return article
+    return _store_article_with_item_lead_image(config, article, item)

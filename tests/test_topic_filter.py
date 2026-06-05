@@ -10,6 +10,7 @@ from scripts.update_news import (
     fetch_agentmail_digest,
     fetch_aibase,
     fetch_aihot,
+    fetch_buzzing,
     is_ai_related_record,
     is_hubtoday_generic_anchor_title,
     is_hubtoday_placeholder_title,
@@ -52,6 +53,35 @@ class TopicFilterTests(unittest.TestCase):
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].meta["image_url"], "https://www.aibase.com/uploads/agent-suite.jpg")
+
+    def test_fetch_buzzing_preserves_feed_image_url(self):
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "items": [
+                        {
+                            "title": "Alphabet expands financing for AI infrastructure",
+                            "url": "https://finance.yahoo.com/markets/stocks/articles/alphabet-ai.html",
+                            "source": "finance.yahoo.com",
+                            "date_published": "2026-06-05T05:31:20Z",
+                            "image": "https://media.zenfs.com/en/example/lead-image",
+                            "content_html": '<div><img src="https://media.zenfs.com/en/example/fallback-image"></div>',
+                        }
+                    ]
+                }
+
+        class FakeSession:
+            def get(self, url, timeout=30):
+                self.requested_url = url
+                return FakeResponse()
+
+        items = fetch_buzzing(FakeSession(), now=datetime(2026, 6, 5, tzinfo=timezone.utc))
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].meta["image_url"], "https://media.zenfs.com/en/example/lead-image")
 
     def test_merge_raw_item_into_archive_preserves_public_image_url(self):
         archive = {}

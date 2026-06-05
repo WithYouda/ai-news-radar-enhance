@@ -970,6 +970,13 @@ def fetch_buzzing(session: requests.Session, now: datetime) -> list[RawItem]:
             site_name,
         )
         published = parse_date_any(it.get("date_published") or it.get("date_modified"), now)
+        image_url = normalize_public_image_url(str(it.get("image") or it.get("image_url") or ""), url)
+        if not image_url:
+            soup = BeautifulSoup(str(it.get("content_html") or ""), "html.parser")
+            image_url = image_url_from_img(soup.find("img"), url)
+        meta = {"raw": {k: it.get(k) for k in ("source", "site_name", "channel", "category")}}
+        if image_url:
+            meta["image_url"] = image_url
         out.append(
             RawItem(
                 site_id=site_id,
@@ -978,7 +985,7 @@ def fetch_buzzing(session: requests.Session, now: datetime) -> list[RawItem]:
                 title=title,
                 url=url,
                 published_at=published,
-                meta={"raw": {k: it.get(k) for k in ("source", "site_name", "channel", "category")}},
+                meta=meta,
             )
         )
     return out

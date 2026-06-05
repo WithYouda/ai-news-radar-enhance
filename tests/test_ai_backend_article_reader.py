@@ -286,6 +286,119 @@ def test_extract_article_prefers_real_image_sources_over_placeholders():
     assert "image.png" not in payload["content_html"]
 
 
+def test_extract_article_keeps_standalone_reader_images():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The launch article explains the model architecture, benchmarks, training data, and product implications with enough detail to be treated as the primary readable body.</p>
+              <img src="/images/model-sample.jpg" alt="Generated poster sample">
+              <p>The next paragraph explains typography quality, layout control, and why visual examples are important to understanding the release.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/visual-model",
+        fallback_title="Visual model",
+    )
+
+    assert '<figure><img src="https://example.com/images/model-sample.jpg" alt="Generated poster sample"></figure>' in payload["content_html"]
+
+
+def test_extract_article_keeps_image_without_alt_out_of_article_text():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <article>
+              <p>The launch article explains the model architecture, benchmarks, training data, and product implications with enough detail to be treated as the primary readable body.</p>
+              <figure><img src="/images/model-sample.jpg"></figure>
+              <p>The next paragraph explains typography quality, layout control, and why visual examples are important to understanding the release.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/visual-model",
+        fallback_title="Visual model",
+    )
+
+    assert '<figure><img src="https://example.com/images/model-sample.jpg"></figure>' in payload["content_html"]
+    assert "model-sample.jpg" not in payload["text"]
+
+
+def test_extract_article_adds_metadata_lead_image_when_body_has_no_images():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <head>
+            <meta property="og:image" content="/images/social-card.jpg">
+          </head>
+          <body>
+            <article>
+              <p>The article explains a model release with product details, benchmark notes, and enough body text to be selected by the reader.</p>
+              <p>The second paragraph explains deployment risks, evaluation results, and user impact so the clean reader remains useful.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/model-release",
+        fallback_title="Visual model",
+    )
+
+    assert payload["content_html"].startswith('<figure><img src="https://example.com/images/social-card.jpg"')
+    assert "model release" in payload["text"]
+
+
+def test_extract_article_does_not_use_json_ld_article_url_as_image():
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <head>
+            <script type="application/ld+json">
+              {"@type":"NewsArticle","url":"https://example.com/posts/model-release"}
+            </script>
+          </head>
+          <body>
+            <article>
+              <p>The article explains a model release with product details, benchmark notes, and enough body text to be selected by the reader.</p>
+              <p>The second paragraph explains deployment risks, evaluation results, and user impact so the clean reader remains useful.</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/posts/model-release",
+        fallback_title="Visual model",
+    )
+
+    assert "<figure>" not in payload["content_html"]
+    assert "model release" in payload["text"]
+
+
+def test_extract_article_uses_36kr_newsflash_detail_instead_of_ad_copy():
+    payload = extract_article_from_html(
+        """
+        <html lang="zh-CN">
+          <head>
+            <meta property="og:title" content="姚顺雨判断AI下半场：多模态、具身智能等大量新方向正在或即将形成-36氪">
+            <meta name="description" content="36氪获悉，腾讯云AI产业应用大会主论坛上，腾讯首席AI科学家姚顺雨对AI下半场给出两个核心判断。">
+          </head>
+          <body>
+            <p>聚焦全球优秀创业者，项目融资率接近97%，领跑行业</p>
+            <script>
+              window.initialState={"newsflashDetail":{"detailData":{"data":{"widgetTitle":"姚顺雨判断AI下半场：多模态、具身智能等大量新方向正在或即将形成","widgetContent":"36氪获悉，腾讯云AI产业应用大会主论坛上，腾讯首席AI科学家姚顺雨对AI下半场给出两个核心判断：第一，AI是一个长期游戏，而非短期窗口。第二，AI将走向多元而非单一路径。"}}}};
+            </script>
+          </body>
+        </html>
+        """,
+        url="https://www.36kr.com/newsflashes/3839787696491008",
+        fallback_title="姚顺雨判断AI下半场",
+    )
+
+    assert "36氪获悉，腾讯云AI产业应用大会主论坛" in payload["text"]
+    assert "聚焦全球优秀创业者" not in payload["text"]
+
+
 def test_resolve_google_news_url_decodes_batchexecute_result(monkeypatch):
     captured = {}
 
@@ -456,6 +569,9 @@ def test_read_article_endpoint_rejects_unknown_item(tmp_path):
 
 def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
+    item["image_url"] = "https://cdn.example.com/blocked-lead.jpg"
+    (config.data_dir / "latest-24h.json").write_text(json.dumps({"items": [item]}), encoding="utf-8")
+    (config.data_dir / "latest-24h-all.json").write_text(json.dumps({"items_all": [item]}), encoding="utf-8")
     calls = 0
 
     class Response:
@@ -481,8 +597,10 @@ def test_read_article_endpoint_returns_cached_fallback_when_origin_blocks_fetch(
     assert first.status_code == 200
     assert first.json()["access_status"] == "restricted"
     assert "原站限制" in first.json()["access_label"]
+    assert first.json()["content_html"].startswith('<figure><img src="https://cdn.example.com/blocked-lead.jpg"')
     assert second.status_code == 200
     assert second.json()["cache_status"] == "hit"
+    assert second.json()["content_html"].startswith('<figure><img src="https://cdn.example.com/blocked-lead.jpg"')
     assert calls == 1
 
 
@@ -539,6 +657,90 @@ def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, t
     assert res.json()["cache_status"] == "miss"
     assert "retried article body" in res.json()["text"]
     assert calls == 1
+
+
+def test_read_article_endpoint_adds_item_image_to_cached_article_without_images(tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    item["image_url"] = "https://cdn.example.com/lead-image.jpg"
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "Cached article body",
+            "text": "Cached article body with enough details to remain useful without refetching the origin.",
+            "content_html": "<p>Cached article body with enough details to remain useful without refetching the origin.</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+
+    article = fetch_clean_article(config, item)
+
+    assert article["cache_status"] == "hit"
+    assert article["content_html"].startswith('<figure><img src="https://cdn.example.com/lead-image.jpg"')
+    assert "Cached article body" in article["text"]
+
+
+def test_read_article_endpoint_retries_too_short_open_cache(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "广告短句",
+            "text": "广告短句",
+            "content_html": "<p>广告短句</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "zh",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Fresh clean title</h1>
+          <p>The retried article body has enough substance about the model launch, product details, and user impact to replace the stale short cache.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    calls = 0
+
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+
+    article = fetch_clean_article(config, item)
+
+    assert article["cache_status"] == "miss"
+    assert calls == 1
+    assert "retried article body" in article["text"]
 
 
 def test_ask_item_scope_sends_cached_clean_article_text_to_ai(monkeypatch, tmp_path):
