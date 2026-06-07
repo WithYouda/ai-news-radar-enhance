@@ -100,6 +100,7 @@ READER_AUXILIARY_RE = re.compile(
     r"extension[-_\s]*reading|extended[-_\s]*reading|相关阅读|推荐阅读|延伸阅读|扩展阅读|更多故事|更多文章",
     flags=re.I,
 )
+YAHOO_STORY_CONTINUES_RE = re.compile(r"\bstory\s+continues\b", flags=re.I)
 RECOMMENDATION_HEADING_RE = re.compile(
     r"^(recommended|related|also read|around the web|elsewhere|more from|more stories|read next|you might also like|popular|latest|"
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
@@ -619,6 +620,11 @@ def _article_image_count(article: dict) -> int:
     return len(keys)
 
 
+def _is_yahoo_finance_url(url: str) -> bool:
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    return host == "finance.yahoo.com" or host.endswith(".finance.yahoo.com")
+
+
 def _image_key_from_block(block_html: str) -> str:
     match = HTML_IMAGE_SRC_RE.search(str(block_html or ""))
     return _canonical_image_key(match.group(1)) if match else ""
@@ -668,18 +674,26 @@ def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSou
     return article
 
 
-def _should_use_original_candidate(primary: dict, original: dict) -> bool:
+def _should_use_original_candidate(primary: dict, original: dict, *, html_text: str = "", url: str = "") -> bool:
     primary_images = _article_image_count(primary)
     original_images = _article_image_count(original)
-    if original_images <= max(primary_images, 1):
-        return False
     primary_len = len(_compact_text(str(primary.get("text") or "")))
     original_len = len(_compact_text(str(original.get("text") or "")))
-    if original_len < max(160, int(primary_len * 0.65)):
-        return False
-    if primary_len and original_len > max(int(primary_len * 1.75), primary_len + 1200):
-        return False
-    return True
+    has_story_continues = _is_yahoo_finance_url(url) and bool(YAHOO_STORY_CONTINUES_RE.search(html_text or ""))
+
+    if has_story_continues and original_len >= max(160, primary_len + 80):
+        max_expected_len = max(primary_len * 8, primary_len + 5000)
+        if not primary_len or original_len <= max_expected_len:
+            return True
+
+    if original_images > max(primary_images, 1):
+        if original_len < max(160, int(primary_len * 0.65)):
+            return False
+        if primary_len and original_len > max(int(primary_len * 1.75), primary_len + 1200):
+            return False
+        return True
+
+    return False
 
 
 def extract_article_from_html(html_text: str, *, url: str, fallback_title: str = "") -> dict:
@@ -693,7 +707,7 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
     article = _article_from_clean_soup(_clean_soup(reader_html or html_text), metadata_soup=metadata_soup, url=url, title=title)
     if reader_html:
         original_article = _article_from_clean_soup(_clean_soup(html_text), metadata_soup=metadata_soup, url=url, title=title)
-        if _should_use_original_candidate(article, original_article):
+        if _should_use_original_candidate(article, original_article, html_text=html_text, url=url):
             article = original_article
     return article
 

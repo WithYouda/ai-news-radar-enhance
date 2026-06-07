@@ -124,6 +124,44 @@ def test_extract_article_prefers_reader_like_content_over_sidebar_noise():
     assert "Popular links and account prompts" not in payload["text"]
 
 
+def test_extract_article_keeps_yahoo_finance_story_after_story_continues(monkeypatch):
+    def fake_readability_html(_html):
+        return """
+        <article>
+          <p>Yahoo Finance opens with a short setup about an AI stock rotation and why traders are watching the market reaction.</p>
+        </article>
+        """
+
+    monkeypatch.setattr(article_reader, "_readability_html", fake_readability_html)
+
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <article class="caas-body">
+                <p>Yahoo Finance opens with a short setup about an AI stock rotation and why traders are watching the market reaction.</p>
+                <button type="button">Story Continues</button>
+                <p>The continuation explains that chipmakers, cloud providers, and enterprise software firms moved differently after fresh guidance from analysts.</p>
+                <p>It also includes concrete context from portfolio managers about margins, capital spending, and whether artificial intelligence demand is still broadening.</p>
+                <h2>Recommended Stories</h2>
+                <p>This unrelated story should still be cut from the clean article body.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://finance.yahoo.com/news/analysis-stock-market-ai-turns-160954707.html",
+        fallback_title="For stock market, AI turns from lifting all boats to sinking ships",
+    )
+
+    assert "short setup about an AI stock rotation" in payload["text"]
+    assert "continuation explains that chipmakers" in payload["text"]
+    assert "portfolio managers about margins" in payload["text"]
+    assert "Story Continues" not in payload["text"]
+    assert "unrelated story" not in payload["text"]
+
+
 def test_extract_article_stops_before_recommendation_sections():
     payload = extract_article_from_html(
         """
