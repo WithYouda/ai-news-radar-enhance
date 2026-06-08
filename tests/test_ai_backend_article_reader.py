@@ -162,6 +162,55 @@ def test_extract_article_keeps_yahoo_finance_story_after_story_continues(monkeyp
     assert "unrelated story" not in payload["text"]
 
 
+def test_extract_article_keeps_yahoo_finance_hidden_read_more_story(monkeypatch):
+    def fake_readability_html(_html):
+        return """
+        <article>
+          <p>Anthropic opens with a short setup about its valuation, IPO plans, and why Amazon and Alphabet investors are watching the story.</p>
+        </article>
+        """
+
+    monkeypatch.setattr(article_reader, "_readability_html", fake_readability_html)
+
+    payload = extract_article_from_html(
+        """
+        <html lang="en">
+          <body>
+            <main>
+              <article class="article-wrap">
+                <div class="bodyItems-wrapper">
+                  <p>Anthropic opens with a short setup about its valuation, IPO plans, and why Amazon and Alphabet investors are watching the story.</p>
+                  <button type="button">Story Continues</button>
+                  <p>The first section explains Amazon's existing investment and the possible future milestone payments tied to Anthropic's growth.</p>
+                </div>
+                <div class="read-more-wrapper" style="display: none" data-testid="read-more">
+                  <h2>A $40 billion investment</h2>
+                  <p>Alphabet recently said it plans to invest as much as $40 billion in Anthropic, extending the story after the continuation control.</p>
+                  <p>The continuation also explains that Anthropic is buying cloud capacity from Amazon Web Services and using Alphabet infrastructure.</p>
+                  <p>Investors may consider Amazon and Alphabet because both companies can benefit as Anthropic's products require more compute.</p>
+                  <h2>Should you buy stock in Amazon right now?</h2>
+                  <p>Before you buy stock in Amazon, consider this:</p>
+                  <p>The Motley Fool Stock Advisor analyst team just identified what they believe are the 10 best stocks for investors to buy now.</p>
+                </div>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://finance.yahoo.com/markets/stocks/articles/anthropics-valuation-just-hit-965-223000448.html",
+        fallback_title="Anthropic valuation",
+    )
+
+    assert "short setup about its valuation" in payload["text"]
+    assert "Amazon's existing investment" in payload["text"]
+    assert "Alphabet recently said it plans" in payload["text"]
+    assert "using Alphabet infrastructure" in payload["text"]
+    assert "companies can benefit as Anthropic" in payload["text"]
+    assert "Story Continues" not in payload["text"]
+    assert "Should you buy stock" not in payload["text"]
+    assert "Stock Advisor" not in payload["text"]
+
+
 def test_extract_article_stops_before_recommendation_sections():
     payload = extract_article_from_html(
         """
@@ -323,6 +372,35 @@ def test_extract_article_prefers_real_image_sources_over_placeholders():
     assert "fifth-valid.jpg" in payload["content_html"]
     assert "fifth-lazy.jpg" not in payload["content_html"]
     assert "image.png" not in payload["content_html"]
+
+
+def test_extract_article_uses_aibase_lazy_image_instead_of_placehold_placeholder():
+    payload = extract_article_from_html(
+        """
+        <html lang="zh">
+          <body>
+            <main>
+              <article>
+                <p>这篇 AIbase 文章介绍模型发布背景、产品能力和上线计划，正文长度足够被阅读器识别为主内容。</p>
+                <figure>
+                  <img
+                    src="https://placehold.co/600x400?text=AIBASE"
+                    data-src="https://upload.chinaz.com/2026/0608/real-aibase-image.jpg"
+                    alt="AIbase real launch image"
+                  >
+                </figure>
+                <p>第二段继续说明技术细节、用户影响和后续安排，确保测试覆盖正文清洗后的图片选择。</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """,
+        url="https://www.aibase.com/zh/news/28747",
+        fallback_title="AIbase lazy image",
+    )
+
+    assert "real-aibase-image.jpg" in payload["content_html"]
+    assert "placehold.co" not in payload["content_html"]
 
 
 def test_extract_article_keeps_standalone_reader_images():
@@ -1087,6 +1165,41 @@ def test_read_article_endpoint_does_not_add_item_image_to_cached_article_without
     assert "lead-image.jpg" not in article["content_html"]
     assert "<figure>" not in article["content_html"]
     assert "Cached article body" in article["text"]
+
+
+def test_fetch_clean_article_reuses_fresh_short_open_cache(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "简短正文",
+            "text": "简短正文",
+            "content_html": "<p>简短正文</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "zh",
+            "fetched_at": article_reader._now(),
+        },
+    )
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError("fresh open article cache should be reused without refetching")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+
+    article = fetch_clean_article(config, item)
+
+    assert article["cache_status"] == "hit"
+    assert article["text"] == "简短正文"
 
 
 def test_read_article_endpoint_retries_too_short_open_cache(monkeypatch, tmp_path):

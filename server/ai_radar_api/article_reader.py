@@ -101,6 +101,12 @@ READER_AUXILIARY_RE = re.compile(
     flags=re.I,
 )
 YAHOO_STORY_CONTINUES_RE = re.compile(r"\bstory\s+continues\b", flags=re.I)
+YAHOO_READ_MORE_SIGNATURE_RE = re.compile(r"\bread[-_\s]*more\b", flags=re.I)
+YAHOO_FINANCE_PROMO_HEADING_RE = re.compile(r"^should you (?:buy|invest(?: in)?).*\bright now\??$", flags=re.I)
+YAHOO_FINANCE_PROMO_LOOKAHEAD_RE = re.compile(
+    r"\b(before you buy stock|motley fool stock advisor|10 best stocks|see the 10 stocks)\b",
+    flags=re.I,
+)
 RECOMMENDATION_HEADING_RE = re.compile(
     r"^(recommended|related|also read|around the web|elsewhere|more from|more stories|read next|you might also like|popular|latest|"
     r"推荐|推荐阅读|相关阅读|延伸阅读|扩展阅读|更多|热门)",
@@ -108,7 +114,7 @@ RECOMMENDATION_HEADING_RE = re.compile(
 )
 HTML_IMAGE_SRC_RE = re.compile(r'<img\b[^>]*\bsrc="([^"]+)"', flags=re.I)
 PLACEHOLDER_IMAGE_RE = re.compile(
-    r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|1x1",
+    r"(^|/)(image|placeholder|blank|spacer|transparent|pixel|loading|lazy|default)([-_.]?\d+)?\.(png|gif|jpe?g|webp|svg)(\?|$)|placehold\.co|1x1",
     flags=re.I,
 )
 READER_UI_IMAGE_SRC_RE = re.compile(
@@ -152,6 +158,7 @@ SRCSET_IMAGE_ATTRS = ("srcset", "data-srcset")
 GOOGLE_NEWS_BATCH_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
 MAX_FETCH_REDIRECTS = 4
 GOOGLE_NEWS_TIMEOUT_SECONDS = 1.0
+SHORT_OPEN_CACHE_RETRY_AFTER_SECONDS = 10 * 60
 
 
 def _now() -> str:
@@ -252,8 +259,9 @@ def _title(soup: BeautifulSoup, fallback_title: str) -> str:
     )
 
 
-def _clean_soup(html_text: str) -> BeautifulSoup:
+def _clean_soup(html_text: str, *, url: str = "") -> BeautifulSoup:
     soup = BeautifulSoup(html_text or "", "html.parser")
+    is_yahoo_finance = _is_yahoo_finance_url(url)
     for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
         comment.extract()
     for selector in DROP_SELECTORS:
@@ -270,6 +278,8 @@ def _clean_soup(html_text: str) -> BeautifulSoup:
                 " ".join(str(value) for key, value in node.attrs.items() if str(key).startswith("data-")),
             ]
         )
+        if is_yahoo_finance and signature and YAHOO_READ_MORE_SIGNATURE_RE.search(signature):
+            continue
         if signature and READER_AUXILIARY_RE.search(signature):
             node.decompose()
             continue
@@ -625,6 +635,28 @@ def _is_yahoo_finance_url(url: str) -> bool:
     return host == "finance.yahoo.com" or host.endswith(".finance.yahoo.com")
 
 
+def _following_block_text(node, *, limit: int = 4) -> str:
+    texts = []
+    for sibling in node.find_next_siblings():
+        candidates = [sibling] if getattr(sibling, "name", None) in BLOCK_TAGS else sibling.find_all(BLOCK_TAGS)
+        for candidate in candidates:
+            text = _compact_text(candidate.get_text(" ", strip=True))
+            if not text:
+                continue
+            texts.append(text)
+            if len(texts) >= limit:
+                return " ".join(texts)
+    return " ".join(texts)
+
+
+def _looks_yahoo_finance_promo_heading(node, text: str, url: str) -> bool:
+    if not _is_yahoo_finance_url(url) or getattr(node, "name", None) not in {"h2", "h3"}:
+        return False
+    if not YAHOO_FINANCE_PROMO_HEADING_RE.search(text):
+        return False
+    return bool(YAHOO_FINANCE_PROMO_LOOKAHEAD_RE.search(_following_block_text(node)))
+
+
 def _image_key_from_block(block_html: str) -> str:
     match = HTML_IMAGE_SRC_RE.search(str(block_html or ""))
     return _canonical_image_key(match.group(1)) if match else ""
@@ -645,8 +677,11 @@ def _article_from_clean_soup(soup: BeautifulSoup, *, metadata_soup: BeautifulSou
         seen_key = f"image:{image_key}" if image_key else block_html if is_media else text
         if seen_key in seen:
             continue
-        if text and node.name in {"h2", "h3"} and RECOMMENDATION_HEADING_RE.search(text):
-            break
+        if text and node.name in {"h2", "h3"}:
+            if RECOMMENDATION_HEADING_RE.search(text):
+                break
+            if _looks_yahoo_finance_promo_heading(node, text, url):
+                break
         if text and _looks_boilerplate(text):
             continue
         if node.name == "p" and len(text) < 24 and not block_html.startswith("<figure>"):
@@ -704,9 +739,9 @@ def extract_article_from_html(html_text: str, *, url: str, fallback_title: str =
     metadata_soup = BeautifulSoup(html_text or "", "html.parser")
     title = _title(metadata_soup, fallback_title)
     reader_html = _readability_html(html_text)
-    article = _article_from_clean_soup(_clean_soup(reader_html or html_text), metadata_soup=metadata_soup, url=url, title=title)
+    article = _article_from_clean_soup(_clean_soup(reader_html or html_text, url=url), metadata_soup=metadata_soup, url=url, title=title)
     if reader_html:
-        original_article = _article_from_clean_soup(_clean_soup(html_text), metadata_soup=metadata_soup, url=url, title=title)
+        original_article = _article_from_clean_soup(_clean_soup(html_text, url=url), metadata_soup=metadata_soup, url=url, title=title)
         if _should_use_original_candidate(article, original_article, html_text=html_text, url=url):
             article = original_article
     return article
@@ -753,7 +788,15 @@ def _should_retry_cached_article(article: dict) -> bool:
     if _is_x_error_shell(str(article.get("url") or article.get("final_url") or ""), article):
         return True
     if status == "open" and len(_compact_text(str(article.get("text") or ""))) < 50:
-        return True
+        fetched_at = str(article.get("fetched_at") or "").strip()
+        try:
+            parsed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        age_seconds = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
+        return age_seconds >= SHORT_OPEN_CACHE_RETRY_AFTER_SECONDS
     return False
 
 
