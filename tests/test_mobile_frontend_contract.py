@@ -32,7 +32,7 @@ def test_mobile_fix_assets_are_cache_busted():
     assert "./assets/styles.css?v=reader-images-0605" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=reader-images-0605" in html
+    assert "./assets/app.js?v=hotfix-api-fallback-0610" in html
 
 
 def test_category_view_contract_exists():

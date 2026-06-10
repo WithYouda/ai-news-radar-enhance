@@ -23,3 +23,10 @@ def test_app_contains_backend_client_contract():
     assert "window.AI_NEWS_RADAR_API" in api_js
     assert "credentials: \"include\"" in api_js
     assert "window.AI_NEWS_RADAR_API" in app_js
+
+
+def test_app_has_api_client_fallback_for_cached_mobile_html():
+    app_js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    assert "createFallbackApiClient" in app_js
+    assert "window.AI_NEWS_RADAR_API || createFallbackApiClient()" in app_js
