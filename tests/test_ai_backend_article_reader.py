@@ -991,6 +991,45 @@ def test_read_article_endpoint_returns_alias_cache_without_news_lookup(monkeypat
     assert lookup_calls == 0
 
 
+def test_read_article_endpoint_prefills_alias_from_local_data_for_existing_cache(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    item["id"] = "feed-existing-cache"
+    _write_latest_data(config, item)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": "Existing cached title",
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "Existing cached body",
+            "text": "Existing cached body should be reachable by feed id immediately after app startup.",
+            "content_html": "<p>Existing cached body should be reachable by feed id immediately after app startup.</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": article_reader._now(),
+        },
+    )
+
+    def fail_load_latest_items(*args, **kwargs):
+        raise AssertionError("startup alias prefill should avoid per-request latest news lookup")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{item['id']}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "hit"
+    assert res.json()["title"] == "Existing cached title"
+
+
 def test_read_article_endpoint_stores_alias_after_news_item_lookup(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     item["id"] = "feed-model-launch-2"

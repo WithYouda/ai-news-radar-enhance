@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .article_reader import fetch_cached_article_for_request, fetch_clean_article, find_news_item
+from .article_reader import fetch_cached_article_for_request, fetch_clean_article, find_news_item, sync_article_aliases_from_local_data
 from .ai_profiles import get_ai_profile_for_use
 from .assistant import answer_question, finalize_streaming_answer, prepare_streaming_answer, translate_clean_text
 from .auth import validate_session
@@ -90,6 +90,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     config = config or AppConfig.from_env()
     init_db(config.db_path)
     seed_default_taxonomy(config.db_path)
+    sync_article_aliases_from_local_data(config)
 
     app = FastAPI(title="AI News Radar API")
     app.state.config = config

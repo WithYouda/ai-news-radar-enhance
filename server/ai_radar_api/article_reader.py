@@ -820,16 +820,24 @@ def _article_aliases(item: dict, item_id: str) -> set[str]:
     return aliases
 
 
-def store_article_aliases(db_path: str | Path, item: dict, item_id: str | None = None) -> None:
-    canonical_item_id = str(item_id or item_identity(item)).strip()
+def _article_alias_records(item: dict, item_id: str, updated_at: str) -> list[tuple[str, str, str, str, str, str, str]]:
+    canonical_item_id = str(item_id or "").strip()
     aliases = _article_aliases(item, canonical_item_id)
     if not canonical_item_id or not aliases:
-        return
+        return []
     url = normalize_public_url(str(item.get("url") or ""))
     title = str(item.get("title") or item.get("title_zh") or item.get("title_en") or "")
     site_name = str(item.get("site_name") or item.get("source") or "")
     published_at = str(item.get("published_at") or item.get("first_seen_at") or "")
-    updated_at = _now()
+    return [
+        (alias_id, canonical_item_id, url, title, site_name, published_at, updated_at)
+        for alias_id in aliases
+    ]
+
+
+def _upsert_article_alias_records(db_path: str | Path, records: list[tuple[str, str, str, str, str, str, str]]) -> None:
+    if not records:
+        return
     with connect_db(db_path) as conn:
         conn.executemany(
             """
@@ -843,11 +851,52 @@ def store_article_aliases(db_path: str | Path, item: dict, item_id: str | None =
               published_at = excluded.published_at,
               updated_at = excluded.updated_at
             """,
-            [
-                (alias_id, canonical_item_id, url, title, site_name, published_at, updated_at)
-                for alias_id in aliases
-            ],
+            records,
         )
+
+
+def store_article_aliases(db_path: str | Path, item: dict, item_id: str | None = None) -> None:
+    canonical_item_id = str(item_id or item_identity(item)).strip()
+    _upsert_article_alias_records(db_path, _article_alias_records(item, canonical_item_id, _now()))
+
+
+def _local_latest_items(config) -> list[dict]:
+    specs = (
+        (config.data_dir / "latest-24h.json", ("items", "items_ai")),
+        (config.data_dir / "latest-24h-all.json", ("items_all", "items", "items_ai")),
+    )
+    out: list[dict] = []
+    for path, keys in specs:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for key in keys:
+            items = payload.get(key)
+            if isinstance(items, list):
+                out.extend(item for item in items if isinstance(item, dict))
+                break
+    return out
+
+
+def sync_article_aliases_from_local_data(config) -> int:
+    updated_at = _now()
+    records: list[tuple[str, str, str, str, str, str, str]] = []
+    seen_aliases: set[str] = set()
+    for item in _local_latest_items(config):
+        item_id = item_identity(item)
+        for record in _article_alias_records(item, item_id, updated_at):
+            alias_id = record[0]
+            if alias_id in seen_aliases:
+                continue
+            seen_aliases.add(alias_id)
+            records.append(record)
+    _upsert_article_alias_records(config.db_path, records)
+    return len(records)
 
 
 def _item_from_cached_article(article: dict) -> dict:
