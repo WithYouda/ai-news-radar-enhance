@@ -761,6 +761,10 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
         ).fetchone()
     if not row:
         return None
+    return _article_from_cache_row(row)
+
+
+def _article_from_cache_row(row) -> dict:
     article = {
         "item_id": row["item_id"],
         "url": row["url"],
@@ -780,6 +784,91 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     }
     article["translation_available"] = article["language"] not in {"", "unknown", "zh", "zh-cn", "zh-tw"}
     return article
+
+
+def cached_article_for_request(db_path: str | Path, requested_id: str) -> dict | None:
+    requested_id = str(requested_id or "").strip()
+    if not requested_id:
+        return None
+    direct = cached_article(db_path, requested_id)
+    if direct:
+        return direct
+    with connect_db(db_path) as conn:
+        row = conn.execute(
+            """
+            select c.item_id, c.url, c.final_url, c.title, c.site_name, c.byline, c.published_at, c.language,
+                   c.access_status, c.access_label, c.excerpt, c.text, c.content_html, c.fetched_at
+            from article_cache_aliases a
+            join article_cache c on c.item_id = a.item_id
+            where a.alias_id = ?
+            """,
+            (requested_id,),
+        ).fetchone()
+    return _article_from_cache_row(row) if row else None
+
+
+def _article_aliases(item: dict, item_id: str) -> set[str]:
+    aliases = {str(item_id or "").strip()}
+    for key in ("id", "item_id"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            aliases.add(value)
+    url = normalize_public_url(str(item.get("url") or ""))
+    if url:
+        aliases.add(url)
+    aliases.discard("")
+    return aliases
+
+
+def store_article_aliases(db_path: str | Path, item: dict, item_id: str | None = None) -> None:
+    canonical_item_id = str(item_id or item_identity(item)).strip()
+    aliases = _article_aliases(item, canonical_item_id)
+    if not canonical_item_id or not aliases:
+        return
+    url = normalize_public_url(str(item.get("url") or ""))
+    title = str(item.get("title") or item.get("title_zh") or item.get("title_en") or "")
+    site_name = str(item.get("site_name") or item.get("source") or "")
+    published_at = str(item.get("published_at") or item.get("first_seen_at") or "")
+    updated_at = _now()
+    with connect_db(db_path) as conn:
+        conn.executemany(
+            """
+            insert into article_cache_aliases(alias_id, item_id, url, title, site_name, published_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?)
+            on conflict(alias_id) do update set
+              item_id = excluded.item_id,
+              url = excluded.url,
+              title = excluded.title,
+              site_name = excluded.site_name,
+              published_at = excluded.published_at,
+              updated_at = excluded.updated_at
+            """,
+            [
+                (alias_id, canonical_item_id, url, title, site_name, published_at, updated_at)
+                for alias_id in aliases
+            ],
+        )
+
+
+def _item_from_cached_article(article: dict) -> dict:
+    return {
+        "item_id": article.get("item_id") or "",
+        "title": article.get("title") or "",
+        "url": article.get("url") or article.get("final_url") or "",
+        "site_name": article.get("site_name") or "",
+        "source": article.get("site_name") or "",
+        "published_at": article.get("published_at") or "",
+    }
+
+
+def fetch_cached_article_for_request(config, requested_id: str) -> dict | None:
+    cached = cached_article_for_request(config.db_path, requested_id)
+    if not cached:
+        return None
+    item = _item_from_cached_article(cached)
+    if not _should_retry_cached_article(cached):
+        return {**cached, "item": item}
+    return fetch_clean_article(config, item)
 
 
 def _cached_article_age_seconds(article: dict) -> float | None:
@@ -1025,6 +1114,7 @@ def resolve_google_news_url(url: str, timeout_seconds: int = 6) -> str:
 
 def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     item_id = item_identity(item)
+    store_article_aliases(config.db_path, item, item_id)
     cached = cached_article(config.db_path, item_id)
     if cached and not _should_retry_cached_article(cached):
         return {**cached, "item": item}

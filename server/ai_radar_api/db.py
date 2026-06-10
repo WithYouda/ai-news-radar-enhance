@@ -113,6 +113,19 @@ create table if not exists article_cache (
 create index if not exists idx_article_cache_fetched_at
 on article_cache(fetched_at);
 
+create table if not exists article_cache_aliases (
+  alias_id text primary key,
+  item_id text not null,
+  url text not null,
+  title text not null default '',
+  site_name text not null default '',
+  published_at text not null default '',
+  updated_at text not null
+);
+
+create index if not exists idx_article_cache_aliases_item_id
+on article_cache_aliases(item_id);
+
 create table if not exists ai_provider_profiles (
   id text primary key,
   name text not null,

@@ -2,6 +2,9 @@
 
 Read this file before planning or writing code in this repository. If a task
 touches one of these areas, explicitly check the prevention notes before editing.
+After drafting tests and again after implementation, check whether the tests are
+overfit to the suspected bug; add adversarial and corner-case coverage for
+nearby failure modes before moving on.
 
 ## 2026-06-10: Frontend Client Split Broke Mobile/PWA Runtime
 
@@ -99,3 +102,30 @@ Prevention:
   `openReader()` / `loadCleanArticle()`.
 - Bump the `assets/app.js` cache-busting query in `index.html` whenever reader
   runtime behavior changes.
+
+## 2026-06-10: Clean Article Cache Hit Was Behind News Item Lookup
+
+Symptoms:
+
+- Reopening an already cleaned article after closing the PWA could eventually
+  show `已缓存` but still feel slow.
+- Backend cache hits still paid the cost of resolving the requested reader id by
+  loading and scanning latest news JSON before checking `article_cache`.
+
+Root causes:
+
+- `/api/read/{item_id}` resolved the news item first and only then checked the
+  article cache.
+- `article_cache` used canonical URL-hash ids, while the frontend can request a
+  generated feed `id`; there was no persistent alias table from requested ids to
+  canonical article ids.
+
+Prevention:
+
+- Keep `/api/read` cache-first: direct canonical cache lookup, then alias lookup,
+  then latest-news item lookup only as a miss fallback.
+- Add regression tests that prove cached article hits do not call
+  `load_latest_items`.
+- Include adversarial tests for orphan aliases, unsafe stale cached URLs,
+  unavailable fallback caches, and unknown uncached ids so the reader does not
+  become an arbitrary URL fetcher.

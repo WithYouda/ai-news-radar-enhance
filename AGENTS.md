@@ -13,6 +13,9 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
   change causes or fixes a production/user-visible failure, add a concise entry
   to that file in the same change. Do not call work complete until the relevant
   pitfall has a regression test or a documented verification command.
+- Iron law: after drafting tests and again after implementation, review whether
+  the tests are too narrowly tailored to the assumed bug. Add adversarial and
+  corner-case coverage for adjacent failure modes before moving on.
 - Keep changes small and reviewable.
 - Search the repo before changing source fetchers or output schemas.
 - Do not commit private feeds, secrets, tokens, cookies, or `.env` values.

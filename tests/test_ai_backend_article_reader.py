@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import server.ai_radar_api.article_reader as article_reader
 from server.ai_radar_api.article_reader import extract_article_from_html, fetch_clean_article, resolve_google_news_url, store_article
 from server.ai_radar_api.config import AppConfig
-from server.ai_radar_api.db import init_db
+from server.ai_radar_api.db import connect_db, init_db
 from server.ai_radar_api.main import create_app
 from server.ai_radar_api.radar_data import item_identity
 
@@ -35,6 +35,43 @@ def _config(tmp_path):
         data_dir=data_dir,
         data_cache_dir=tmp_path / "cache",
     ), item
+
+
+def _write_latest_data(config, item):
+    (config.data_dir / "latest-24h.json").write_text(json.dumps({"items": [item]}), encoding="utf-8")
+    (config.data_dir / "latest-24h-all.json").write_text(json.dumps({"items_all": [item]}), encoding="utf-8")
+
+
+def _store_article_alias(config, alias_id: str, item_id: str, item: dict):
+    with connect_db(config.db_path) as conn:
+        conn.execute(
+            """
+            create table if not exists article_cache_aliases (
+              alias_id text primary key,
+              item_id text not null,
+              url text not null,
+              title text not null default '',
+              site_name text not null default '',
+              published_at text not null default '',
+              updated_at text not null
+            )
+            """
+        )
+        conn.execute(
+            """
+            insert into article_cache_aliases(alias_id, item_id, url, title, site_name, published_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                alias_id,
+                item_id,
+                item["url"],
+                item.get("title", ""),
+                item.get("site_name", ""),
+                item.get("published_at", ""),
+                article_reader._now(),
+            ),
+        )
 
 
 def test_extract_article_from_html_removes_chrome_and_keeps_readable_body():
@@ -867,6 +904,339 @@ def test_read_article_endpoint_fetches_known_news_item_and_reuses_cache(monkeypa
     assert second.status_code == 200
     assert second.json()["cache_status"] == "hit"
     assert calls == 1
+
+
+def test_read_article_endpoint_returns_canonical_cache_without_news_lookup(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": "Cached clean title",
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "Cached body",
+            "text": "Cached body with enough detail to prove this came directly from article_cache.",
+            "content_html": "<p>Cached body with enough detail to prove this came directly from article_cache.</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": article_reader._now(),
+        },
+    )
+    lookup_calls = 0
+
+    def fail_load_latest_items(*args, **kwargs):
+        nonlocal lookup_calls
+        lookup_calls += 1
+        raise AssertionError("canonical cache hit must not load latest news JSON")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{identity}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "hit"
+    assert res.json()["title"] == "Cached clean title"
+    assert lookup_calls == 0
+
+
+def test_read_article_endpoint_returns_alias_cache_without_news_lookup(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    item["id"] = "feed-model-launch-1"
+    _write_latest_data(config, item)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": "Cached alias title",
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "Cached alias body",
+            "text": "Cached alias body with enough detail to prove feed ids can bypass JSON lookup.",
+            "content_html": "<p>Cached alias body with enough detail to prove feed ids can bypass JSON lookup.</p>",
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": article_reader._now(),
+        },
+    )
+    _store_article_alias(config, item["id"], identity, item)
+    lookup_calls = 0
+
+    def fail_load_latest_items(*args, **kwargs):
+        nonlocal lookup_calls
+        lookup_calls += 1
+        raise AssertionError("alias cache hit must not load latest news JSON")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{item['id']}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "hit"
+    assert res.json()["title"] == "Cached alias title"
+    assert lookup_calls == 0
+
+
+def test_read_article_endpoint_stores_alias_after_news_item_lookup(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    item["id"] = "feed-model-launch-2"
+    _write_latest_data(config, item)
+    calls = 0
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Fresh title for alias storage</h1>
+          <p>The first read should fetch the origin once and store an alias for the feed id.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    first = client.get(f"/api/read/{item['id']}")
+    assert first.status_code == 200
+    assert first.json()["cache_status"] == "miss"
+
+    def fail_load_latest_items(*args, **kwargs):
+        raise AssertionError("stored feed id alias should bypass latest news JSON")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    second = client.get(f"/api/read/{item['id']}")
+
+    assert second.status_code == 200
+    assert second.json()["cache_status"] == "hit"
+    assert second.json()["title"] == "Fresh title for alias storage"
+    assert calls == 1
+
+
+def test_read_article_endpoint_retries_stale_alias_cache_without_news_lookup(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    item["id"] = "feed-stale-unavailable"
+    _write_latest_data(config, item)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+    _store_article_alias(config, item["id"], identity, item)
+    lookup_calls = 0
+    fetch_calls = 0
+
+    def fail_load_latest_items(*args, **kwargs):
+        nonlocal lookup_calls
+        lookup_calls += 1
+        raise AssertionError("stale alias cache retry should reconstruct item from article cache")
+
+    class Response:
+        url = "https://example.com/posts/model-launch"
+        text = """
+        <html><body><article>
+          <h1>Recovered alias title</h1>
+          <p>The stale fallback should retry from the cached URL without scanning latest news JSON.</p>
+        </article></body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{item['id']}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "miss"
+    assert res.json()["access_status"] == "open"
+    assert "stale fallback should retry" in res.json()["text"]
+    assert fetch_calls == 1
+    assert lookup_calls == 0
+
+
+def test_read_article_endpoint_reuses_fresh_unavailable_alias_cache_without_fetch(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    item["id"] = "feed-fresh-unavailable"
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": article_reader._now(),
+        },
+    )
+    _store_article_alias(config, item["id"], identity, item)
+    lookup_calls = 0
+    fetch_calls = 0
+
+    def fail_load_latest_items(*args, **kwargs):
+        nonlocal lookup_calls
+        lookup_calls += 1
+        raise AssertionError("fresh unavailable alias cache should bypass latest news JSON")
+
+    def fail_get(*args, **kwargs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("fresh unavailable alias cache should not refetch origin")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", fail_load_latest_items)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{item['id']}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "hit"
+    assert res.json()["access_status"] == "unavailable"
+    assert lookup_calls == 0
+    assert fetch_calls == 0
+
+
+def test_read_article_endpoint_ignores_alias_without_cached_article(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    _store_article_alias(config, "orphan-feed-id", "missing-canonical-id", item)
+    fetch_calls = 0
+
+    def empty_load_latest_items(*args, **kwargs):
+        return []
+
+    def fail_get(*args, **kwargs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("orphan aliases must not fetch arbitrary origin URLs")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader.load_latest_items", empty_load_latest_items)
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get("/api/read/orphan-feed-id")
+
+    assert res.status_code == 404
+    assert fetch_calls == 0
+
+
+def test_read_article_endpoint_rejects_stale_alias_cache_with_unsafe_url(monkeypatch, tmp_path):
+    config, _ = _config(tmp_path)
+    init_db(config.db_path)
+    item = {
+        "id": "feed-unsafe-cache",
+        "title": "Unsafe cached URL",
+        "url": "file:///etc/passwd",
+        "site_name": "Unsafe",
+        "published_at": "2026-06-03T04:30:00Z",
+    }
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Unsafe",
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": "2026-06-03T00:00:00Z",
+        },
+    )
+    _store_article_alias(config, item["id"], identity, item)
+    fetch_calls = 0
+
+    def fail_get(*args, **kwargs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("unsafe stale cached URLs must be rejected before fetching")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{item['id']}")
+
+    assert res.status_code == 422
+    assert "Unsupported article URL" in res.text
+    assert fetch_calls == 0
+
+
+def test_read_article_endpoint_does_not_fetch_unknown_uncached_id(monkeypatch, tmp_path):
+    config, _ = _config(tmp_path)
+    fetch_calls = 0
+
+    def fail_get(*args, **kwargs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("unknown uncached ids must not fetch arbitrary origin URLs")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get("/api/read/not-a-known-item")
+
+    assert res.status_code == 404
+    assert fetch_calls == 0
 
 
 def test_read_article_endpoint_does_not_add_item_image_when_fetched_body_has_no_images(monkeypatch, tmp_path):

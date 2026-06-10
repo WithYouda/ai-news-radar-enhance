@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .article_reader import fetch_clean_article, find_news_item
+from .article_reader import fetch_cached_article_for_request, fetch_clean_article, find_news_item
 from .ai_profiles import get_ai_profile_for_use
 from .assistant import answer_question, finalize_streaming_answer, prepare_streaming_answer, translate_clean_text
 from .auth import validate_session
@@ -255,13 +255,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.get("/api/read/{item_id}")
     def read_article(item_id: str) -> dict:
-        item = find_news_item(config, item_id)
-        if item is None:
-            raise HTTPException(status_code=404, detail="News item not found")
         try:
+            cached_article = fetch_cached_article_for_request(config, item_id)
+            if cached_article is not None:
+                return cached_article
+            item = find_news_item(config, item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="News item not found")
             return fetch_clean_article(config, item)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"文章读取失败: {exc}") from exc
 

@@ -24,7 +24,23 @@ def test_init_db_creates_required_tables(tmp_path):
         "source_scores",
         "ask_conversations",
         "ask_messages",
+        "article_cache",
+        "article_cache_aliases",
     }.issubset(tables)
+
+    alias_columns = {
+        row[1]
+        for row in conn.execute("pragma table_info(article_cache_aliases)")
+    }
+    assert {
+        "alias_id",
+        "item_id",
+        "url",
+        "title",
+        "site_name",
+        "published_at",
+        "updated_at",
+    }.issubset(alias_columns)
 
 
 def test_connect_db_uses_row_factory(tmp_path):
