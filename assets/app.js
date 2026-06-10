@@ -1,7 +1,7 @@
-function createFallbackApiClient() {
-  const appConfig = window.AI_NEWS_RADAR_CONFIG || {};
-  const apiBaseUrl = String(appConfig.apiBaseUrl || "").replace(/\/$/, "");
+const appConfig = window.AI_NEWS_RADAR_CONFIG || {};
+const apiBaseUrl = String(appConfig.apiBaseUrl || "").replace(/\/$/, "");
 
+function createFallbackApiClient() {
   async function apiFetch(path, options = {}) {
     if (!apiBaseUrl) throw new Error("AI 后端未配置");
     let res;

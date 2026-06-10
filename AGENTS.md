@@ -8,6 +8,11 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
 
 ## Working Rules
 
+- Iron law: before planning or writing code, read `docs/PROJECT_PITFALLS.md`
+  and explicitly check the current task against the recorded pitfalls. If a
+  change causes or fixes a production/user-visible failure, add a concise entry
+  to that file in the same change. Do not call work complete until the relevant
+  pitfall has a regression test or a documented verification command.
 - Keep changes small and reviewable.
 - Search the repo before changing source fetchers or output schemas.
 - Do not commit private feeds, secrets, tokens, cookies, or `.env` values.

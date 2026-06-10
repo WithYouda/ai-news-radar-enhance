@@ -30,3 +30,12 @@ def test_app_has_api_client_fallback_for_cached_mobile_html():
 
     assert "createFallbackApiClient" in app_js
     assert "window.AI_NEWS_RADAR_API || createFallbackApiClient()" in app_js
+
+
+def test_app_keeps_api_base_url_for_sync_reader_controls():
+    app_js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    assert app_js.startswith("const appConfig = window.AI_NEWS_RADAR_CONFIG || {};")
+    assert "const appConfig = window.AI_NEWS_RADAR_CONFIG || {};" in app_js
+    assert "const apiBaseUrl = String(appConfig.apiBaseUrl || \"\").replace" in app_js
+    assert "readerBtn.disabled = !apiBaseUrl" in app_js
