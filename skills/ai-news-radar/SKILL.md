@@ -207,6 +207,23 @@ WaytoAGI block, search, site filter, and source counts still work.
 After pushing source changes, trigger and watch the workflow:
 
 ```bash
-gh workflow run update-news.yml --repo LearnPrompt/ai-news-radar --ref master
-gh run list --repo LearnPrompt/ai-news-radar --limit 5
+gh workflow run update-news.yml --repo WithYouda/ai-news-radar-enhance --ref master
+gh run list --repo WithYouda/ai-news-radar-enhance --limit 5
+```
+
+If the pushed changes require reloading the backend service, SSH into the server
+and reload it there after the remote worktree is fast-forwarded and backend
+checks pass:
+
+```bash
+ssh xdp@47.109.128.99 -p 29000
+cd /home/xdp/ai-news-radar/.worktrees/ai-news-radar-enhance
+git fetch origin master
+git merge --ff-only origin/master
+.venv/bin/python -m pytest -q tests/test_ai_backend_article_reader.py tests/test_ai_backend_db.py
+.venv/bin/python -m py_compile server/ai_radar_api/article_reader.py server/ai_radar_api/main.py server/ai_radar_api/db.py server/ai_radar_api/radar_data.py server/ai_radar_api/config.py
+node --check assets/app.js
+/home/xdp/.nvm/versions/node/v24.15.0/bin/pm2 restart ai-news-radar-api
+curl -fsS --max-time 10 http://127.0.0.1:8090/health
+curl -fsS --max-time 15 https://api.ai-news-radar.xyz/health
 ```
