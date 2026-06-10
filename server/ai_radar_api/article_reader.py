@@ -159,6 +159,7 @@ GOOGLE_NEWS_BATCH_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecut
 MAX_FETCH_REDIRECTS = 4
 GOOGLE_NEWS_TIMEOUT_SECONDS = 1.0
 SHORT_OPEN_CACHE_RETRY_AFTER_SECONDS = 10 * 60
+UNAVAILABLE_CACHE_RETRY_AFTER_SECONDS = 10 * 60
 
 
 def _now() -> str:
@@ -781,22 +782,27 @@ def cached_article(db_path: str | Path, item_id: str) -> dict | None:
     return article
 
 
+def _cached_article_age_seconds(article: dict) -> float | None:
+    fetched_at = str(article.get("fetched_at") or "").strip()
+    try:
+        parsed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
+
+
 def _should_retry_cached_article(article: dict) -> bool:
     status = str(article.get("access_status") or "").strip().lower()
     if status == "unavailable":
-        return True
+        age_seconds = _cached_article_age_seconds(article)
+        return age_seconds is None or age_seconds >= UNAVAILABLE_CACHE_RETRY_AFTER_SECONDS
     if _is_x_error_shell(str(article.get("url") or article.get("final_url") or ""), article):
         return True
     if status == "open" and len(_compact_text(str(article.get("text") or ""))) < 50:
-        fetched_at = str(article.get("fetched_at") or "").strip()
-        try:
-            parsed = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
-        except ValueError:
-            return True
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        age_seconds = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
-        return age_seconds >= SHORT_OPEN_CACHE_RETRY_AFTER_SECONDS
+        age_seconds = _cached_article_age_seconds(article)
+        return age_seconds is None or age_seconds >= SHORT_OPEN_CACHE_RETRY_AFTER_SECONDS
     return False
 
 

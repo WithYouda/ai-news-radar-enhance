@@ -32,7 +32,7 @@ def test_mobile_fix_assets_are_cache_busted():
     assert "./assets/styles.css?v=reader-images-0605" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=hotfix-api-baseurl-0610" in html
+    assert "./assets/app.js?v=reader-cache-0610" in html
 
 
 def test_category_view_contract_exists():
@@ -295,6 +295,26 @@ def test_clean_reader_contract_exists_for_news_cards():
     assert "overflow-x: auto" in css
     assert ".reader-article pre code" in css
     assert ".reader-article code" in css
+
+
+def test_clean_reader_reuses_session_cache_and_inflight_request_contract():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    state_block = js[js.index("const state = {") : js.index("const statsEl = document.getElementById")]
+    load_fn = js[js.index("async function loadCleanArticle") : js.index("async function openReader")]
+    open_fn = js[js.index("async function openReader") : js.index("function bindReaderLink")]
+
+    assert "readerArticleCache: new Map()" in state_block
+    assert "readerArticleRequests: new Map()" in state_block
+    assert "readerArticleKey: \"\"" in state_block
+    assert "state.readerArticleCache.has(id)" in load_fn
+    assert "state.readerArticleRequests.has(id)" in load_fn
+    assert "state.readerArticleRequests.set(id, request)" in load_fn
+    assert "state.readerArticleCache.set(id, article)" in load_fn
+    assert "state.readerArticleRequests.delete(id)" in load_fn
+    assert "state.readerArticleKey = id" in open_fn
+    assert "state.readerArticleCache.has(id)" in open_fn
+    assert "renderReaderLoading(item)" in open_fn
+    assert "state.readerArticleKey !== id" in open_fn
 
 
 def test_news_cards_render_optional_item_thumbnail():

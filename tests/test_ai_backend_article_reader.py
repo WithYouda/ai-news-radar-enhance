@@ -1202,6 +1202,45 @@ def test_fetch_clean_article_reuses_fresh_short_open_cache(monkeypatch, tmp_path
     assert article["text"] == "简短正文"
 
 
+def test_fetch_clean_article_reuses_fresh_unavailable_cache(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "Example AI",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "暂时无法清洗原文",
+            "text": "暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": article_reader._now(),
+        },
+    )
+    calls = 0
+
+    def fail_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectTimeout("fresh unavailable cache should be reused briefly")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+
+    article = fetch_clean_article(config, item)
+
+    assert article["cache_status"] == "hit"
+    assert article["access_status"] == "unavailable"
+    assert calls == 0
+
+
 def test_read_article_endpoint_retries_too_short_open_cache(monkeypatch, tmp_path):
     config, item = _config(tmp_path)
     init_db(config.db_path)

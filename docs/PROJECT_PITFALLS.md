@@ -70,3 +70,32 @@ Prevention:
   ```
 
 - Re-run relevant verification after pulling generated data.
+
+## 2026-06-10: Clean Article Fallback Cache Retried Immediately
+
+Symptoms:
+
+- Closing and reopening the reader could show `正在清洗原文...` again for the
+  same article.
+- Articles that returned `暂时无法清洗原文` could be refetched immediately instead
+  of reusing the just-stored fallback.
+
+Root causes:
+
+- Backend `access_status=unavailable` cache entries were treated as always
+  retryable, unlike short `access_status=open` entries that already had a retry
+  delay.
+- The frontend reader had no session-level article cache or in-flight request
+  reuse, and it rendered the cleaning loading state before every API response,
+  making even fast cache hits look like a fresh clean.
+
+Prevention:
+
+- For article-reader cache changes, test both fresh and stale entries for
+  `open`, `restricted`, and `unavailable` statuses.
+- Verify repeated opens by checking `cache_status`, `access_status`,
+  `fetched_at`, and request counts; do not rely only on the loading text.
+- Keep reader-side session cache and in-flight request reuse when changing
+  `openReader()` / `loadCleanArticle()`.
+- Bump the `assets/app.js` cache-busting query in `index.html` whenever reader
+  runtime behavior changes.

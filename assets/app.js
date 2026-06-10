@@ -79,6 +79,9 @@ const state = {
   askHistoryVisible: false,
   readerItem: null,
   readerArticle: null,
+  readerArticleKey: "",
+  readerArticleCache: new Map(),
+  readerArticleRequests: new Map(),
   readerOriginalHtml: "",
   readerOriginalText: "",
   readerTranslatedHtml: "",
@@ -2072,24 +2075,51 @@ async function factCheckReaderArticle() {
   await openAskAiForReaderArticle(READER_FACT_CHECK_PROMPT);
 }
 
-async function loadCleanArticle(item) {
+async function loadCleanArticle(item, cacheKey = "") {
   if (!apiBaseUrl) throw new Error("AI 后端未配置，暂时无法清洗原文。");
-  const id = await readerItemId(item);
-  return apiFetch(`/api/read/${encodeURIComponent(id)}`);
+  const id = cacheKey || (await readerItemId(item));
+  if (state.readerArticleCache.has(id)) {
+    const cached = state.readerArticleCache.get(id);
+    return { ...cached, cache_status: "hit", item: item || cached.item };
+  }
+  if (state.readerArticleRequests.has(id)) {
+    return state.readerArticleRequests.get(id);
+  }
+  const request = apiFetch(`/api/read/${encodeURIComponent(id)}`)
+    .then((payload) => {
+      const article = { ...payload, item: payload.item || item };
+      state.readerArticleCache.set(id, article);
+      return article;
+    })
+    .finally(() => {
+      state.readerArticleRequests.delete(id);
+    });
+  state.readerArticleRequests.set(id, request);
+  return request;
 }
 
 async function openReader(item) {
   if (!readerSheetEl) return;
   if (readerCloseTimer) window.clearTimeout(readerCloseTimer);
   state.readerItem = item;
+  const id = await readerItemId(item);
+  state.readerArticleKey = id;
   resetReaderPanelDrag();
-  renderReaderLoading(item);
+  if (state.readerArticleCache.has(id)) {
+    const cached = state.readerArticleCache.get(id);
+    renderReaderArticle({ ...cached, cache_status: "hit", item });
+  } else {
+    renderReaderLoading(item);
+  }
   readerSheetEl.hidden = false;
   document.body.classList.add("reader-open");
+  if (state.readerArticleCache.has(id)) return;
   try {
-    const payload = await loadCleanArticle(item);
+    const payload = await loadCleanArticle(item, id);
+    if (state.readerArticleKey !== id) return;
     renderReaderArticle(payload);
   } catch (err) {
+    if (state.readerArticleKey !== id) return;
     if (readerBodyEl) {
       readerBodyEl.innerHTML = `
         <div class="reader-state reader-error">
