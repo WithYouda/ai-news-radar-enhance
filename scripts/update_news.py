@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
@@ -131,6 +131,7 @@ X_API_POST_READ_COST_USD = 0.005
 X_API_DEFAULT_QUERY = '(AI OR "artificial intelligence" OR "large language model" OR LLM) lang:en -is:retweet has:links'
 X_API_DEFAULT_MAX_RESULTS = 20
 X_API_MAX_QUERY_CHARS = 512
+NEWS_PAYLOAD_SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -142,6 +143,13 @@ class RawItem:
     url: str
     published_at: datetime | None
     meta: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SourceTask:
+    site_id: str
+    site_name: str
+    fetch: Callable[[requests.Session, datetime], list[RawItem]]
 
 
 PLACEHOLDER_IMAGE_RE = re.compile(
@@ -2005,32 +2013,33 @@ def fetch_newsnow(session: requests.Session, now: datetime) -> list[RawItem]:
     return out
 
 
-def collect_all(session: requests.Session, now: datetime) -> tuple[list[RawItem], list[dict[str, Any]]]:
-    tasks = [
-        ("official_ai", "Official AI Updates", fetch_official_ai_updates),
-        ("aibreakfast", "AI Breakfast", fetch_ai_breakfast),
-        ("followbuilders", "Follow Builders", fetch_follow_builders),
-        ("techurls", "TechURLs", fetch_techurls),
-        ("buzzing", "Buzzing", fetch_buzzing),
-        ("iris", "Info Flow", fetch_iris),
-        ("bestblogs", "BestBlogs", fetch_bestblogs),
-        ("tophub", "TopHub", fetch_tophub),
-        ("zeli", "Zeli", fetch_zeli),
-        ("aihubtoday", "AI HubToday", fetch_ai_hubtoday),
-        ("aibase", "AIbase", fetch_aibase),
-        ("aihot", "AI HOT", fetch_aihot),
-        ("newsnow", "NewsNow", fetch_newsnow),
-    ]
+BUILT_IN_SOURCE_TASKS: tuple[SourceTask, ...] = (
+    SourceTask("official_ai", "Official AI Updates", fetch_official_ai_updates),
+    SourceTask("aibreakfast", "AI Breakfast", fetch_ai_breakfast),
+    SourceTask("followbuilders", "Follow Builders", fetch_follow_builders),
+    SourceTask("techurls", "TechURLs", fetch_techurls),
+    SourceTask("buzzing", "Buzzing", fetch_buzzing),
+    SourceTask("iris", "Info Flow", fetch_iris),
+    SourceTask("bestblogs", "BestBlogs", fetch_bestblogs),
+    SourceTask("tophub", "TopHub", fetch_tophub),
+    SourceTask("zeli", "Zeli", fetch_zeli),
+    SourceTask("aihubtoday", "AI HubToday", fetch_ai_hubtoday),
+    SourceTask("aibase", "AIbase", fetch_aibase),
+    SourceTask("aihot", "AI HOT", fetch_aihot),
+    SourceTask("newsnow", "NewsNow", fetch_newsnow),
+)
 
+
+def collect_all(session: requests.Session, now: datetime) -> tuple[list[RawItem], list[dict[str, Any]]]:
     raw_items: list[RawItem] = []
     statuses: list[dict[str, Any]] = []
 
-    for site_id, site_name, fn in tasks:
+    for task in BUILT_IN_SOURCE_TASKS:
         start = time.perf_counter()
         error = None
         count = 0
         try:
-            items = fn(session, now)
+            items = task.fetch(session, now)
             count = len(items)
             raw_items.extend(items)
         except Exception as exc:
@@ -2038,8 +2047,8 @@ def collect_all(session: requests.Session, now: datetime) -> tuple[list[RawItem]
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         statuses.append(
             {
-                "site_id": site_id,
-                "site_name": site_name,
+                "site_id": task.site_id,
+                "site_name": task.site_name,
                 "ok": error is None,
                 "item_count": count,
                 "duration_ms": elapsed_ms,
@@ -2613,6 +2622,12 @@ def sanitize_public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return sanitize_public_value(payload)
 
 
+def with_schema_version(payload: dict[str, Any]) -> dict[str, Any]:
+    versioned = dict(payload)
+    versioned["schema_version"] = NEWS_PAYLOAD_SCHEMA_VERSION
+    return versioned
+
+
 def compact_public_snippet(text: str, max_chars: int = 240) -> str:
     """Return a short redacted snippet suitable for public/static JSON."""
     snippet = re.sub(r"\s+", " ", str(text or "")).strip()
@@ -2690,7 +2705,8 @@ def build_agentmail_digest_payload(
     filtered_messages = filter_agentmail_messages_by_domain(messages, allowed_sender_domains or [])
     items = [safe_agentmail_item(msg) for msg in filtered_messages]
     return sanitize_public_payload(
-        {
+        with_schema_version(
+            {
             "generated_at": generated_at,
             "source": "agentmail",
             "enabled": True,
@@ -2699,7 +2715,8 @@ def build_agentmail_digest_payload(
             "allowed_sender_domains": allowed_sender_domains or [],
             "total_messages": len(items),
             "items": items,
-        }
+            }
+        )
     )
 
 
@@ -3107,8 +3124,8 @@ def dedupe_items_by_title_url(items: list[dict[str, Any]], random_pick: bool = T
 
 def build_latest_payloads(latest_payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Split initial AI payload from bulky all-mode lists for lazy browser loading."""
-    slim_payload = dict(latest_payload)
-    all_payload = {
+    slim_payload = with_schema_version(latest_payload)
+    all_payload = with_schema_version({
         "generated_at": latest_payload.get("generated_at"),
         "window_hours": latest_payload.get("window_hours"),
         "topic_filter": latest_payload.get("topic_filter"),
@@ -3117,7 +3134,7 @@ def build_latest_payloads(latest_payload: dict[str, Any]) -> tuple[dict[str, Any
         "total_items_all_mode": latest_payload.get("total_items_all_mode"),
         "items_all": latest_payload.get("items_all", []),
         "items_all_raw": latest_payload.get("items_all_raw", []),
-    }
+    })
     slim_payload.pop("items_all", None)
     slim_payload.pop("items_all_raw", None)
     slim_payload["all_mode_data_url"] = "data/latest-24h-all.json"
@@ -3311,52 +3328,56 @@ def main() -> int:
         "items_all": latest_items_all_dedup,
     }
 
-    archive_payload = {
-        "generated_at": iso(now),
-        "total_items": len(archive),
-        "items": sorted(
-            archive.values(),
-            key=lambda x: parse_iso(x.get("last_seen_at")) or datetime.min.replace(tzinfo=UTC),
-            reverse=True,
-        ),
-    }
+    archive_payload = with_schema_version(
+        {
+            "generated_at": iso(now),
+            "total_items": len(archive),
+            "items": sorted(
+                archive.values(),
+                key=lambda x: parse_iso(x.get("last_seen_at")) or datetime.min.replace(tzinfo=UTC),
+                reverse=True,
+            ),
+        }
+    )
 
-    status_payload = {
-        "generated_at": iso(now),
-        "sites": statuses,
-        "successful_sites": sum(1 for s in statuses if s["ok"]),
-        "failed_sites": [s["site_id"] for s in statuses if not s["ok"]],
-        "zero_item_sites": [s["site_id"] for s in statuses if s.get("ok") and int(s.get("item_count") or 0) == 0],
-        "fetched_raw_items": len(raw_items),
-        "items_before_topic_filter": len(latest_items_all),
-        "items_in_24h": len(latest_items_ai_dedup),
-        "rss_opml": {
-            "enabled": bool(args.rss_opml),
-            "path": "configured" if args.rss_opml else None,
-            "feed_total": len(rss_feed_statuses),
-            "effective_feed_total": sum(1 for s in rss_feed_statuses if not s.get("skipped")),
-            "ok_feeds": sum(1 for s in rss_feed_statuses if s["ok"] and not s.get("skipped")),
-            "failed_feeds": [s.get("effective_feed_url") or s["feed_url"] for s in rss_feed_statuses if not s["ok"]],
-            "zero_item_feeds": [
-                s.get("effective_feed_url") or s["feed_url"]
-                for s in rss_feed_statuses
-                if s["ok"] and not s.get("skipped") and int(s.get("item_count") or 0) == 0
-            ],
-            "skipped_feeds": [
-                {"feed_url": s["feed_url"], "reason": s.get("skip_reason")}
-                for s in rss_feed_statuses
-                if s.get("skipped")
-            ],
-            "replaced_feeds": [
-                {"from": s["feed_url"], "to": s.get("effective_feed_url")}
-                for s in rss_feed_statuses
-                if s.get("replaced") and s.get("effective_feed_url")
-            ],
-            "feeds": rss_feed_statuses,
+    status_payload = with_schema_version(
+        {
+            "generated_at": iso(now),
+            "sites": statuses,
+            "successful_sites": sum(1 for s in statuses if s["ok"]),
+            "failed_sites": [s["site_id"] for s in statuses if not s["ok"]],
+            "zero_item_sites": [s["site_id"] for s in statuses if s.get("ok") and int(s.get("item_count") or 0) == 0],
+            "fetched_raw_items": len(raw_items),
+            "items_before_topic_filter": len(latest_items_all),
+            "items_in_24h": len(latest_items_ai_dedup),
+            "rss_opml": {
+                "enabled": bool(args.rss_opml),
+                "path": "configured" if args.rss_opml else None,
+                "feed_total": len(rss_feed_statuses),
+                "effective_feed_total": sum(1 for s in rss_feed_statuses if not s.get("skipped")),
+                "ok_feeds": sum(1 for s in rss_feed_statuses if s["ok"] and not s.get("skipped")),
+                "failed_feeds": [s.get("effective_feed_url") or s["feed_url"] for s in rss_feed_statuses if not s["ok"]],
+                "zero_item_feeds": [
+                    s.get("effective_feed_url") or s["feed_url"]
+                    for s in rss_feed_statuses
+                    if s["ok"] and not s.get("skipped") and int(s.get("item_count") or 0) == 0
+                ],
+                "skipped_feeds": [
+                    {"feed_url": s["feed_url"], "reason": s.get("skip_reason")}
+                    for s in rss_feed_statuses
+                    if s.get("skipped")
+                ],
+                "replaced_feeds": [
+                    {"from": s["feed_url"], "to": s.get("effective_feed_url")}
+                    for s in rss_feed_statuses
+                    if s.get("replaced") and s.get("effective_feed_url")
+                ],
+                "feeds": rss_feed_statuses,
+            },
+            "agentmail": agentmail_status,
+            "x_api": x_api_status,
         },
-        "agentmail": agentmail_status,
-        "x_api": x_api_status,
-    }
+    )
 
     try:
         waytoagi_payload = fetch_waytoagi_recent_7d(session, now, WAYTOAGI_DEFAULT)
@@ -3373,6 +3394,7 @@ def main() -> int:
             "has_error": True,
             "error": str(exc),
         }
+    waytoagi_payload = with_schema_version(waytoagi_payload)
 
     latest_payload, latest_all_payload = build_latest_payloads(latest_payload)
 

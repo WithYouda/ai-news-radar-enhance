@@ -31,6 +31,7 @@ def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     assert "./assets/styles.css?v=reader-images-0605" in html
     assert "./assets/config.js?v=info-arch-0602" in html
+    assert "./assets/api-client.js?v=frontend-arch-0610" in html
     assert "./assets/app.js?v=reader-images-0605" in html
 
 
@@ -76,11 +77,12 @@ def test_verification_view_contract_exists():
 def test_ask_ai_sheet_contract_exists():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    api_js = (ROOT / "assets/api-client.js").read_text(encoding="utf-8")
     assert 'id="askAiSheet"' in html
     assert 'id="askAiInput"' in html
     assert "openAskAi" in js
     assert "submitAskAi" in js
-    assert "无法连接 AI 后端" in js
+    assert "无法连接 AI 后端" in api_js
 
 
 def test_ask_ai_global_history_contract_exists():
@@ -134,8 +136,9 @@ def test_ask_ai_continues_thread_and_hides_final_link_recommendations():
 
 def test_news_data_fetches_bypass_browser_cache():
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    api_js = (ROOT / "assets/api-client.js").read_text(encoding="utf-8")
     assert "fetchFreshJson" in js
-    assert 'cache: "no-store"' in js
+    assert 'cache: "no-store"' in api_js
     assert "fetch(`./data/latest-24h.json?t=${Date.now()}`)" not in js
 
 

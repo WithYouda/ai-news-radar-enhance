@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 from datetime import UTC, datetime
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .article_reader import fetch_clean_article, find_news_item
-from .ai_profiles import delete_ai_profile, get_ai_profile_for_use, list_ai_profiles, save_ai_profile
+from .ai_profiles import get_ai_profile_for_use
 from .assistant import answer_question, finalize_streaming_answer, prepare_streaming_answer, translate_clean_text
-from .auth import create_session, delete_session, store_session, validate_session
+from .auth import validate_session
 from .classifier import classify_item
 from .config import AppConfig
 from .conversations import (
@@ -28,14 +27,14 @@ from .conversations import (
 )
 from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
+from .routers.ai_profiles import build_ai_profiles_router
+from .routers.auth import SESSION_COOKIE, build_auth_router
 from .settings import get_settings, update_settings
 from .taxonomy import list_taxonomy, seed_default_taxonomy
 from .provider import AIProvider, AIProviderUnavailable
 from .verification import fetch_and_verify
 
 
-SESSION_COOKIE = "radar_session"
-SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 LEGACY_TOP_CATEGORY_BY_LABEL = {
     "ai_general": "模型与产品",
     "model_release": "模型与产品",
@@ -50,10 +49,6 @@ LEGACY_TOP_CATEGORY_BY_LABEL = {
     "robotics": "研究与评测",
     "industry_business": "公司与行业",
 }
-
-
-class LoginRequest(BaseModel):
-    password: str
 
 
 class ClassifyRequest(BaseModel):
@@ -81,18 +76,6 @@ class TranslateRequest(BaseModel):
     source_language: str = "auto"
 
 
-class AIProfileRequest(BaseModel):
-    id: str | None = None
-    name: str
-    type: str = "chat_completions"
-    base_url: str
-    model: str
-    api_key: str = ""
-    headers_json: str = ""
-    timeout_seconds: int = 45
-    enabled: bool = True
-
-
 def item_matches_category(item: dict, category: str) -> bool:
     labels = {
         str(item.get("top_category") or ""),
@@ -117,11 +100,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(build_auth_router(config))
 
     def require_session(radar_session: str | None = Cookie(default=None, alias=SESSION_COOKIE)) -> dict:
         if not radar_session or not validate_session(config.db_path, radar_session, config.session_secret):
             raise HTTPException(status_code=401, detail="Authentication required")
         return {"authenticated": True}
+
+    app.include_router(build_ai_profiles_router(config, require_session))
 
     def scoped_ask_items(scope_payload: dict) -> tuple[list[dict], str | None]:
         items, context_source = load_latest_items_with_source(config, mode="ai")
@@ -176,33 +162,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"ok": True}
-
-    @app.post("/api/auth/login")
-    def login(payload: LoginRequest, response: Response) -> dict:
-        if not config.admin_password or not hmac.compare_digest(payload.password, config.admin_password):
-            raise HTTPException(status_code=401, detail="Invalid password")
-        session_id = create_session(config)
-        store_session(config.db_path, session_id, config.session_secret)
-        response.set_cookie(
-            SESSION_COOKIE,
-            session_id,
-            httponly=True,
-            secure=True,
-            samesite="none",
-            max_age=SESSION_TTL_SECONDS,
-        )
-        return {"ok": True}
-
-    @app.post("/api/auth/logout")
-    def logout(response: Response, radar_session: str | None = Cookie(default=None, alias=SESSION_COOKIE)) -> dict:
-        if radar_session:
-            delete_session(config.db_path, radar_session, config.session_secret)
-        response.delete_cookie(SESSION_COOKIE, secure=True, samesite="none")
-        return {"ok": True}
-
-    @app.get("/api/me")
-    def me(session: dict = Depends(require_session)) -> dict:
-        return session
 
     @app.get("/api/taxonomy")
     def taxonomy() -> dict:
@@ -389,52 +348,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         result = fetch_and_verify(item, deep=True)
         result["deep_verified"] = True
         return store_verification_result(verification_storage_id(item_id, payload, item), item, result)
-
-    @app.get("/api/ai-profiles")
-    def ai_profiles(session: dict = Depends(require_session)) -> dict:
-        del session
-        return {"items": list_ai_profiles(config)}
-
-    @app.post("/api/ai-profiles")
-    def create_ai_profile(payload: AIProfileRequest, session: dict = Depends(require_session)) -> dict:
-        del session
-        try:
-            return save_ai_profile(config, payload.model_dump())
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    @app.put("/api/ai-profiles/{profile_id}")
-    def update_ai_profile(profile_id: str, payload: AIProfileRequest, session: dict = Depends(require_session)) -> dict:
-        del session
-        try:
-            return save_ai_profile(config, {**payload.model_dump(), "id": profile_id})
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    @app.delete("/api/ai-profiles/{profile_id}")
-    def remove_ai_profile(profile_id: str, session: dict = Depends(require_session)) -> dict:
-        del session
-        if not delete_ai_profile(config, profile_id):
-            raise HTTPException(status_code=404, detail="AI profile not found")
-        return {"ok": True}
-
-    @app.post("/api/ai-profiles/{profile_id}/test")
-    async def test_ai_profile(profile_id: str, session: dict = Depends(require_session)) -> dict:
-        del session
-        profile = get_ai_profile_for_use(config, profile_id)
-        if profile is None:
-            raise HTTPException(status_code=404, detail="AI profile not found")
-        try:
-            await AIProvider(config, profile=profile).chat(
-                [
-                    {"role": "system", "content": "You are testing an AI provider connection."},
-                    {"role": "user", "content": "Reply with ok."},
-                ],
-                temperature=0,
-            )
-        except AIProviderUnavailable as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {"ok": True, "model": profile.get("model") or config.ai_model}
 
     async def run_ask_payload(payload: AskRequest) -> dict:
         try:

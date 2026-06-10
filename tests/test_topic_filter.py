@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from scripts.update_news import (
+    NEWS_PAYLOAD_SCHEMA_VERSION,
     RawItem,
     build_agentmail_digest_payload,
     build_latest_payloads,
@@ -26,6 +27,7 @@ from scripts.update_news import (
     parse_follow_builders_items,
     parse_openai_codex_changelog_items,
     redact_public_text,
+    with_schema_version,
 )
 
 
@@ -395,6 +397,13 @@ class TopicFilterTests(unittest.TestCase):
     def test_redacts_email_like_public_text(self):
         self.assertEqual(redact_public_text("Contact editor@example.com for access"), "Contact [redacted-email] for access")
 
+    def test_with_schema_version_returns_versioned_copy(self):
+        payload = {"generated_at": "2026-05-03T00:00:00Z"}
+        versioned = with_schema_version(payload)
+
+        self.assertEqual(versioned["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
+        self.assertNotIn("schema_version", payload)
+
     def test_build_latest_payloads_keeps_initial_payload_slim(self):
         latest_payload = {
             "generated_at": "2026-05-03T00:00:00Z",
@@ -410,6 +419,8 @@ class TopicFilterTests(unittest.TestCase):
         self.assertIn("items_ai", slim)
         self.assertNotIn("items_all", slim)
         self.assertNotIn("items_all_raw", slim)
+        self.assertEqual(slim["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
+        self.assertEqual(all_payload["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
         self.assertEqual(all_payload["items_all"][0]["title"], "All post")
         self.assertEqual(all_payload["items_all_raw"][0]["title"], "Raw post")
 
@@ -435,6 +446,7 @@ class TopicFilterTests(unittest.TestCase):
         )
         item = payload["items"][0]
         dumped = str(payload)
+        self.assertEqual(payload["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
         self.assertEqual(payload["privacy"], "metadata_only_no_body")
         self.assertEqual(item["sender_domain"], "example.com")
         self.assertIn("[redacted-email]", item["subject"])
