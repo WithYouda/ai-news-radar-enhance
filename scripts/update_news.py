@@ -1021,8 +1021,11 @@ def fetch_iris(session: requests.Session, now: datetime) -> list[RawItem]:
     out: list[RawItem] = []
     for feed_name, feed_url in feeds:
         try:
+            feed_resp = session.get(feed_url, timeout=30)
+            feed_resp.raise_for_status()
+
             if feedparser is not None:
-                parsed = feedparser.parse(feed_url)
+                parsed = feedparser.parse(feed_resp.content)
                 source_name = str(feed_name or getattr(parsed, "feed", {}).get("title") or "Iris Feed")
                 for entry in parsed.entries:
                     title = str(entry.get("title", "")).strip()
@@ -1047,8 +1050,6 @@ def fetch_iris(session: requests.Session, now: datetime) -> list[RawItem]:
                     )
                 continue
 
-            feed_resp = session.get(feed_url, timeout=30)
-            feed_resp.raise_for_status()
             entries = parse_feed_entries_via_xml(feed_resp.content)
             source_name = str(feed_name or "Iris Feed")
             for entry in entries:

@@ -129,3 +129,61 @@ Prevention:
 - Include adversarial tests for orphan aliases, unsafe stale cached URLs,
   unavailable fallback caches, and unknown uncached ids so the reader does not
   become an arbitrary URL fetcher.
+
+## 2026-06-10: Update Workflow Freshness Was Treated As Guaranteed
+
+Symptoms:
+
+- `data/latest-24h.json` sometimes lagged several hours even though
+  `.github/workflows/update-news.yml` was scheduled twice per hour.
+- A push-triggered `Update AI News Snapshot` run could finish in about 90
+  seconds, while scheduled runs still had multi-hour gaps.
+
+Root causes:
+
+- GitHub Actions `schedule` is not a freshness SLA. GitHub documents that
+  scheduled workflows can be delayed during high load and queued jobs can be
+  dropped.
+- Recent run history showed scheduled run gaps of multiple hours despite the
+  cron expression being `17,47 * * * *`.
+- A single failed or cancelled update run leaves Pages serving the previous
+  generated data until the next successful run and Pages deployment.
+
+Prevention:
+
+- For user-visible freshness guarantees, do not rely only on GitHub Actions
+  `schedule`; use an external cron/monitor or the VPS to trigger
+  `workflow_dispatch`/repository updates when `generated_at` is stale.
+- After push-triggered updates, check both `Update AI News Snapshot` and the
+  following Pages deployment, then compare local and public
+  `data/latest-24h.json` `generated_at` values.
+- Keep an explicit stale-data alert path based on `generated_at`, not just
+  successful workflow history.
+
+## 2026-06-10: Feedparser URL Parsing Bypassed Request Timeouts
+
+Symptoms:
+
+- `Update data` normally completed in about 1-2 minutes, but one run stayed in
+  that step until the workflow-level 15 minute timeout cancelled it.
+- Logs showed no source-level progress after startup, making the stuck source
+  hard to identify from GitHub output alone.
+
+Root causes:
+
+- `fetch_iris()` called `feedparser.parse(feed_url)`, which lets feedparser
+  perform its own network request without the repository's `requests` timeout
+  and session settings.
+- Built-in sources run serially in `collect_all()`, so one unbounded source can
+  block all later sources and prevent JSON publication.
+
+Prevention:
+
+- Never pass a URL directly to `feedparser.parse()` in production fetchers.
+  Fetch with `session.get(..., timeout=...)` or `requests.get(..., timeout=...)`
+  first, then parse response bytes.
+- Add tests that prove subfeeds are fetched with explicit timeouts and that one
+  timed-out subfeed does not prevent later subfeeds from being processed.
+- When adding a source, check all network calls with `rg -n
+  "feedparser\\.parse|requests\\.|session\\." scripts/update_news.py` and make
+  sure every external request has a bounded timeout.
