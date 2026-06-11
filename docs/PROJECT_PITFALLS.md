@@ -187,3 +187,35 @@ Prevention:
 - When adding a source, check all network calls with `rg -n
   "feedparser\\.parse|requests\\.|session\\." scripts/update_news.py` and make
   sure every external request has a bounded timeout.
+
+## 2026-06-11: X Status Pages Were Treated Like Fetchable Articles
+
+Symptoms:
+
+- Follow Builders / X items could show only the collected post title in the
+  news list.
+- Opening the clean reader for an `x.com/.../status/...` URL tried to fetch the
+  X web page, which commonly returns a JavaScript/login/error shell instead of
+  readable article HTML.
+- Cached X fallback entries could keep showing `暂时无法清洗原文` even when the
+  project already had enough public post text in the news item itself.
+
+Root causes:
+
+- The reader treated X status URLs like ordinary article pages.
+- The X post text collected from public feeds or X API-style records lives on
+  the news item, not in fetchable `x.com` HTML.
+
+Prevention:
+
+- For X/Twitter status URLs, prefer existing public item text as the clean
+  article body before attempting any web fetch.
+- Do not apply the X status fallback to non-status X pages such as profiles.
+- When changing X reader behavior, cover direct X status fallback, stale X error
+  shell cache replacement, fresh unavailable X fallback replacement, and
+  non-status X URLs.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_ai_backend_article_reader.py -k "x_status or x_error_shell or x_unavailable or profile_page"
+  ```

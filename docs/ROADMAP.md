@@ -101,3 +101,57 @@ Goal: move beyond per-item filtering and represent the same event as one story w
 - No cross-language deep semantic matching unless the rule-based event merge proves insufficient.
 - No automatic deletion of sources based only on overlap score.
 - No change to the public page layout unless the story data model is stable.
+
+## Later — Optional Heavy Full-Text Fetch Fallback
+
+Goal: improve clean-article coverage for high-value public pages that fail the
+lightweight reader path, without making browser automation part of the default
+public update workflow.
+
+### Deferred option
+
+- Consider Crawl4AI only as an opt-in full-text fallback after lighter options
+  such as direct HTTP extraction, Trafilatura, and Jina Reader have been tested.
+- Keep it out of the default GitHub Actions update path because it depends on
+  Playwright/Chromium and is much heavier than RSS/API/static HTML fetchers.
+- If adopted, run it as an isolated localhost-only sidecar on a sufficiently
+  provisioned VPS, with explicit enablement, strict URL safety checks, single or
+  low concurrency, short timeouts, cache-first behavior, and source/result
+  status logging.
+
+### Current decision
+
+Do not adopt Crawl4AI on the current 2-core, 1.6 GiB RAM VPS as a production
+dependency. The server has no swap and limited available memory, while
+Crawl4AI's browser runtime is closer to a headless-browser service than a
+lightweight parser.
+
+### Testing note
+
+No tests are required while this remains a roadmap-only item. Before any future
+implementation, add regression and adversarial coverage for direct-fetch
+success, fallback selection, timeout handling, unsafe URL rejection, cache reuse,
+and disabled-by-default behavior.
+
+## Later — Optional X API Source Expansion
+
+Goal: keep direct X API usage available as a private, opt-in advanced source
+without making the public default depend on paid X reads or maintainer-owned
+tokens.
+
+### Deferred option
+
+- Keep `X_API_ENABLED=0` as the public default.
+- Prefer existing public generated feeds such as Follow Builders for default
+  X/builder coverage.
+- Consider direct X API only for a maintainer-owned private profile that tracks
+  a small allowlist of high-signal public accounts.
+- Keep the adapter budget-capped with `X_API_MAX_RESULTS`,
+  `X_API_DAILY_POST_LIMIT`, and the once-daily run window.
+
+### Testing note
+
+No additional tests are required while this remains a roadmap-only item. Before
+expanding direct X API usage, add coverage for default-off behavior, missing
+token handling, cost-cap/run-window gating, query length validation, API failure
+status reporting, and deduplication against Follow Builders items.

@@ -933,10 +933,14 @@ def _cached_article_age_seconds(article: dict) -> float | None:
 
 def _should_retry_cached_article(article: dict) -> bool:
     status = str(article.get("access_status") or "").strip().lower()
+    url = str(article.get("url") or article.get("final_url") or "")
+    text = str(article.get("text") or "")
+    if _is_x_status_url(url) and status == "unavailable" and "暂时无法清洗原文" in text:
+        return True
     if status == "unavailable":
         age_seconds = _cached_article_age_seconds(article)
         return age_seconds is None or age_seconds >= UNAVAILABLE_CACHE_RETRY_AFTER_SECONDS
-    if _is_x_error_shell(str(article.get("url") or article.get("final_url") or ""), article):
+    if _is_x_error_shell(url, article):
         return True
     if status == "open" and len(_compact_text(str(article.get("text") or ""))) < 50:
         age_seconds = _cached_article_age_seconds(article)
@@ -1049,6 +1053,62 @@ def _is_x_error_shell(url: str, article: dict) -> bool:
         return False
     text = _compact_text(str(article.get("text") or ""))
     return bool(text and X_ERROR_SHELL_RE.search(text))
+
+
+def _x_post_text_from_item(item: dict) -> str:
+    meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+    candidates = (
+        meta.get("post_text") if meta else "",
+        meta.get("tweet_text") if meta else "",
+        meta.get("text") if meta else "",
+        item.get("post_text"),
+        item.get("tweet_text"),
+        item.get("article_text"),
+        item.get("text"),
+        item.get("title"),
+    )
+    for value in candidates:
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        compact = _compact_text(text)
+        if compact and compact not in {"未命名文章", "Untitled"}:
+            return text
+    return ""
+
+
+def _text_to_paragraph_html(text: str) -> str:
+    blocks = [block.strip() for block in re.split(r"\n{2,}", text.strip()) if block.strip()]
+    if not blocks and text.strip():
+        blocks = [text.strip()]
+    return "".join(f"<p>{html.escape(block).replace(chr(10), '<br>')}</p>" for block in blocks)
+
+
+def _x_status_article_from_item(item: dict, *, item_id: str, url: str) -> dict | None:
+    if not _is_x_status_url(url):
+        return None
+    text = _x_post_text_from_item(item)
+    if not _compact_text(text):
+        return None
+    title = _compact_text(str(item.get("title") or text)) or "X post"
+    language = _detect_language(BeautifulSoup("", "html.parser"), text)
+    return {
+        "item_id": item_id,
+        "url": url,
+        "final_url": url,
+        "title": title,
+        "site_name": str(item.get("site_name") or item.get("source") or "X"),
+        "byline": str(item.get("source") or ""),
+        "published_at": str(item.get("published_at") or item.get("first_seen_at") or ""),
+        "language": language,
+        "access_status": "open",
+        "access_label": "",
+        "translation_available": language not in {"", "unknown", "zh", "zh-cn", "zh-tw"},
+        "excerpt": _compact_text(text)[:260],
+        "text": text,
+        "content_html": _text_to_paragraph_html(text),
+        "fetched_at": _now(),
+        "cache_status": "miss",
+        "item": item,
+    }
 
 
 def _google_news_locale(url: str) -> tuple[str, str, str]:
@@ -1171,6 +1231,11 @@ def fetch_clean_article(config, item: dict, timeout_seconds: int = 6) -> dict:
     url = normalize_public_url(str(item.get("url") or ""))
     if not _is_safe_public_url(url):
         raise ValueError("Unsupported article URL")
+
+    x_status_article = _x_status_article_from_item(item, item_id=item_id, url=url)
+    if x_status_article:
+        store_article(config.db_path, x_status_article)
+        return x_status_article
 
     fetch_url = url
     from_google_news = _is_google_news_url(url)

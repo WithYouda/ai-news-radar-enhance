@@ -1388,7 +1388,7 @@ def test_fetch_clean_article_retries_transient_transport_timeout(monkeypatch, tm
     assert len(calls) == 2
 
 
-def test_fetch_clean_article_treats_x_error_shell_as_unavailable(monkeypatch, tmp_path):
+def test_fetch_clean_article_uses_x_status_text_without_fetching_x_shell(monkeypatch, tmp_path):
     item = {
         "title": "NotebookLM source attribution update",
         "url": "https://x.com/NotebookLM/status/2062653124326863077",
@@ -1406,26 +1406,63 @@ def test_fetch_clean_article_treats_x_error_shell_as_unavailable(monkeypatch, tm
     )
     init_db(config.db_path)
 
+    def fail_get(*args, **kwargs):
+        raise AssertionError("x.com status pages should use collected post text instead of fetching the shell")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["access_status"] == "open"
+    assert payload["cache_status"] == "miss"
+    assert "Something went wrong" not in payload["text"]
+    assert payload["text"] == "NotebookLM source attribution update"
+    assert "NotebookLM source attribution update" in payload["content_html"]
+    assert "暂时无法清洗原文" not in payload["content_html"]
+
+
+def test_fetch_clean_article_does_not_use_x_status_fallback_for_profile_page(monkeypatch, tmp_path):
+    item = {
+        "title": "NotebookLM profile update",
+        "url": "https://x.com/NotebookLM",
+        "site_name": "X",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+    calls = 0
+
     class Response:
         url = item["url"]
         text = """
-        <html><body><main>
-          <p>Something went wrong, but don’t fret — let’s give it another shot.</p>
-          <p>⚠️</p>
-        </main></body></html>
+        <html><body><article>
+          <p>The profile page body was fetched through the normal reader path.</p>
+        </article></body></html>
         """
 
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", lambda *args, **kwargs: Response())
+    def fake_get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
 
     payload = fetch_clean_article(config, item)
 
-    assert payload["access_status"] == "unavailable"
-    assert "Something went wrong" not in payload["text"]
-    assert "NotebookLM source attribution update" in payload["text"]
-    assert "<img" not in payload["content_html"]
+    assert calls == 1
+    assert payload["access_status"] == "open"
+    assert "profile page body" in payload["text"]
 
 
 def test_fetch_clean_article_retries_cached_x_error_shell(monkeypatch, tmp_path):
@@ -1465,27 +1502,66 @@ def test_fetch_clean_article_retries_cached_x_error_shell(monkeypatch, tmp_path)
             "fetched_at": "2026-06-05T00:00:00Z",
         },
     )
-    calls = 0
-
-    class Response:
-        url = item["url"]
-        text = "<html><body><p>Something went wrong, but don’t fret — let’s give it another shot.</p><p>⚠️</p></body></html>"
-
-        def raise_for_status(self):
-            return None
-
     def fake_get(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return Response()
+        raise AssertionError("stale x.com shells should be replaced from collected post text without refetching")
 
     monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
 
     payload = fetch_clean_article(config, item)
 
-    assert calls == 1
-    assert payload["access_status"] == "unavailable"
+    assert payload["access_status"] == "open"
+    assert payload["text"] == "NotebookLM source attribution update"
     assert "Something went wrong" not in payload["text"]
+
+
+def test_fetch_clean_article_replaces_fresh_x_unavailable_fallback(monkeypatch, tmp_path):
+    item = {
+        "title": "NotebookLM source attribution update",
+        "url": "https://x.com/NotebookLM/status/2062653124326863077",
+        "site_name": "X",
+    }
+    config = AppConfig(
+        public_base_url="https://withyouda.github.io/ai-news-radar-enhance",
+        allowed_origins=["https://withyouda.github.io"],
+        admin_password="pass",
+        session_secret="session-secret",
+        db_path=tmp_path / "radar.db",
+        ai_base_url="https://api.example.com/v1",
+        ai_api_key="sk-test",
+        ai_model="test-model",
+    )
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": "X",
+            "byline": "",
+            "published_at": "",
+            "excerpt": "NotebookLM source attribution update\n\n暂时无法清洗原文。可打开原文查看。",
+            "text": "NotebookLM source attribution update\n\n暂时无法清洗原文。可打开原文查看。",
+            "content_html": "<p>暂时无法清洗原文。</p>",
+            "access_status": "unavailable",
+            "access_label": "暂时无法清洗原文",
+            "language": "zh",
+            "fetched_at": article_reader._now(),
+        },
+    )
+
+    def fake_get(*args, **kwargs):
+        raise AssertionError("fresh x.com unavailable fallback should be replaced from collected post text")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fake_get)
+
+    payload = fetch_clean_article(config, item)
+
+    assert payload["access_status"] == "open"
+    assert payload["text"] == "NotebookLM source attribution update"
+    assert "暂时无法清洗原文" not in payload["text"]
 
 
 def test_read_article_endpoint_retries_cached_unavailable_article(monkeypatch, tmp_path):
