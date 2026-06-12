@@ -511,6 +511,8 @@ def _image_figure_html(img, base_url: str, caption: str = "") -> tuple[str, str]
     image_html = f'<img src="{html.escape(src, quote=True)}"'
     if alt:
         image_html += f' alt="{html.escape(alt, quote=True)}"'
+    if _is_wechat_hotlinked_image(src, base_url):
+        image_html += ' referrerpolicy="no-referrer"'
     image_html += ">"
     clean_caption = _compact_text(caption)
     caption_html = f"<figcaption>{html.escape(clean_caption)}</figcaption>" if clean_caption else ""
@@ -634,6 +636,31 @@ def _article_image_count(article: dict) -> int:
 def _is_yahoo_finance_url(url: str) -> bool:
     host = (urlsplit(str(url or "")).hostname or "").lower()
     return host == "finance.yahoo.com" or host.endswith(".finance.yahoo.com")
+
+
+def _is_weixin_article_url(url: str) -> bool:
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    return host == "mp.weixin.qq.com" or host.endswith(".mp.weixin.qq.com")
+
+
+def _is_wechat_hotlinked_image(src: str, page_url: str) -> bool:
+    if not _is_weixin_article_url(page_url):
+        return False
+    host = (urlsplit(str(src or "")).hostname or "").lower()
+    return host == "mmbiz.qpic.cn" or host.endswith(".mmbiz.qpic.cn")
+
+
+def _with_wechat_image_referrer_policy(content_html: str, page_url: str) -> str:
+    if not _is_weixin_article_url(page_url) or "mmbiz.qpic.cn" not in str(content_html or ""):
+        return content_html
+    soup = BeautifulSoup(content_html or "", "html.parser")
+    changed = False
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or "").strip()
+        if _is_wechat_hotlinked_image(src, page_url):
+            img["referrerpolicy"] = "no-referrer"
+            changed = True
+    return str(soup) if changed else content_html
 
 
 def _following_block_text(node, *, limit: int = 4) -> str:
@@ -778,7 +805,7 @@ def _article_from_cache_row(row) -> dict:
         "access_label": row["access_label"],
         "excerpt": row["excerpt"],
         "text": row["text"],
-        "content_html": row["content_html"],
+        "content_html": _with_wechat_image_referrer_policy(row["content_html"], row["final_url"] or row["url"]),
         "fetched_at": row["fetched_at"],
         "cache_status": "hit",
     }

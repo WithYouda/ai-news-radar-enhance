@@ -440,6 +440,58 @@ def test_extract_article_uses_aibase_lazy_image_instead_of_placehold_placeholder
     assert "placehold.co" not in payload["content_html"]
 
 
+def test_extract_article_adds_no_referrer_to_wechat_images_from_weixin_articles():
+    payload = extract_article_from_html(
+        """
+        <html lang="zh">
+          <body>
+            <div id="js_content">
+              <p>这篇微信公众号文章介绍模型发布背景、产品能力和上线计划，正文长度足够被阅读器识别为主内容。</p>
+              <p><img data-src="https://mmbiz.qpic.cn/mmbiz_jpg/demo/640?wx_fmt=jpeg" alt="产品截图"></p>
+              <figure>
+                <img src="https://mmbiz.qpic.cn/sz_mmbiz_png/demo/640?wx_fmt=png" alt="架构图">
+              </figure>
+              <p>第二段继续说明技术细节、用户影响和后续安排，确保测试覆盖微信图床图片过滤。</p>
+            </div>
+          </body>
+        </html>
+        """,
+        url="https://mp.weixin.qq.com/s/example",
+        fallback_title="WeChat article",
+    )
+
+    assert "模型发布背景" in payload["text"]
+    assert "技术细节" in payload["text"]
+    assert payload["content_html"].count("mmbiz.qpic.cn") == 2
+    assert payload["content_html"].count('referrerpolicy="no-referrer"') == 2
+    assert "产品截图" in payload["text"]
+    assert payload["content_html"].count("<figure>") == 2
+
+
+def test_extract_article_keeps_same_wechat_cdn_images_on_non_weixin_pages():
+    payload = extract_article_from_html(
+        """
+        <html lang="zh">
+          <body>
+            <article>
+              <p>这篇普通网页文章介绍模型发布背景、产品能力和上线计划，正文长度足够被阅读器识别为主内容。</p>
+              <figure>
+                <img src="https://mmbiz.qpic.cn/mmbiz_jpg/demo/640?wx_fmt=jpeg" alt="授权转载截图">
+              </figure>
+              <p>第二段继续说明技术细节、用户影响和后续安排，确保非微信页面仍按普通图片规则处理。</p>
+            </article>
+          </body>
+        </html>
+        """,
+        url="https://example.com/reposted-wechat-story",
+        fallback_title="Reposted article",
+    )
+
+    assert "mmbiz.qpic.cn" in payload["content_html"]
+    assert "授权转载截图" in payload["text"]
+    assert 'referrerpolicy="no-referrer"' not in payload["content_html"]
+
+
 def test_extract_article_keeps_standalone_reader_images():
     payload = extract_article_from_html(
         """
@@ -945,6 +997,55 @@ def test_read_article_endpoint_returns_canonical_cache_without_news_lookup(monke
     assert res.json()["cache_status"] == "hit"
     assert res.json()["title"] == "Cached clean title"
     assert lookup_calls == 0
+
+
+def test_read_article_endpoint_upgrades_cached_wechat_images_without_refetch(monkeypatch, tmp_path):
+    config, item = _config(tmp_path)
+    item.update(
+        {
+            "title": "Cached WeChat article",
+            "url": "https://mp.weixin.qq.com/s/example",
+            "site_name": "WeChat",
+        }
+    )
+    _write_latest_data(config, item)
+    init_db(config.db_path)
+    identity = item_identity(item)
+    store_article(
+        config.db_path,
+        {
+            "item_id": identity,
+            "url": item["url"],
+            "final_url": item["url"],
+            "title": item["title"],
+            "site_name": item["site_name"],
+            "byline": "",
+            "published_at": item["published_at"],
+            "excerpt": "Cached WeChat body",
+            "text": "Cached WeChat body with enough detail to reuse without fetching the original article again.",
+            "content_html": (
+                '<p>Cached WeChat body with enough detail to reuse.</p>'
+                '<figure><img src="https://mmbiz.qpic.cn/mmbiz_jpg/demo/640?wx_fmt=jpeg" alt="产品截图"></figure>'
+            ),
+            "access_status": "open",
+            "access_label": "",
+            "language": "en",
+            "fetched_at": article_reader._now(),
+        },
+    )
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError("cached WeChat article should be upgraded without refetching")
+
+    monkeypatch.setattr("server.ai_radar_api.article_reader._http_get", fail_get)
+    client = TestClient(create_app(config), base_url="https://testserver")
+
+    res = client.get(f"/api/read/{identity}")
+
+    assert res.status_code == 200
+    assert res.json()["cache_status"] == "hit"
+    assert 'referrerpolicy="no-referrer"' in res.json()["content_html"]
+    assert "mmbiz.qpic.cn" in res.json()["content_html"]
 
 
 def test_read_article_endpoint_returns_alias_cache_without_news_lookup(monkeypatch, tmp_path):

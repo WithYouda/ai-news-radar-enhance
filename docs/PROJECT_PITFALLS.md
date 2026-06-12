@@ -219,3 +219,33 @@ Prevention:
   ```bash
   python3 -m pytest -q tests/test_ai_backend_article_reader.py -k "x_status or x_error_shell or x_unavailable or profile_page"
   ```
+
+## 2026-06-12: WeChat Hotlinked Images Rendered As Anti-Leech Placeholders
+
+Symptoms:
+
+- Clean reader output for `mp.weixin.qq.com` articles showed many image blocks
+  as `此图片来自微信公共号，未经允许不可引用`.
+
+Root causes:
+
+- The backend preserved `mmbiz.qpic.cn` image URLs in clean article HTML.
+- Browsers then loaded those WeChat CDN images from the AI News Radar origin,
+  where WeChat returns an anti-hotlink placeholder instead of the real image.
+
+Prevention:
+
+- For `mp.weixin.qq.com` pages, keep `mmbiz.qpic.cn` images but emit
+  `referrerpolicy="no-referrer"` so the browser does not send the AI News Radar
+  page as the image request referrer.
+- Apply the attribute only to WeChat article pages; do not change the same CDN
+  URLs when they appear on ordinary pages.
+- Upgrade cached WeChat clean HTML on read so previously cached articles do not
+  keep returning image tags without the referrer policy.
+- Cover lazy `data-src`, direct `src`, cache hits, and a non-WeChat page that
+  should still follow normal image rules.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_ai_backend_article_reader.py -k "upgrades_cached_wechat or weixin or wechat_cdn"
+  ```
