@@ -51,6 +51,63 @@ const READER_FACT_CHECK_PROMPT = `请对这篇文章做基于当前雷达上下�
 4. 不要编造证据；证据不足时明确说证据不足
 5. 最后给出可信度：高/中/低，并说明原因`;
 
+const SOURCE_PREF_STORAGE_KEY = "aiNewsRadar.sourcePrefs.v1";
+const SOURCE_GROUP_PREVIEW_COUNT = 2;
+const SOURCE_ITEM_PREVIEW_COUNT = 3;
+
+function emptySourcePrefs() {
+  return {
+    siteOrder: [],
+    hiddenSites: [],
+    sourceOrderBySite: {},
+    hiddenSourcesBySite: {},
+  };
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean)));
+}
+
+function sanitizeSourcePrefs(raw) {
+  const defaults = emptySourcePrefs();
+  const prefs = raw && typeof raw === "object" ? raw : {};
+  const sourceOrderBySite = {};
+  const hiddenSourcesBySite = {};
+  Object.entries(prefs.sourceOrderBySite || {}).forEach(([siteId, sources]) => {
+    sourceOrderBySite[String(siteId)] = uniqueStrings(sources);
+  });
+  Object.entries(prefs.hiddenSourcesBySite || {}).forEach(([siteId, sources]) => {
+    hiddenSourcesBySite[String(siteId)] = uniqueStrings(sources);
+  });
+  return {
+    ...defaults,
+    siteOrder: uniqueStrings(prefs.siteOrder),
+    hiddenSites: uniqueStrings(prefs.hiddenSites),
+    sourceOrderBySite,
+    hiddenSourcesBySite,
+  };
+}
+
+function loadSourcePrefs() {
+  try {
+    if (!window.localStorage) return emptySourcePrefs();
+    const raw = window.localStorage.getItem(SOURCE_PREF_STORAGE_KEY);
+    if (!raw) return emptySourcePrefs();
+    return sanitizeSourcePrefs(JSON.parse(raw));
+  } catch (_) {
+    return emptySourcePrefs();
+  }
+}
+
+function saveSourcePrefs() {
+  state.sourcePrefs = sanitizeSourcePrefs(state.sourcePrefs);
+  try {
+    if (window.localStorage) window.localStorage.setItem(SOURCE_PREF_STORAGE_KEY, JSON.stringify(state.sourcePrefs));
+  } catch (_) {
+    // Local preferences are best-effort only.
+  }
+}
+
 const state = {
   itemsAi: [],
   itemsAll: [],
@@ -69,6 +126,12 @@ const state = {
   waytoagiMode: "today",
   mobileView: "today",
   categoryFilter: "",
+  expandedSites: new Set(),
+  expandedSourceGroups: new Set(),
+  sourceSortExpandedSites: new Set(),
+  sourceSortSelection: new Set(),
+  sourcePointerDrag: null,
+  sourcePrefs: loadSourcePrefs(),
   taxonomy: [],
   verificationPayload: null,
   askContext: {},
@@ -112,6 +175,10 @@ const allDedupeToggleEl = document.getElementById("allDedupeToggle");
 const allDedupeLabelEl = document.getElementById("allDedupeLabel");
 const advancedSummaryEl = document.getElementById("advancedSummary");
 const sourceHealthEl = document.getElementById("sourceHealth");
+const dataDrawerButtonEl = document.getElementById("dataDrawerButton");
+const dataDrawerEl = document.getElementById("dataDrawer");
+const dataDrawerCloseEl = document.getElementById("dataDrawerClose");
+const dataDrawerMetaEl = document.getElementById("dataDrawerMeta");
 
 const waytoagiUpdatedAtEl = document.getElementById("waytoagiUpdatedAt");
 const waytoagiMetaEl = document.getElementById("waytoagiMeta");
@@ -121,6 +188,16 @@ const waytoagi7dBtnEl = document.getElementById("waytoagi7dBtn");
 const coverageStripEl = document.getElementById("coverageStrip");
 const bolePicksListEl = document.getElementById("bolePicksList");
 const bolePicksMetaEl = document.getElementById("bolePicksMeta");
+const sourceSortButtonEl = document.getElementById("sourceSortButton");
+const sourceHiddenButtonEl = document.getElementById("sourceHiddenButton");
+const sourceHiddenCountEl = document.getElementById("sourceHiddenCount");
+const sourceSortDialogEl = document.getElementById("sourceSortDialog");
+const sourceSortListEl = document.getElementById("sourceSortList");
+const sourceSortBlockButtonEl = document.getElementById("sourceSortBlockButton");
+const sourceSortCloseEl = document.getElementById("sourceSortClose");
+const sourceHiddenDialogEl = document.getElementById("sourceHiddenDialog");
+const sourceHiddenListEl = document.getElementById("sourceHiddenList");
+const sourceHiddenCloseEl = document.getElementById("sourceHiddenClose");
 const askAiButtonEl = document.getElementById("askAiButton");
 const categoryMetaEl = document.getElementById("categoryMeta");
 const categoryGridEl = document.getElementById("categoryGrid");
@@ -2247,6 +2324,10 @@ function renderVerificationView(payload) {
 function getFilteredItems() {
   const q = state.query.trim().toLowerCase();
   return modeItems().filter((item) => {
+    const siteId = item.site_id || "";
+    const source = item.source || "未分区";
+    if (isSiteHidden(siteId)) return false;
+    if (isSourceHidden(siteId, source)) return false;
     if (state.siteFilter && item.site_id !== state.siteFilter) return false;
     if (!q) return true;
     const hay = `${item.title || ""} ${item.title_zh || ""} ${item.title_en || ""} ${item.site_name || ""} ${item.source || ""}`.toLowerCase();
@@ -2256,6 +2337,384 @@ function getFilteredItems() {
 
 function itemTitleText(item) {
   return (item.title_zh || item.title || item.title_en || "未命名更新").trim();
+}
+
+function sourceGroupKey(siteId, source) {
+  return `${siteId || ""}::${source || ""}`;
+}
+
+function sourcePreferenceHiddenCount() {
+  const prefs = state.sourcePrefs || emptySourcePrefs();
+  return uniqueStrings(prefs.hiddenSites).length
+    + Object.values(prefs.hiddenSourcesBySite || {}).reduce((sum, sources) => sum + uniqueStrings(sources).length, 0);
+}
+
+function sourcePrefsHiddenSourceSet(siteId) {
+  return new Set(uniqueStrings(state.sourcePrefs?.hiddenSourcesBySite?.[siteId]));
+}
+
+function isSiteHidden(siteId) {
+  return uniqueStrings(state.sourcePrefs?.hiddenSites).includes(siteId);
+}
+
+function isSourceHidden(siteId, source) {
+  return sourcePrefsHiddenSourceSet(siteId).has(source);
+}
+
+function sourceOrderIndex(siteId, source) {
+  const order = uniqueStrings(state.sourcePrefs?.sourceOrderBySite?.[siteId]);
+  const index = order.indexOf(source);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function siteOrderIndex(siteId) {
+  const order = uniqueStrings(state.sourcePrefs?.siteOrder);
+  const index = order.indexOf(siteId);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function toggleDataDrawer(forceOpen) {
+  if (!dataDrawerEl || !dataDrawerButtonEl) return;
+  const willOpen = typeof forceOpen === "boolean" ? forceOpen : dataDrawerEl.hidden;
+  dataDrawerEl.hidden = !willOpen;
+  dataDrawerButtonEl.setAttribute("aria-expanded", String(willOpen));
+}
+
+function openDataDrawer() {
+  toggleDataDrawer(true);
+}
+
+function closeDataDrawer() {
+  toggleDataDrawer(false);
+}
+
+function renderDataDrawerMeta() {
+  if (!dataDrawerMetaEl) return;
+  const status = state.sourceStatus;
+  const sites = Array.isArray(status?.sites) ? status.sites : [];
+  const ok = Number(status?.successful_sites || 0);
+  const total = sites.length || Number(state.statsAi?.length || 0);
+  dataDrawerMetaEl.textContent = total ? `${fmtNumber(ok || total)}/${fmtNumber(total)} 源可用` : "数据加载中";
+}
+
+function updateSourceHiddenButton() {
+  if (!sourceHiddenCountEl) return;
+  sourceHiddenCountEl.textContent = `已屏蔽 ${fmtNumber(sourcePreferenceHiddenCount())}`;
+}
+
+function moveBefore(list, item, beforeItem) {
+  const values = uniqueStrings(list);
+  const without = values.filter((value) => value !== item);
+  const beforeIndex = without.indexOf(beforeItem);
+  if (beforeIndex === -1) {
+    without.push(item);
+  } else {
+    without.splice(beforeIndex, 0, item);
+  }
+  return without;
+}
+
+function sourceSelectionKey(type, siteId, source = "") {
+  return type === "source" ? `source::${siteId}::${source}` : `site::${siteId}`;
+}
+
+function parseSourceSelectionKey(key) {
+  const parts = String(key || "").split("::");
+  return {
+    type: parts[0],
+    siteId: parts[1] || "",
+    source: parts.slice(2).join("::"),
+  };
+}
+
+function buildSourceTree(items, includeHidden = true) {
+  const siteMap = new Map();
+  items.forEach((item) => {
+    const siteId = item.site_id || item.site_name || "unknown";
+    const source = item.source || "未分区";
+    if (!includeHidden && (isSiteHidden(siteId) || isSourceHidden(siteId, source))) return;
+    if (!siteMap.has(siteId)) {
+      siteMap.set(siteId, {
+        siteId,
+        siteName: item.site_name || siteId,
+        items: [],
+        sourceMap: new Map(),
+      });
+    }
+    const site = siteMap.get(siteId);
+    site.items.push(item);
+    if (!site.sourceMap.has(source)) site.sourceMap.set(source, []);
+    site.sourceMap.get(source).push(item);
+  });
+
+  return Array.from(siteMap.values())
+    .map((site) => ({
+      ...site,
+      sources: Array.from(site.sourceMap.entries())
+        .map(([source, sourceItems]) => ({ source, items: sourceItems }))
+        .sort((a, b) => {
+          const byOrder = sourceOrderIndex(site.siteId, a.source) - sourceOrderIndex(site.siteId, b.source);
+          if (byOrder !== 0) return byOrder;
+          return b.items.length - a.items.length || a.source.localeCompare(b.source, "zh-CN");
+        }),
+    }))
+    .sort((a, b) => {
+      const byOrder = siteOrderIndex(a.siteId) - siteOrderIndex(b.siteId);
+      if (byOrder !== 0) return byOrder;
+      return b.items.length - a.items.length || a.siteName.localeCompare(b.siteName, "zh-CN");
+    });
+}
+
+function currentSourceTree(includeHidden = true) {
+  return buildSourceTree(modeItems(), includeHidden);
+}
+
+function renderDragGrip() {
+  const grip = document.createElement("span");
+  grip.className = "drag-grip";
+  grip.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < 4; i += 1) {
+    grip.appendChild(document.createElement("span"));
+  }
+  return grip;
+}
+
+function renderSelectToggle(key) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "source-select-toggle";
+  button.setAttribute("aria-label", "选择来源");
+  button.setAttribute("aria-pressed", String(state.sourceSortSelection.has(key)));
+  button.classList.toggle("selected", state.sourceSortSelection.has(key));
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (state.sourceSortSelection.has(key)) {
+      state.sourceSortSelection.delete(key);
+    } else {
+      state.sourceSortSelection.add(key);
+    }
+    renderSourceSortDialog();
+  });
+  return button;
+}
+
+function renderSourceSortRowText(title, meta) {
+  const text = document.createElement("div");
+  text.className = "source-sort-row-text";
+  const titleEl = document.createElement("strong");
+  titleEl.textContent = title;
+  const metaEl = document.createElement("span");
+  metaEl.textContent = meta;
+  text.append(titleEl, metaEl);
+  return text;
+}
+
+function renderSourceSortDialog() {
+  if (!sourceSortListEl) return;
+  const tree = currentSourceTree(false);
+  sourceSortListEl.innerHTML = "";
+  if (!tree.length) {
+    const empty = document.createElement("div");
+    empty.className = "source-control-empty";
+    empty.textContent = "当前没有可排序的来源。";
+    sourceSortListEl.appendChild(empty);
+    return;
+  }
+
+  tree.forEach((site) => {
+    const siteWrap = document.createElement("section");
+    siteWrap.className = "source-sort-site";
+    const row = document.createElement("div");
+    row.className = "source-sort-row";
+    row.dataset.sortType = "site";
+    row.dataset.siteId = site.siteId;
+
+    const left = document.createElement("div");
+    left.className = "source-sort-row-main";
+    const grip = renderDragGrip();
+    grip.addEventListener("pointerdown", (event) => handleSourceSortPointerStart(event, "site", site.siteId));
+    left.append(grip, renderSourceSortRowText(site.siteName, `${fmtNumber(site.items.length)} 条 · ${fmtNumber(site.sources.length)} 个来源`));
+
+    const expand = document.createElement("button");
+    expand.type = "button";
+    expand.className = "source-expand-toggle";
+    const isExpanded = state.sourceSortExpandedSites.has(site.siteId);
+    expand.textContent = isExpanded ? "收起" : "展开";
+    expand.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (isExpanded) {
+        state.sourceSortExpandedSites.delete(site.siteId);
+      } else {
+        state.sourceSortExpandedSites.add(site.siteId);
+      }
+      renderSourceSortDialog();
+    });
+
+    const right = document.createElement("div");
+    right.className = "source-sort-row-actions";
+    right.append(expand, renderSelectToggle(sourceSelectionKey("site", site.siteId)));
+
+    row.append(left, right);
+    siteWrap.appendChild(row);
+
+    if (isExpanded) {
+      const subList = document.createElement("div");
+      subList.className = "source-sort-sub-list";
+      site.sources.forEach((sourceRow) => {
+        const sourceNode = document.createElement("div");
+        sourceNode.className = "source-sort-sub-row";
+        sourceNode.dataset.sortType = "source";
+        sourceNode.dataset.siteId = site.siteId;
+        sourceNode.dataset.source = sourceRow.source;
+
+        const sourceLeft = document.createElement("div");
+        sourceLeft.className = "source-sort-row-main";
+        const sourceGrip = renderDragGrip();
+        sourceGrip.addEventListener("pointerdown", (event) => handleSourceSortPointerStart(event, "source", site.siteId, sourceRow.source));
+        sourceLeft.append(sourceGrip, renderSourceSortRowText(sourceRow.source, `${fmtNumber(sourceRow.items.length)} 条`));
+        sourceNode.append(sourceLeft, renderSelectToggle(sourceSelectionKey("source", site.siteId, sourceRow.source)));
+        subList.appendChild(sourceNode);
+      });
+      siteWrap.appendChild(subList);
+    }
+    sourceSortListEl.appendChild(siteWrap);
+  });
+}
+
+function handleSourceSortPointerStart(event, type, siteId, source = "") {
+  state.sourcePointerDrag = {
+    type,
+    siteId,
+    source,
+  };
+  event.preventDefault();
+}
+
+function handleSourceSortPointerEnd(event) {
+  if (!state.sourcePointerDrag) return;
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-sort-type]");
+  const drag = state.sourcePointerDrag;
+  state.sourcePointerDrag = null;
+  if (!target || target.dataset.sortType !== drag.type) return;
+
+  if (drag.type === "site") {
+    const targetSiteId = target.dataset.siteId || "";
+    if (!targetSiteId || targetSiteId === drag.siteId) return;
+    const currentOrder = currentSourceTree(false).map((site) => site.siteId);
+    state.sourcePrefs.siteOrder = moveBefore(currentOrder, drag.siteId, targetSiteId);
+  }
+
+  if (drag.type === "source") {
+    const targetSiteId = target.dataset.siteId || "";
+    const targetSource = target.dataset.source || "";
+    if (targetSiteId !== drag.siteId || !targetSource || targetSource === drag.source) return;
+    const site = currentSourceTree(false).find((item) => item.siteId === drag.siteId);
+    const currentOrder = site ? site.sources.map((item) => item.source) : uniqueStrings(state.sourcePrefs.sourceOrderBySite[drag.siteId]);
+    state.sourcePrefs.sourceOrderBySite[drag.siteId] = moveBefore(currentOrder, drag.source, targetSource);
+  }
+
+  saveSourcePrefs();
+  renderSourceSortDialog();
+  renderList();
+}
+
+function openSourceSortDialog() {
+  if (!sourceSortDialogEl) return;
+  state.sourceSortSelection.clear();
+  renderSourceSortDialog();
+  sourceSortDialogEl.hidden = false;
+  document.body.classList.add("source-control-open");
+}
+
+function closeSourceSortDialog() {
+  if (!sourceSortDialogEl) return;
+  sourceSortDialogEl.hidden = true;
+  document.body.classList.remove("source-control-open");
+}
+
+function blockSelectedSourceGroups() {
+  const prefs = sanitizeSourcePrefs(state.sourcePrefs);
+  state.sourceSortSelection.forEach((key) => {
+    const selection = parseSourceSelectionKey(key);
+    if (selection.type === "site" && selection.siteId) {
+      prefs.hiddenSites = uniqueStrings([...prefs.hiddenSites, selection.siteId]);
+    }
+    if (selection.type === "source" && selection.siteId && selection.source) {
+      prefs.hiddenSourcesBySite[selection.siteId] = uniqueStrings([
+        ...(prefs.hiddenSourcesBySite[selection.siteId] || []),
+        selection.source,
+      ]);
+    }
+  });
+  state.sourcePrefs = prefs;
+  state.sourceSortSelection.clear();
+  saveSourcePrefs();
+  updateSourceHiddenButton();
+  renderSourceSortDialog();
+  renderList();
+}
+
+function restoreHiddenSourcePreference(type, siteId, source = "") {
+  const prefs = sanitizeSourcePrefs(state.sourcePrefs);
+  if (type === "site") {
+    prefs.hiddenSites = prefs.hiddenSites.filter((item) => item !== siteId);
+  }
+  if (type === "source" && prefs.hiddenSourcesBySite[siteId]) {
+    prefs.hiddenSourcesBySite[siteId] = prefs.hiddenSourcesBySite[siteId].filter((item) => item !== source);
+  }
+  state.sourcePrefs = prefs;
+  saveSourcePrefs();
+  updateSourceHiddenButton();
+  renderHiddenSourcesDialog();
+  renderList();
+}
+
+function hiddenSourceLabel(type, siteId, source = "") {
+  const site = currentSourceTree(true).find((item) => item.siteId === siteId);
+  const siteName = site?.siteName || siteId || "未知来源";
+  return type === "site" ? siteName : `${siteName} / ${source}`;
+}
+
+function renderHiddenSourcesDialog() {
+  if (!sourceHiddenListEl) return;
+  sourceHiddenListEl.innerHTML = "";
+  const prefs = sanitizeSourcePrefs(state.sourcePrefs);
+  const rows = [
+    ...prefs.hiddenSites.map((siteId) => ({ type: "site", siteId, source: "" })),
+    ...Object.entries(prefs.hiddenSourcesBySite).flatMap(([siteId, sources]) => sources.map((source) => ({ type: "source", siteId, source }))),
+  ];
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "source-control-empty";
+    empty.textContent = "暂无屏蔽来源。";
+    sourceHiddenListEl.appendChild(empty);
+    return;
+  }
+  rows.forEach((row) => {
+    const node = document.createElement("div");
+    node.className = "source-hidden-row";
+    const label = document.createElement("span");
+    label.textContent = hiddenSourceLabel(row.type, row.siteId, row.source);
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.textContent = "恢复";
+    restore.addEventListener("click", () => restoreHiddenSourcePreference(row.type, row.siteId, row.source));
+    node.append(label, restore);
+    sourceHiddenListEl.appendChild(node);
+  });
+}
+
+function openSourceHiddenDialog() {
+  if (!sourceHiddenDialogEl) return;
+  renderHiddenSourcesDialog();
+  sourceHiddenDialogEl.hidden = false;
+  document.body.classList.add("source-control-open");
+}
+
+function closeSourceHiddenDialog() {
+  if (!sourceHiddenDialogEl) return;
+  sourceHiddenDialogEl.hidden = true;
+  document.body.classList.remove("source-control-open");
 }
 
 function scorePercent(item) {
@@ -2611,7 +3070,19 @@ function renderItemNode(item) {
   return node;
 }
 
-function buildSourceGroupNode(source, items) {
+function buildShowMoreButton(text, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function buildSourceGroupNode(source, items, siteId = "", options = {}) {
+  const sourceKey = sourceGroupKey(siteId, source);
+  const expanded = state.expandedSourceGroups.has(sourceKey);
+  const previewItems = expanded ? items : items.slice(0, SOURCE_ITEM_PREVIEW_COUNT);
   const section = document.createElement("section");
   section.className = "source-group";
   const header = document.createElement("header");
@@ -2624,7 +3095,26 @@ function buildSourceGroupNode(source, items) {
   listEl.className = "source-group-list";
   header.append(title, count);
   section.append(header, listEl);
-  items.forEach((item) => listEl.appendChild(renderItemNode(item)));
+  previewItems.forEach((item) => listEl.appendChild(renderItemNode(item)));
+  if (!expanded && items.length > SOURCE_ITEM_PREVIEW_COUNT) {
+    section.appendChild(buildShowMoreButton(
+      `展开 ${source} 全部 ${fmtNumber(items.length)} 条`,
+      "source-show-more",
+      () => {
+        state.expandedSourceGroups.add(sourceKey);
+        renderList();
+      }
+    ));
+  } else if (expanded && items.length > SOURCE_ITEM_PREVIEW_COUNT && !options.hideCollapse) {
+    section.appendChild(buildShowMoreButton(
+      `收起 ${source}`,
+      "source-show-more",
+      () => {
+        state.expandedSourceGroups.delete(sourceKey);
+        renderList();
+      }
+    ));
+  }
   return section;
 }
 
@@ -2638,7 +3128,11 @@ function groupBySource(items) {
     groupMap.get(key).push(item);
   });
 
-  return Array.from(groupMap.entries()).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], "zh-CN"));
+  return Array.from(groupMap.entries()).sort((a, b) => {
+    const byOrder = sourceOrderIndex(items[0]?.site_id || "", a[0]) - sourceOrderIndex(items[0]?.site_id || "", b[0]);
+    if (byOrder !== 0) return byOrder;
+    return b[1].length - a[1].length || a[0].localeCompare(b[0], "zh-CN");
+  });
 }
 
 function renderGroupedBySource(items) {
@@ -2646,7 +3140,7 @@ function renderGroupedBySource(items) {
   const frag = document.createDocumentFragment();
 
   groups.forEach(([source, groupItems]) => {
-    frag.appendChild(buildSourceGroupNode(source, groupItems));
+    frag.appendChild(buildSourceGroupNode(source, groupItems, state.siteFilter || groupItems[0]?.site_id || ""));
   });
 
   newsListEl.appendChild(frag);
@@ -2665,13 +3159,15 @@ function renderGroupedBySiteAndSource(items) {
   });
 
   const sites = Array.from(siteMap.entries()).sort((a, b) => {
+    const byOrder = siteOrderIndex(a[0]) - siteOrderIndex(b[0]);
+    if (byOrder !== 0) return byOrder;
     const byCount = b[1].items.length - a[1].items.length;
     if (byCount !== 0) return byCount;
     return a[1].siteName.localeCompare(b[1].siteName, "zh-CN");
   });
 
   const frag = document.createDocumentFragment();
-  sites.forEach(([, site]) => {
+  sites.forEach(([siteId, site]) => {
     const siteSection = document.createElement("section");
     siteSection.className = "site-group";
     const header = document.createElement("header");
@@ -2686,9 +3182,30 @@ function renderGroupedBySiteAndSource(items) {
     siteSection.append(header, siteListEl);
 
     const sourceGroups = groupBySource(site.items);
-    sourceGroups.forEach(([source, groupItems]) => {
-      siteListEl.appendChild(buildSourceGroupNode(source, groupItems));
+    const siteExpanded = state.expandedSites.has(siteId);
+    const visibleGroups = siteExpanded ? sourceGroups : sourceGroups.slice(0, SOURCE_GROUP_PREVIEW_COUNT);
+    visibleGroups.forEach(([source, groupItems]) => {
+      siteListEl.appendChild(buildSourceGroupNode(source, groupItems, siteId));
     });
+    if (!siteExpanded && sourceGroups.length > SOURCE_GROUP_PREVIEW_COUNT) {
+      siteSection.appendChild(buildShowMoreButton(
+        `展开 ${site.siteName} 全部 ${fmtNumber(sourceGroups.length)} 个来源`,
+        "site-show-more",
+        () => {
+          state.expandedSites.add(siteId);
+          renderList();
+        }
+      ));
+    } else if (siteExpanded && sourceGroups.length > SOURCE_GROUP_PREVIEW_COUNT) {
+      siteSection.appendChild(buildShowMoreButton(
+        `收起 ${site.siteName}`,
+        "site-show-more",
+        () => {
+          state.expandedSites.delete(siteId);
+          renderList();
+        }
+      ));
+    }
     frag.appendChild(siteSection);
   });
 
@@ -2698,6 +3215,7 @@ function renderGroupedBySiteAndSource(items) {
 function renderList() {
   const filtered = getFilteredItems();
   resultCountEl.textContent = `${fmtNumber(filtered.length)} 条`;
+  updateSourceHiddenButton();
 
   newsListEl.innerHTML = "";
 
@@ -2838,6 +3356,7 @@ function renderSourceHealth(errorMessage = "") {
     empty.textContent = errorMessage || "源状态未生成";
     sourceHealthEl.appendChild(empty);
     renderAdvancedSummary();
+    renderDataDrawerMeta();
     return;
   }
 
@@ -2881,6 +3400,7 @@ function renderSourceHealth(errorMessage = "") {
     sourceHealthEl.appendChild(ok);
   }
   renderAdvancedSummary();
+  renderDataDrawerMeta();
 }
 
 async function loadNewsData() {
@@ -2942,12 +3462,13 @@ async function init() {
     state.generatedAt = payload.generated_at;
 
     setStats(payload);
+    renderDataDrawerMeta();
     renderModeSwitch();
     renderCoverageStrip();
     renderBolePicks();
     renderSiteFilters();
     renderList();
-    updatedAtEl.textContent = `更新时间：${fmtTime(state.generatedAt)}`;
+    updatedAtEl.textContent = fmtTime(state.generatedAt);
   } else {
     updatedAtEl.textContent = "新闻数据加载失败";
     newsListEl.innerHTML = `<div class="empty">${newsResult.reason.message}</div>`;
@@ -3042,6 +3563,37 @@ document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     setMobileView(btn.dataset.view || "today");
   });
+});
+
+if (dataDrawerButtonEl) dataDrawerButtonEl.addEventListener("click", openDataDrawer);
+if (dataDrawerCloseEl) dataDrawerCloseEl.addEventListener("click", closeDataDrawer);
+if (dataDrawerEl) {
+  dataDrawerEl.addEventListener("click", (event) => {
+    if (event.target === dataDrawerEl) closeDataDrawer();
+  });
+}
+
+if (sourceSortButtonEl) sourceSortButtonEl.addEventListener("click", openSourceSortDialog);
+if (sourceHiddenButtonEl) sourceHiddenButtonEl.addEventListener("click", openSourceHiddenDialog);
+if (sourceSortCloseEl) sourceSortCloseEl.addEventListener("click", closeSourceSortDialog);
+if (sourceHiddenCloseEl) sourceHiddenCloseEl.addEventListener("click", closeSourceHiddenDialog);
+if (sourceSortBlockButtonEl) sourceSortBlockButtonEl.addEventListener("click", blockSelectedSourceGroups);
+if (sourceSortDialogEl) {
+  sourceSortDialogEl.addEventListener("click", (event) => {
+    if (event.target === sourceSortDialogEl) closeSourceSortDialog();
+  });
+}
+if (sourceHiddenDialogEl) {
+  sourceHiddenDialogEl.addEventListener("click", (event) => {
+    if (event.target === sourceHiddenDialogEl) closeSourceHiddenDialog();
+  });
+}
+document.addEventListener("pointerup", handleSourceSortPointerEnd);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeDataDrawer();
+  closeSourceSortDialog();
+  closeSourceHiddenDialog();
 });
 
 if (askAiButtonEl) {

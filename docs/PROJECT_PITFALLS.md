@@ -249,3 +249,27 @@ Prevention:
   ```bash
   python3 -m pytest -q tests/test_ai_backend_article_reader.py -k "upgrades_cached_wechat or weixin or wechat_cdn"
   ```
+
+## 2026-06-12: Mobile View Switching Can Unhide Overlay Panels
+
+Symptoms:
+
+- A drawer or modal intended to start hidden can appear on first load.
+- The opened overlay intercepts clicks on the underlying homepage controls.
+
+Root causes:
+
+- Overlay markup was given `data-mobile-view="today"`.
+- `setMobileView()` controls all `[data-mobile-view]` nodes by assigning their
+  `hidden` property, so it can override an overlay's default `hidden` state.
+
+Prevention:
+
+- Do not put `data-mobile-view` on modal, drawer, sheet, or overlay containers
+  whose visibility is controlled by their own open/close buttons.
+- Add a static contract for any new overlay that must remain hidden at startup.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py::test_homepage_uses_compact_header_and_data_drawer
+  ```

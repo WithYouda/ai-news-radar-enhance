@@ -29,10 +29,81 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=reader-images-0605" in html
+    assert "./assets/styles.css?v=homepage-source-controls-0612" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=reader-cache-0610" in html
+    assert "./assets/app.js?v=homepage-source-controls-0612" in html
+
+
+def test_homepage_uses_compact_header_and_data_drawer():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    assert "过去 24 小时值得看的 AI/科技更新" not in html
+    assert 'id="dataDrawerButton"' in html
+    assert 'id="dataDrawer"' in html
+    assert 'id="dataDrawer" class="data-drawer" hidden' in html
+    assert 'id="dataDrawer" class="data-drawer" data-mobile-view' not in html
+    assert 'id="dataDrawerClose"' in html
+    assert "openDataDrawer" in js
+    assert "closeDataDrawer" in js
+    assert ".updated-pill" in css
+    assert ".data-drawer" in css
+
+
+def test_signal_flow_has_source_sort_and_hidden_controls():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="sourceSortButton"' in html
+    assert 'id="sourceHiddenButton"' in html
+    assert 'id="sourceSortDialog"' in html
+    assert 'id="sourceSortList"' in html
+    assert 'id="sourceSortBlockButton"' in html
+    assert 'id="sourceHiddenDialog"' in html
+    assert "renderSourceSortDialog" in js
+    assert "blockSelectedSourceGroups" in js
+    assert "restoreHiddenSourcePreference" in js
+    assert ".signal-flow-actions" in css
+    assert ".source-sort-dialog" in css
+
+
+def test_signal_flow_source_preferences_are_local_and_reversible():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    assert "SOURCE_PREF_STORAGE_KEY" in js
+    assert "localStorage.getItem(SOURCE_PREF_STORAGE_KEY)" in js
+    assert "localStorage.setItem(SOURCE_PREF_STORAGE_KEY" in js
+    assert "hiddenSites" in js
+    assert "hiddenSourcesBySite" in js
+    assert "siteOrder" in js
+    assert "sourceOrderBySite" in js
+    assert "sourcePreferenceHiddenCount" in js
+
+
+def test_signal_flow_groups_default_to_compact_expandable_sections():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    assert "SOURCE_GROUP_PREVIEW_COUNT = 2" in js
+    assert "SOURCE_ITEM_PREVIEW_COUNT = 3" in js
+    assert "expandedSites: new Set()" in js
+    assert "expandedSourceGroups: new Set()" in js
+    assert "source-show-more" in js
+    assert "site-show-more" in js
+
+
+def test_source_sort_dialog_uses_real_four_point_grip_icons():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "function renderDragGrip" in js
+    assert "for (let i = 0; i < 4; i += 1)" in js
+    assert "drag-grip" in js
+    assert ".drag-grip" in css
+    assert "grid-template-columns: repeat(2" in css
+    assert ">拖<" not in js
 
 
 def test_category_view_contract_exists():

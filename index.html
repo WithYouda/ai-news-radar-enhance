@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=reader-images-0605" />
+    <link rel="stylesheet" href="./assets/styles.css?v=homepage-source-controls-0612" />
   </head>
   <body>
     <main class="shell">
@@ -38,19 +38,33 @@
               <h1>24 小时 AI 更新雷达</h1>
             </div>
           </div>
-          <p class="hero-sub">
-            过去 24 小时值得看的 AI/科技更新；伯乐精选按时间轴和评分挑出重点信号。
-          </p>
         </div>
-        <div class="hero-meta">
-          <span class="updated-label">更新时间</span>
-          <span class="updated" id="updatedAt">加载中...</span>
+        <div class="hero-tools">
+          <div class="updated-pill">
+            <span class="updated-label">更新时间</span>
+            <span class="updated" id="updatedAt">加载中...</span>
+          </div>
+          <button id="dataDrawerButton" class="icon-pill data-drawer-button" type="button" aria-expanded="false" aria-controls="dataDrawer">
+            <span class="icon icon-data" aria-hidden="true"></span>
+            <span>数据</span>
+          </button>
         </div>
-
-        <section class="stats" id="stats"></section>
-
-        <section class="coverage-strip" id="coverageStrip" aria-label="Source coverage status"></section>
       </header>
+
+      <section id="dataDrawer" class="data-drawer" hidden aria-label="数据与来源">
+        <div class="data-drawer-panel">
+          <div class="data-drawer-head">
+            <div>
+              <h2>数据与来源</h2>
+              <span id="dataDrawerMeta">加载中...</span>
+            </div>
+            <button id="dataDrawerClose" class="icon-close-button" type="button" aria-label="关闭数据面板">关闭</button>
+          </div>
+          <section class="stats" id="stats"></section>
+          <section class="coverage-strip" id="coverageStrip" aria-label="Source coverage status"></section>
+          <div class="source-health" id="sourceHealth">源状态加载中...</div>
+        </div>
+      </section>
 
       <section class="primary-controls" data-mobile-view="today">
         <input id="searchInput" type="search" placeholder="搜索 AI 信号 / 来源" />
@@ -83,7 +97,6 @@
               <span id="allDedupeLabel">去重开</span>
             </label>
           </div>
-          <div class="source-health" id="sourceHealth">源状态加载中...</div>
           <section class="site-pills" id="sitePills"></section>
         </div>
       </details>
@@ -117,8 +130,20 @@
 
       <section class="list-wrap" data-mobile-view="today">
         <div class="list-head">
-          <h2 id="listTitle">AI 信号流</h2>
-          <span id="resultCount">0 条</span>
+          <div class="list-title-wrap">
+            <h2 id="listTitle">AI 信号流</h2>
+            <span id="resultCount">0 条</span>
+          </div>
+          <div class="signal-flow-actions" aria-label="AI 信号流来源控制">
+            <button id="sourceSortButton" class="icon-pill signal-flow-action" type="button" aria-controls="sourceSortDialog">
+              <span class="icon icon-sort" aria-hidden="true"></span>
+              <span>排序</span>
+            </button>
+            <button id="sourceHiddenButton" class="icon-pill signal-flow-action secondary" type="button" aria-controls="sourceHiddenDialog">
+              <span class="icon icon-hidden" aria-hidden="true"></span>
+              <span id="sourceHiddenCount">已屏蔽 0</span>
+            </button>
+          </div>
         </div>
         <div id="newsList" class="news-list"></div>
       </section>
@@ -241,6 +266,38 @@
 
     </main>
 
+    <section id="sourceSortDialog" class="source-sort-dialog source-control-dialog" hidden aria-label="来源排序">
+      <div class="source-control-panel">
+        <header class="source-control-head">
+          <div>
+            <h2>来源排序</h2>
+            <p>拖动渠道或展开后拖动小渠道；选中后可批量屏蔽。</p>
+          </div>
+          <div class="source-control-head-actions">
+            <button id="sourceSortBlockButton" class="source-danger-button" type="button">
+              <span class="icon icon-block" aria-hidden="true"></span>
+              <span>屏蔽</span>
+            </button>
+            <button id="sourceSortClose" class="icon-close-button" type="button" aria-label="关闭来源排序">关闭</button>
+          </div>
+        </header>
+        <div id="sourceSortList" class="source-sort-list"></div>
+      </div>
+    </section>
+
+    <section id="sourceHiddenDialog" class="source-hidden-dialog source-control-dialog" hidden aria-label="已屏蔽来源">
+      <div class="source-control-panel">
+        <header class="source-control-head">
+          <div>
+            <h2>已屏蔽来源</h2>
+            <p>这些来源只是暂时隐藏，恢复后会重新出现在 AI 信号流中。</p>
+          </div>
+          <button id="sourceHiddenClose" class="icon-close-button" type="button" aria-label="关闭已屏蔽来源">关闭</button>
+        </header>
+        <div id="sourceHiddenList" class="source-hidden-list"></div>
+      </div>
+    </section>
+
     <section id="readerSheet" class="reader-sheet" hidden aria-label="干净阅读">
       <div class="reader-panel">
         <header class="reader-head sheet-drag-zone">
@@ -319,7 +376,7 @@
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
     <script src="./assets/api-client.js?v=frontend-arch-0610"></script>
-    <script src="./assets/app.js?v=reader-cache-0610" defer></script>
+    <script src="./assets/app.js?v=homepage-source-controls-0612" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

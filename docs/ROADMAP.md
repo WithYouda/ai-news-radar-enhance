@@ -155,3 +155,31 @@ No additional tests are required while this remains a roadmap-only item. Before
 expanding direct X API usage, add coverage for default-off behavior, missing
 token handling, cost-cap/run-window gating, query length validation, API failure
 status reporting, and deduplication against Follow Builders items.
+
+## Later — Full Source Editor and Deletion Controls
+
+Goal: add a dedicated source-management settings area after the homepage can
+already sort and hide noisy source groups.
+
+### Deferred direction
+
+- Expose a settings area where all sources can be viewed, edited, added, hidden,
+  restored, or removed with clearer guardrails.
+- Keep deletion separate from temporary hiding and require explicit confirmation.
+- Preserve the public default source set unless the maintainer intentionally
+  changes it.
+- Keep the default homepage curated and simple; source editing belongs in the
+  settings/management layer.
+
+### Product intent
+
+- Hidden is reversible and should not delete source configuration.
+- Deletion should be a later, explicit source-management action.
+- The source-management layer should feel expandable, reversible, and user-friendly.
+
+### Testing note
+
+No tests are required while this remains roadmap-only. Before any future
+implementation, add regression coverage for source editor add/edit/remove flows,
+persisted preferences, hide/restore interactions across settings and feed views,
+and safe defaults for first-time users.

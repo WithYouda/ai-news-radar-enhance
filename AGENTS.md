@@ -20,6 +20,12 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
 - Search the repo before changing source fetchers or output schemas.
 - Do not commit private feeds, secrets, tokens, cookies, or `.env` values.
 - Do not commit `feeds/follow.opml`; use `feeds/follow.example.opml` as the public template.
+- When the user says a change is temporarily unverifiable, append it to
+  `docs/PENDING_USER_VERIFICATION.md` with agent-side evidence and the next
+  user-visible check.
+- Iron law: for any UI design or layout change, offer and use the visual
+  companion workflow before implementation so the user can inspect mockups or
+  previews instead of judging from text alone.
 - Prefer stable public RSS/Atom/OPML sources before adding custom scrapers.
 - Keep the reader-facing product simple: default to a curated AI-focused view, hide noisy or advanced source details behind existing filters/docs.
 
