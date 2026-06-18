@@ -29,10 +29,10 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=homepage-source-controls-0612" in html
+    assert "./assets/styles.css?v=source-toggle-header-0618" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=homepage-source-controls-0612" in html
+    assert "./assets/app.js?v=source-toggle-header-0618" in html
 
 
 def test_homepage_uses_compact_header_and_data_drawer():
@@ -90,8 +90,38 @@ def test_signal_flow_groups_default_to_compact_expandable_sections():
     assert "SOURCE_ITEM_PREVIEW_COUNT = 3" in js
     assert "expandedSites: new Set()" in js
     assert "expandedSourceGroups: new Set()" in js
-    assert "source-show-more" in js
+    assert "source-toggle-action" in js
+    assert "source-toggle-meta" in js
+    assert "aria-expanded" in js
+    assert "source-show-more" not in js
     assert "site-show-more" in js
+
+
+def test_signal_flow_source_toggle_lives_in_source_header_not_group_footer():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    function_start = js.index("function buildSourceGroupNode")
+    function_end = js.index("function groupBySource", function_start)
+    source_group_builder = js[function_start:function_end]
+
+    assert "header.append(title, meta)" in source_group_builder
+    assert "meta.append(count, toggle)" in source_group_builder
+    assert "section.appendChild(buildShowMoreButton(" not in source_group_builder
+    assert "expandedSourceGroups.add(sourceKey)" in source_group_builder
+    assert "expandedSourceGroups.delete(sourceKey)" in source_group_builder
+    assert "toggle.setAttribute(\"aria-label\"" in source_group_builder
+
+
+def test_signal_flow_source_toggle_is_unboxed_text_action_with_mobile_fallback():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert ".source-toggle-action" in css
+    assert ".source-toggle-meta" in css
+    assert ".source-show-more" not in css
+    assert ".source-toggle-action {\n  border: 0;" in css
+    assert "background: transparent;" in css
+    assert "text-decoration: underline;" in css
+    assert ".source-toggle-action .source-toggle-label" in css
+    assert "display: none;" in css
 
 
 def test_source_sort_dialog_uses_real_four_point_grip_icons():

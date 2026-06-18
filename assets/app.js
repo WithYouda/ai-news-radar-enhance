@@ -3079,7 +3079,7 @@ function buildShowMoreButton(text, className, onClick) {
   return button;
 }
 
-function buildSourceGroupNode(source, items, siteId = "", options = {}) {
+function buildSourceGroupNode(source, items, siteId = "") {
   const sourceKey = sourceGroupKey(siteId, source);
   const expanded = state.expandedSourceGroups.has(sourceKey);
   const previewItems = expanded ? items : items.slice(0, SOURCE_ITEM_PREVIEW_COUNT);
@@ -3089,32 +3089,42 @@ function buildSourceGroupNode(source, items, siteId = "", options = {}) {
   header.className = "source-group-head";
   const title = document.createElement("h3");
   title.textContent = source;
+  const meta = document.createElement("div");
+  meta.className = "source-toggle-meta";
   const count = document.createElement("span");
+  count.className = "source-count";
   count.textContent = `${fmtNumber(items.length)} 条`;
+  if (items.length > SOURCE_ITEM_PREVIEW_COUNT) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "source-toggle-action";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.setAttribute("aria-label", expanded ? `收起 ${source}` : `展开 ${source} 全部 ${fmtNumber(items.length)} 条`);
+    const label = document.createElement("span");
+    label.className = "source-toggle-label";
+    label.textContent = expanded ? "收起" : "展开";
+    const icon = document.createElement("span");
+    icon.className = "source-toggle-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = expanded ? "▴" : "▾";
+    toggle.append(label, icon);
+    toggle.addEventListener("click", () => {
+      if (expanded) {
+        state.expandedSourceGroups.delete(sourceKey);
+      } else {
+        state.expandedSourceGroups.add(sourceKey);
+      }
+      renderList();
+    });
+    meta.append(count, toggle);
+  } else {
+    meta.appendChild(count);
+  }
   const listEl = document.createElement("div");
   listEl.className = "source-group-list";
-  header.append(title, count);
+  header.append(title, meta);
   section.append(header, listEl);
   previewItems.forEach((item) => listEl.appendChild(renderItemNode(item)));
-  if (!expanded && items.length > SOURCE_ITEM_PREVIEW_COUNT) {
-    section.appendChild(buildShowMoreButton(
-      `展开 ${source} 全部 ${fmtNumber(items.length)} 条`,
-      "source-show-more",
-      () => {
-        state.expandedSourceGroups.add(sourceKey);
-        renderList();
-      }
-    ));
-  } else if (expanded && items.length > SOURCE_ITEM_PREVIEW_COUNT && !options.hideCollapse) {
-    section.appendChild(buildShowMoreButton(
-      `收起 ${source}`,
-      "source-show-more",
-      () => {
-        state.expandedSourceGroups.delete(sourceKey);
-        renderList();
-      }
-    ));
-  }
   return section;
 }
 

@@ -27,7 +27,10 @@ body {
   min-height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   color: var(--ink);
-  background: var(--bg);
+  background:
+    linear-gradient(145deg, rgba(18, 106, 115, 0.08), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(315deg, rgba(181, 82, 49, 0.08), rgba(255, 255, 255, 0) 42%),
+    var(--bg);
 }
 
 button,
@@ -1313,11 +1316,11 @@ summary:focus-visible {
 }
 
 .site-group-head {
-  background: rgba(18, 106, 115, 0.06);
+  background: linear-gradient(90deg, rgba(18, 106, 115, 0.1), rgba(18, 106, 115, 0.03), rgba(255, 255, 255, 0));
 }
 
 .source-group-head {
-  background: rgba(181, 82, 49, 0.05);
+  background: linear-gradient(90deg, rgba(181, 82, 49, 0.1), rgba(181, 82, 49, 0.035), rgba(255, 255, 255, 0));
 }
 
 .site-group-head h3,
@@ -1331,14 +1334,49 @@ summary:focus-visible {
 }
 
 .source-group-head h3 {
+  overflow: hidden;
+  flex: 1 1 auto;
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .site-group-head span,
-.source-group-head span {
+.source-toggle-meta {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.source-toggle-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.source-toggle-action {
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-decoration: none;
+  text-underline-offset: 4px;
+  white-space: nowrap;
+}
+
+.source-toggle-action:hover,
+.source-toggle-action:focus-visible {
+  outline: none;
+  text-decoration: underline;
+}
+
+.source-toggle-icon {
+  display: inline-block;
+  margin-left: 3px;
 }
 
 .source-group {
@@ -1350,7 +1388,6 @@ summary:focus-visible {
   border-top: 0;
 }
 
-.source-show-more,
 .site-show-more {
   display: block;
   width: calc(100% - 32px);
@@ -2896,6 +2933,22 @@ body.ask-ai-open {
   .signal-flow-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .source-group-head {
+    align-items: flex-start;
+  }
+
+  .source-group-head h3 {
+    white-space: normal;
+  }
+
+  .source-toggle-meta {
+    gap: 8px;
+  }
+
+  .source-toggle-action .source-toggle-label {
+    display: none;
   }
 
   .mode-hint,
