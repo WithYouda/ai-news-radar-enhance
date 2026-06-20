@@ -29,6 +29,7 @@ from .db import connect_db, init_db
 from .radar_data import item_identity, load_latest_items, load_latest_items_with_source, merge_item_metadata, normalize_public_url
 from .routers.ai_profiles import build_ai_profiles_router
 from .routers.auth import SESSION_COOKIE, build_auth_router
+from .routers.personalization import build_personalization_router
 from .settings import get_settings, update_settings
 from .taxonomy import list_taxonomy, seed_default_taxonomy
 from .provider import AIProvider, AIProviderUnavailable
@@ -109,6 +110,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return {"authenticated": True}
 
     app.include_router(build_ai_profiles_router(config, require_session))
+    app.include_router(build_personalization_router(config, require_session))
 
     def scoped_ask_items(scope_payload: dict) -> tuple[list[dict], str | None]:
         items, context_source = load_latest_items_with_source(config, mode="ai")

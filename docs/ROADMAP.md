@@ -88,6 +88,29 @@ python scripts/audit_ai_relevance.py \
 
 Goal: move beyond per-item filtering and represent the same event as one story with multiple source references.
 
+Status: scoring foundation partially implemented; full story merge remains planned.
+
+### What has shipped
+
+- `scripts/ai_relevance.py`
+  - Publishes `score_version=ai_relevance_scoring_v0_5`.
+  - Keeps `ai_score` for compatibility while adding `ai_relevance_score`,
+    `source_trust_score`, and `priority_score`.
+  - Scores URL host as source identity without allowing URL path/query text to
+    trigger AI relevance.
+  - Expands Chinese and mixed AI terms such as `VLA`, `世界模型`, `开源模型`,
+    `智能体平台`, `Agent时代`, and `desktop agent`.
+- `scripts/audit_ai_relevance.py`
+  - Reads `ai_relevance_score` with `ai_score` fallback.
+  - Adds score bucket summaries for baseline audits.
+- `assets/app.js`
+  - Uses `priority_score` before `ai_score` when ranking Bole Picks.
+  - Includes event action tokens in model-based event keys so unrelated stories
+    about the same model are less likely to merge.
+- `tests/fixtures/ai_relevance_golden.json`
+  - Records manually reviewed positive and negative examples for relevance
+    regression checks.
+
 ### Planned direction
 
 - Keep the current filter-first behavior as the safe default.

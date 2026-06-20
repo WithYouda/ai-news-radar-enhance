@@ -54,6 +54,7 @@ const READER_FACT_CHECK_PROMPT = `请对这篇文章做基于当前雷达上下�
 const SOURCE_PREF_STORAGE_KEY = "aiNewsRadar.sourcePrefs.v1";
 const SOURCE_GROUP_PREVIEW_COUNT = 2;
 const SOURCE_ITEM_PREVIEW_COUNT = 3;
+const BOLE_PICK_LIMIT = 10;
 
 function emptySourcePrefs() {
   return {
@@ -150,6 +151,16 @@ const state = {
   readerTranslatedHtml: "",
   readerShowingTranslation: false,
   aiProfiles: [],
+  personalizationStatus: null,
+  personalizationUnavailable: false,
+  boleDraftPreview: null,
+  boleStage: "calibration",
+  boleAnswers: {},
+  boleShownQuestionIds: new Set(["attention_goal"]),
+  boleConfirmedQuestionIds: new Set(),
+  boleAnswerInterpretations: {},
+  boleActiveQuestionId: "attention_goal",
+  boleAdvanceTimer: null,
   translationProviderMode: "browser",
   translationProviderId: "",
   readingAssistantProviderId: "env",
@@ -199,6 +210,8 @@ const sourceHiddenDialogEl = document.getElementById("sourceHiddenDialog");
 const sourceHiddenListEl = document.getElementById("sourceHiddenList");
 const sourceHiddenCloseEl = document.getElementById("sourceHiddenClose");
 const askAiButtonEl = document.getElementById("askAiButton");
+const desktopAskAiButtonEl = document.getElementById("desktopAskAiButton");
+const desktopViewButtons = document.querySelectorAll(".desktop-view-btn");
 const categoryMetaEl = document.getElementById("categoryMeta");
 const categoryGridEl = document.getElementById("categoryGrid");
 const categoryDetailEl = document.getElementById("categoryDetail");
@@ -237,6 +250,32 @@ const aiProfileTimeoutInputEl = document.getElementById("aiProfileTimeoutInput")
 const saveAiProfileButtonEl = document.getElementById("saveAiProfileButton");
 const testAiProfileButtonEl = document.getElementById("testAiProfileButton");
 const resetAiProfileFormButtonEl = document.getElementById("resetAiProfileFormButton");
+const boleWorkbenchOpenEl = document.getElementById("boleWorkbenchOpen");
+const boleSettingsOpenEl = document.getElementById("boleSettingsOpen");
+const boleSettingsStatusEl = document.getElementById("boleSettingsStatus");
+const boleDisableButtonEl = document.getElementById("boleDisableButton");
+const boleResetButtonEl = document.getElementById("boleResetButton");
+const boleWorkbenchEl = document.getElementById("boleWorkbench");
+const boleWorkbenchCloseEl = document.getElementById("boleWorkbenchClose");
+const boleStageTrackEl = document.getElementById("boleStageTrack");
+const boleStagePanels = Array.from(document.querySelectorAll("[data-bole-stage-panel]"));
+const boleStageButtons = Array.from(document.querySelectorAll("[data-bole-stage]"));
+const boleDialogueTurnsEl = document.getElementById("boleDialogueTurns");
+const boleReadingTurnsEl = document.getElementById("boleReadingTurns");
+const boleChatFormEl = document.getElementById("boleChatForm");
+const boleChatInputEl = document.getElementById("boleChatInput");
+const boleChatSendEl = document.getElementById("boleChatSend");
+const boleRecognizedProfileEl = document.getElementById("boleRecognizedProfile");
+const boleProfileRailTitleEl = document.getElementById("boleProfileRailTitle");
+const boleProfileRailHintEl = document.getElementById("boleProfileRailHint");
+const bolePreferenceButtons = Array.from(document.querySelectorAll("[data-bole-preference]"));
+const boleContinueButtonEl = document.getElementById("boleContinueButton");
+const boleDraftButtonEl = document.getElementById("boleDraftButton");
+const boleDraftPreviewEl = document.getElementById("boleDraftPreview");
+const boleRecommendationPreviewEl = document.getElementById("boleRecommendationPreview");
+const boleConfirmButtonEl = document.getElementById("boleConfirmButton");
+const boleSkipButtonEl = document.getElementById("boleSkipButton");
+const boleWorkbenchStatusEl = document.getElementById("boleWorkbenchStatus");
 const translationProviderModeSelectEl = document.getElementById("translationProviderModeSelect");
 const translationProviderSelectEl = document.getElementById("translationProviderSelect");
 const readingAssistantProviderSelectEl = document.getElementById("readingAssistantProviderSelect");
@@ -381,10 +420,14 @@ function fmtNumber(n) {
 
 function setMobileView(view) {
   state.mobileView = view;
+  document.body.dataset.activeMobileView = view;
   document.querySelectorAll("[data-mobile-view]").forEach((el) => {
     el.hidden = el.dataset.mobileView !== view;
   });
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  });
+  desktopViewButtons.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === view);
   });
 }
@@ -1276,6 +1319,811 @@ async function submitAskAiStream(question, pendingRow) {
   }
 }
 
+const BOLE_PROFILE_QUESTIONS = [
+  {
+    id: "attention_goal",
+    stage: "interest",
+    title: "先选你的 AI 新闻重心。",
+    prompt: "可以点选，也可以直接打字。你写得越具体，我越能继续问到真正有用的领域。",
+    placeholder: "继续告诉伯乐你的关注点",
+    choices: ["产品与工具", "工程与部署", "研究与评测", "开源项目", "产业商业", "安全监管"],
+  },
+  {
+    id: "ai_domains",
+    stage: "interest",
+    title: "这些方向里，你最想优先看哪种落地场景？",
+    prompt: "可以从个人效率工具、团队研发体系、私有化部署成本里选，也可以直接补充。",
+    placeholder: "补充一个你关心的 AI 方向",
+    choices: ["个人效率工具", "团队研发体系", "私有化部署", "Agent", "Code AI", "本地部署", "RAG / 知识库"],
+  },
+  {
+    id: "negative_preferences",
+    stage: "interest",
+    title: "哪些内容你通常不想看？",
+    prompt: "这些内容会被降权。你也可以写得更具体，比如只排除某类快讯。",
+    placeholder: "补充你不想看的内容",
+    choices: ["纯融资快讯", "营销稿", "重复转载", "空泛观点", "过度学术", "浅摘要"],
+  },
+  {
+    id: "deep_reading_policy",
+    stage: "reading",
+    title: "高命中新闻怎么处理？",
+    prompt: "这是阅读偏好，不会混进兴趣领域。",
+    placeholder: "补充高命中新闻的处理方式",
+    choices: ["只提高排名", "高命中读正文", "生成总结", "事实核验", "点开再读"],
+  },
+  {
+    id: "reading_depth",
+    stage: "reading",
+    title: "你偏好的阅读深度是什么？",
+    prompt: "选择你希望伯乐默认给到的阅读层级。",
+    placeholder: "补充你喜欢的阅读深度",
+    choices: ["快速扫读", "标准摘要", "深入分析", "工程细节", "先核验"],
+  },
+];
+
+const BOLE_STAGE_ORDER = ["calibration", "preferences", "draft"];
+const BOLE_CHOICE_ADVANCE_DELAY_MS = 1350;
+const BOLE_TEXT_ADVANCE_DELAY_MS = 1550;
+
+function parseBoleTerms(text) {
+  const protectedText = String(text || "").replace(/RAG\s*\/\s*知识库/gi, "RAG__BOLE_SLASH__知识库");
+  const parts = protectedText.split(/[\n,，、;；/|]+/).map((part) => part.replace(/RAG__BOLE_SLASH__知识库/g, "RAG / 知识库"));
+  return uniqueBoleLabels(parts);
+}
+
+function normalizeBoleLabel(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function uniqueBoleLabels(values) {
+  const seen = new Set();
+  const labels = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const label = normalizeBoleLabel(value);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    labels.push(label);
+  });
+  return labels;
+}
+
+function normalizeBoleAnswer(rawAnswer) {
+  const answer = rawAnswer && typeof rawAnswer === "object" ? rawAnswer : {};
+  return {
+    choices: uniqueBoleLabels(Array.isArray(answer.choices) ? answer.choices : []),
+    text: normalizeBoleLabel(answer.text || ""),
+    ai_labels: uniqueBoleLabels(Array.isArray(answer.ai_labels) ? answer.ai_labels : []),
+    ai_note: normalizeBoleLabel(answer.ai_note || ""),
+    follow_up: normalizeBoleLabel(answer.follow_up || ""),
+    source: normalizeBoleLabel(answer.source || ""),
+  };
+}
+
+function normalizeBoleCalibrationAnswers(rawAnswers) {
+  const answers = rawAnswers && typeof rawAnswers === "object" ? rawAnswers : {};
+  return {
+    attention_goal: normalizeBoleAnswer(answers.attention_goal),
+    negative_preferences: normalizeBoleAnswer(answers.negative_preferences),
+    ai_domains: normalizeBoleAnswer(answers.ai_domains),
+    deep_reading_policy: normalizeBoleAnswer(answers.deep_reading_policy),
+    reading_depth: normalizeBoleAnswer(answers.reading_depth),
+  };
+}
+
+function boleAnswerLabels(answer) {
+  return uniqueBoleLabels([...(answer?.choices || []), ...(answer?.ai_labels || [])]);
+}
+
+function inferBoleSummaryDepth(readingDepthLabels, preferenceValues = {}) {
+  if (preferenceValues.summary_depth) return preferenceValues.summary_depth;
+  const text = uniqueBoleLabels(readingDepthLabels).join(" ");
+  if (/深入|工程|deep/i.test(text)) return "deep";
+  if (/快速|扫读|短|quick|concise/i.test(text)) return "concise";
+  return "standard";
+}
+
+function inferBoleVerificationStrictness(policyLabels, readingDepthLabels, preferenceValues = {}) {
+  if (preferenceValues.verification_strictness) return preferenceValues.verification_strictness;
+  const text = uniqueBoleLabels([...policyLabels, ...readingDepthLabels]).join(" ");
+  return /核验|事实|严格|fact|verify/i.test(text) ? "strict" : "standard";
+}
+
+function buildBoleProfileDraft(options = {}) {
+  const answers = normalizeBoleCalibrationAnswers(options.calibrationAnswers);
+  const preferenceValues = options.preferenceValues && typeof options.preferenceValues === "object" ? options.preferenceValues : {};
+  const policyLabels = boleAnswerLabels(answers.deep_reading_policy);
+  const readingDepthLabels = boleAnswerLabels(answers.reading_depth);
+  const positiveLabels = uniqueBoleLabels([
+    ...(Array.isArray(options.selectedInterests) ? options.selectedInterests : []),
+    ...parseBoleTerms(options.positiveText),
+    ...boleAnswerLabels(answers.attention_goal),
+    ...boleAnswerLabels(answers.ai_domains),
+  ]).slice(0, 12);
+  const negativeLabels = uniqueBoleLabels([
+    ...parseBoleTerms(options.negativeText),
+    ...boleAnswerLabels(answers.negative_preferences),
+  ]).slice(0, 12);
+  const summaryDepth = options.summaryDepth || inferBoleSummaryDepth(readingDepthLabels, preferenceValues);
+  const verificationStrictness =
+    options.verificationStrictness || inferBoleVerificationStrictness(policyLabels, readingDepthLabels, preferenceValues);
+  return {
+    positive_interests: positiveLabels.map((label) => ({ label, weight: 0.85, source: "user" })),
+    negative_interests: negativeLabels.map((label) => ({ label, weight: 0.8, source: "user" })),
+    source_preferences: [],
+    behavior_preferences: {
+      summary_depth: summaryDepth,
+      verification_strictness: verificationStrictness,
+      deep_reading_policy: policyLabels,
+      reading_depth: readingDepthLabels,
+      recommendation_posture: preferenceValues.recommendation_posture || "practical",
+      deep_reading_trigger: preferenceValues.deep_reading_trigger || "high_match",
+      reading_cadence: preferenceValues.reading_cadence || "daily",
+    },
+  };
+}
+
+function buildBoleDraftEvidence(options = {}) {
+  const answers = normalizeBoleCalibrationAnswers(options.calibrationAnswers);
+  return {
+    source: "workbench",
+    calibration_answers: answers,
+    conversation_context: buildBoleConversationContext(),
+  };
+}
+
+function boleQuestionStageForUi(stage) {
+  return stage === "preferences" ? "reading" : "interest";
+}
+
+function boleQuestionsForUiStage(stage) {
+  if (stage === "draft") return [];
+  return BOLE_PROFILE_QUESTIONS.filter((question) => question.stage === boleQuestionStageForUi(stage));
+}
+
+function boleQuestionById(questionId) {
+  return BOLE_PROFILE_QUESTIONS.find((question) => question.id === questionId) || null;
+}
+
+function clearBoleAdvanceTimer() {
+  if (state.boleAdvanceTimer) {
+    clearTimeout(state.boleAdvanceTimer);
+    state.boleAdvanceTimer = null;
+  }
+}
+
+function ensureBoleStageStarted(stage = state.boleStage) {
+  const questions = boleQuestionsForUiStage(stage);
+  if (!questions.length) return;
+  const hasVisible = questions.some((question) => state.boleShownQuestionIds.has(question.id));
+  if (hasVisible) return;
+  state.boleShownQuestionIds.add(questions[0].id);
+  state.boleActiveQuestionId = questions[0].id;
+}
+
+function visibleBoleQuestionsForStage(stage = state.boleStage) {
+  ensureBoleStageStarted(stage);
+  return boleQuestionsForUiStage(stage).filter((question) => {
+    const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+    return (
+      state.boleShownQuestionIds.has(question.id) ||
+      state.boleConfirmedQuestionIds.has(question.id) ||
+      boleAnswerLabels(answer).length > 0 ||
+      Boolean(answer.text)
+    );
+  });
+}
+
+function activeBoleQuestion(stage = state.boleStage) {
+  const visible = visibleBoleQuestionsForStage(stage);
+  const active = visible.find((question) => question.id === state.boleActiveQuestionId);
+  if (active) return active;
+  return visible.find((question) => !state.boleConfirmedQuestionIds.has(question.id)) || visible[visible.length - 1] || null;
+}
+
+function mergeBoleAnswer(questionId, patch = {}) {
+  const current = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  state.boleAnswers = {
+    ...state.boleAnswers,
+    [questionId]: {
+      choices: patch.choices !== undefined ? uniqueBoleLabels(patch.choices) : current.choices,
+      text: patch.text !== undefined ? normalizeBoleLabel(patch.text) : current.text,
+      ai_labels: patch.ai_labels !== undefined ? uniqueBoleLabels(patch.ai_labels) : current.ai_labels,
+      ai_note: patch.ai_note !== undefined ? normalizeBoleLabel(patch.ai_note) : current.ai_note,
+      follow_up: patch.follow_up !== undefined ? normalizeBoleLabel(patch.follow_up) : current.follow_up,
+      source: patch.source !== undefined ? normalizeBoleLabel(patch.source) : current.source,
+    },
+  };
+  state.boleShownQuestionIds.add(questionId);
+  if (patch.ai_labels !== undefined || patch.ai_note !== undefined || patch.follow_up !== undefined) {
+    state.boleAnswerInterpretations[questionId] = {
+      labels: uniqueBoleLabels(patch.ai_labels || []),
+      note: normalizeBoleLabel(patch.ai_note || ""),
+      follow_up: normalizeBoleLabel(patch.follow_up || ""),
+    };
+  }
+}
+
+function nextBoleQuestionAfter(questionId) {
+  const question = boleQuestionById(questionId);
+  if (!question) return null;
+  const questions = BOLE_PROFILE_QUESTIONS.filter((item) => item.stage === question.stage);
+  const index = questions.findIndex((item) => item.id === questionId);
+  return index >= 0 ? questions[index + 1] || null : null;
+}
+
+function confirmBoleQuestion(questionId) {
+  const question = boleQuestionById(questionId);
+  if (!question) return null;
+  state.boleConfirmedQuestionIds.add(questionId);
+  state.boleShownQuestionIds.add(questionId);
+  const nextQuestion = nextBoleQuestionAfter(questionId);
+  if (nextQuestion) {
+    state.boleShownQuestionIds.add(nextQuestion.id);
+    state.boleActiveQuestionId = nextQuestion.id;
+  }
+  return nextQuestion;
+}
+
+function activateBoleQuestion(questionId) {
+  const question = boleQuestionById(questionId);
+  if (!question) return;
+  clearBoleAdvanceTimer();
+  state.boleStage = question.stage === "reading" ? "preferences" : "calibration";
+  state.boleShownQuestionIds.add(questionId);
+  state.boleActiveQuestionId = questionId;
+  if (typeof renderBoleWorkbench === "function") renderBoleWorkbench();
+  if (typeof boleChatInputEl !== "undefined" && boleChatInputEl) {
+    boleChatInputEl.focus();
+    boleChatInputEl.setSelectionRange?.(boleChatInputEl.value.length, boleChatInputEl.value.length);
+  }
+}
+
+function advanceBoleQuestionFrom(questionId) {
+  const nextQuestion = confirmBoleQuestion(questionId);
+  if (!nextQuestion) {
+    if (state.boleStage === "calibration") setBoleStage("preferences");
+    else if (state.boleStage === "preferences") setBoleStage("draft");
+    else renderBoleWorkbench();
+    return;
+  }
+  renderBoleWorkbench();
+}
+
+function scheduleBoleAdvance(questionId, delay = BOLE_CHOICE_ADVANCE_DELAY_MS) {
+  clearBoleAdvanceTimer();
+  state.boleAdvanceTimer = setTimeout(() => {
+    state.boleAdvanceTimer = null;
+    if (state.boleActiveQuestionId !== questionId) return;
+    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+    if (!boleAnswerLabels(answer).length && !answer.text) return;
+    advanceBoleQuestionFrom(questionId);
+  }, delay);
+}
+
+function buildBoleConversationContext(currentQuestionId = "") {
+  if (typeof BOLE_PROFILE_QUESTIONS === "undefined") return [];
+  return BOLE_PROFILE_QUESTIONS.filter((question) => question.id !== currentQuestionId).map((question) => {
+    const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+    return {
+      question_id: question.id,
+      question_title: question.title,
+      stage: question.stage,
+      choices: answer.choices,
+      text: answer.text,
+      ai_labels: answer.ai_labels,
+      ai_note: answer.ai_note,
+      follow_up: answer.follow_up,
+    };
+  }).filter((item) => item.choices.length || item.text || item.ai_labels.length);
+}
+
+function localBoleInterpretation(question, text, choices = []) {
+  const sourceText = normalizeBoleLabel(text);
+  const inferred = [];
+  const haystack = sourceText.toLowerCase();
+  if (/rag|知识库/.test(haystack)) inferred.push("RAG / 知识库");
+  if (/agent|智能体/.test(haystack)) inferred.push("Agent");
+  if (/code|编程|代码/.test(haystack)) inferred.push("Code AI");
+  if (/本地|私有|部署|量化/.test(haystack)) inferred.push("本地部署");
+  if (/多模态|图像|视频|语音/.test(haystack)) inferred.push("多模态");
+  if (/工程|研发|开发|集成/.test(haystack)) inferred.push("工程与部署");
+  if (/产品|工具|效率/.test(haystack)) inferred.push("产品与工具");
+  if (/融资|资本/.test(haystack)) inferred.push("纯融资快讯");
+  if (/营销|软文/.test(haystack)) inferred.push("营销稿");
+  if (/空泛|观点/.test(haystack)) inferred.push("空泛观点");
+  if (/核验|事实|可信/.test(haystack)) inferred.push("事实核验");
+  if (/深入|深度|细节/.test(haystack)) inferred.push("深入分析");
+  const labels = uniqueBoleLabels([...choices, ...inferred, ...parseBoleTerms(sourceText)]).slice(0, 5);
+  return {
+    labels,
+    note: labels.length ? `伯乐理解为：${labels.join("、")}` : "",
+    follow_up: question?.stage === "interest" ? "你更想看实践案例，还是底层能力变化？" : "这个偏好在高命中新闻里优先使用。",
+    source: "local",
+  };
+}
+
+async function interpretBoleInput(question, text, selectedChoices = []) {
+  const fallback = localBoleInterpretation(question, text, selectedChoices);
+  if (!apiBaseUrl) return fallback;
+  try {
+    const payload = await apiFetch("/api/personalization/interpret", {
+      method: "POST",
+      body: JSON.stringify({
+        question_id: question.id,
+        stage: state.boleStage,
+        answer_text: normalizeBoleLabel(text),
+        selected_choices: uniqueBoleLabels(selectedChoices),
+        history: buildBoleConversationContext(question.id),
+      }),
+    });
+    const labels = uniqueBoleLabels(payload?.labels || []);
+    return {
+      labels: labels.length ? labels : fallback.labels,
+      note: normalizeBoleLabel(payload?.note || fallback.note),
+      follow_up: normalizeBoleLabel(payload?.follow_up || fallback.follow_up),
+      source: "ai",
+    };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function syncBoleStage() {
+  const stage = BOLE_STAGE_ORDER.includes(state.boleStage) ? state.boleStage : "calibration";
+  state.boleStage = stage;
+  ensureBoleStageStarted(stage);
+  if (boleWorkbenchEl) boleWorkbenchEl.dataset.boleStage = stage;
+  if (boleStageTrackEl) {
+    const stageIndex = Math.max(0, BOLE_STAGE_ORDER.indexOf(stage));
+    boleStageTrackEl.style.transform = `translateX(-${stageIndex * 100}%)`;
+  }
+  boleStageButtons.forEach((button) => {
+    const active = button.dataset.boleStage === stage;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  boleStagePanels.forEach((panel) => {
+    const active = panel.dataset.boleStagePanel === stage;
+    panel.classList.toggle("active", active);
+    panel.setAttribute("aria-hidden", active ? "false" : "true");
+  });
+  if (boleChatFormEl) boleChatFormEl.hidden = stage === "draft";
+  if (boleChatInputEl) {
+    const question = activeBoleQuestion(stage);
+    boleChatInputEl.placeholder = question?.placeholder || "继续告诉伯乐你的关注点";
+    boleChatInputEl.value = stage === "draft" ? "" : normalizeBoleAnswer(state.boleAnswers[question?.id]).text;
+  }
+}
+
+function setBoleStage(stage) {
+  if (!BOLE_STAGE_ORDER.includes(stage)) return;
+  clearBoleAdvanceTimer();
+  state.boleStage = stage;
+  ensureBoleStageStarted(stage);
+  if (stage !== "draft") {
+    state.boleActiveQuestionId = activeBoleQuestion(stage)?.id || state.boleActiveQuestionId;
+  }
+  renderBoleWorkbench();
+  if (stage !== "draft") boleChatInputEl?.focus();
+}
+
+function renderBoleChoiceButtons(question) {
+  const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+  return question.choices
+    .map((choice) => {
+      const active = answer.choices.includes(choice);
+      return `<button class="bole-seed-chip${active ? " active" : ""}" type="button" data-bole-question-choice="${escapeHtml(
+        question.id,
+      )}" data-bole-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`;
+    })
+    .join("");
+}
+
+function renderBoleQuestionTurn(question) {
+  if (!question) return "";
+  const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+  const labels = boleAnswerLabels(answer);
+  const active = question.id === activeBoleQuestion(state.boleStage)?.id;
+  const answered = state.boleConfirmedQuestionIds.has(question.id) && !active;
+  const userLine = answer.text ? `<p class="bole-user-evidence">你说：${escapeHtml(answer.text)}</p>` : "";
+  const interpretation = labels.length
+    ? `<div class="bole-interpretation"><span>伯乐理解为</span><strong>${escapeHtml(labels.join("、"))}</strong></div>`
+    : "";
+  const followUp = answer.follow_up ? `<p>${escapeHtml(answer.follow_up)}</p>` : `<p>${escapeHtml(question.prompt)}</p>`;
+  return `
+    <article class="bole-turn bole-turn-ai${answered ? " answered" : ""}" data-bole-question-id="${escapeHtml(question.id)}">
+      <span class="bole-turn-label">伯乐</span>
+      <h4>${escapeHtml(question.title)}</h4>
+      ${active ? followUp : ""}
+      ${userLine}
+      ${interpretation}
+      ${active ? `<div class="bole-seed-row" aria-label="预设选项">${renderBoleChoiceButtons(question)}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderBoleConversation() {
+  if (boleDialogueTurnsEl) {
+    boleDialogueTurnsEl.innerHTML = visibleBoleQuestionsForStage("calibration").map(renderBoleQuestionTurn).join("");
+  }
+  if (boleReadingTurnsEl) {
+    boleReadingTurnsEl.innerHTML = visibleBoleQuestionsForStage("preferences").map(renderBoleQuestionTurn).join("");
+  }
+}
+
+function setBoleWorkbenchStatus(text) {
+  if (boleWorkbenchStatusEl) boleWorkbenchStatusEl.textContent = text || "";
+}
+
+function boleStatusLabel() {
+  if (!apiBaseUrl) return "未连接";
+  if (state.personalizationUnavailable) return "暂不可用";
+  const status = state.personalizationStatus;
+  if (!status) return "未加载";
+  if (status.state === "confirmed" && status.enabled) return "已启用";
+  if (status.state === "confirmed" && !status.enabled) return "已停用";
+  if (status.state === "draft_pending") return "有草稿";
+  if (status.state === "skipped") return "已跳过";
+  return "未设置";
+}
+
+function renderBoleSettingsStatus() {
+  if (boleSettingsStatusEl) boleSettingsStatusEl.textContent = boleStatusLabel();
+}
+
+function syncBoleActionButtons() {
+  const busy = false;
+  const isFirstUseStage = !state.personalizationStatus || state.personalizationStatus.state === "not_started";
+  if (boleConfirmButtonEl) {
+    boleConfirmButtonEl.disabled = busy;
+    boleConfirmButtonEl.textContent = state.boleStage === "draft" ? "保存画像" : "保存";
+  }
+  if (boleContinueButtonEl) boleContinueButtonEl.hidden = state.boleStage === "draft";
+  if (boleSkipButtonEl) {
+    boleSkipButtonEl.hidden = !isFirstUseStage || state.boleStage === "draft";
+    boleSkipButtonEl.disabled = false;
+  }
+  const unavailable = !apiBaseUrl || state.personalizationUnavailable;
+  if (boleDisableButtonEl) boleDisableButtonEl.disabled = unavailable || !state.personalizationStatus?.active_profile;
+  if (boleResetButtonEl) boleResetButtonEl.disabled = unavailable || !state.personalizationStatus;
+}
+
+function collectBoleCalibrationAnswers() {
+  const answers = {};
+  BOLE_PROFILE_QUESTIONS.forEach((question) => {
+    answers[question.id] = normalizeBoleAnswer(state.boleAnswers[question.id]);
+  });
+  return answers;
+}
+
+function collectBolePreferenceValues() {
+  const values = {};
+  bolePreferenceButtons.forEach((button) => {
+    if (!button.classList.contains("active")) return;
+    const key = button.dataset.bolePreference;
+    if (!key) return;
+    values[key] = button.dataset.boleValue || button.textContent.trim();
+  });
+  return values;
+}
+
+function collectBoleDraftInput() {
+  return buildBoleProfileDraft({
+    calibrationAnswers: collectBoleCalibrationAnswers(),
+    preferenceValues: collectBolePreferenceValues(),
+  });
+}
+
+function renderBoleInterestTags(items, emptyText) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return `<span class="bole-empty-chip">${escapeHtml(emptyText)}</span>`;
+  return list
+    .map((item) => {
+      const label = typeof item === "string" ? item : item.label || item.source || "";
+      return `<span class="bole-profile-chip">${escapeHtml(label)}</span>`;
+    })
+    .join("");
+}
+
+function renderBoleProfileCards(items, emptyText, options = {}) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return `<div class="bole-empty-state">${escapeHtml(emptyText)}</div>`;
+  return list
+    .map((item) => {
+      const label = item.label || item.source || item;
+      const questionId = item.questionId || "";
+      return `
+        <div class="bole-profile-card${options.avoid ? " avoid" : ""}">
+          <strong>${escapeHtml(label)}</strong>
+          ${
+            questionId
+              ? `<button class="bole-profile-remove" type="button" aria-label="移除 ${escapeHtml(label)}" data-bole-remove-question="${escapeHtml(questionId)}" data-bole-remove-label="${escapeHtml(label)}">×</button>`
+              : ""
+          }
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function boleItemsFromQuestion(questionId, options = {}) {
+  const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  return boleAnswerLabels(answer).map((label) => ({ label, questionId, ...options }));
+}
+
+function boleProfileSectionsForStage(stage = state.boleStage) {
+  if (stage === "preferences") {
+    return [
+      { title: "阅读偏好", items: [...boleItemsFromQuestion("deep_reading_policy"), ...boleItemsFromQuestion("reading_depth")] },
+    ];
+  }
+  if (stage === "draft") {
+    return [
+      { title: "多看", items: [...boleItemsFromQuestion("attention_goal"), ...boleItemsFromQuestion("ai_domains")] },
+      { title: "少看", items: boleItemsFromQuestion("negative_preferences", { avoid: true }), avoid: true },
+      { title: "阅读偏好", items: [...boleItemsFromQuestion("deep_reading_policy"), ...boleItemsFromQuestion("reading_depth")] },
+    ];
+  }
+  return [
+    { title: "多看", items: [...boleItemsFromQuestion("attention_goal"), ...boleItemsFromQuestion("ai_domains")] },
+    { title: "少看", items: boleItemsFromQuestion("negative_preferences", { avoid: true }), avoid: true },
+  ];
+}
+
+function renderBoleRecognizedProfile() {
+  if (!boleRecognizedProfileEl) return;
+  if (boleProfileRailTitleEl) {
+    if (state.boleStage === "preferences") boleProfileRailTitleEl.textContent = "阅读偏好";
+    else if (state.boleStage === "draft") boleProfileRailTitleEl.textContent = "画像草稿";
+    else boleProfileRailTitleEl.textContent = "已选兴趣";
+  }
+  const sections = boleProfileSectionsForStage(state.boleStage);
+  const blocks = sections
+    .filter((section) => section.items.length)
+    .map((section) => `
+      <div class="bole-profile-block">
+        <span>${escapeHtml(section.title)}</span>
+        ${renderBoleProfileCards(section.items, "", { avoid: section.avoid })}
+      </div>
+    `);
+  const emptyText = state.boleStage === "preferences" ? "先设置阅读偏好" : state.boleStage === "draft" ? "完成前两步后显示画像" : "先回答兴趣问题";
+  boleRecognizedProfileEl.innerHTML = blocks.join("") || `<div class="bole-empty-state">${escapeHtml(emptyText)}</div>`;
+}
+
+function removeBoleProfileLabel(questionId, label) {
+  const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  mergeBoleAnswer(questionId, {
+    choices: answer.choices.filter((item) => item !== label),
+    ai_labels: answer.ai_labels.filter((item) => item !== label),
+  });
+  state.boleDraftPreview = collectBoleDraftInput();
+  renderBoleWorkbench();
+}
+
+function renderBoleDraftPreview(profile) {
+  if (!boleDraftPreviewEl) return;
+  if (!profile) {
+    boleDraftPreviewEl.innerHTML = '<div class="bole-empty-state">回答后显示草稿</div>';
+    return;
+  }
+  const readingLabels = uniqueBoleLabels([
+    ...(profile.behavior_preferences?.deep_reading_policy || []),
+    ...(profile.behavior_preferences?.reading_depth || []),
+  ]);
+  boleDraftPreviewEl.innerHTML = `
+    <div class="bole-profile-block bole-draft-box">
+      <span>多看</span>
+      <div class="bole-chip-row">${renderBoleInterestTags(profile.positive_interests, "待添加")}</div>
+    </div>
+    <div class="bole-profile-block bole-draft-box">
+      <span>少看</span>
+      <div class="bole-chip-row">${renderBoleInterestTags(profile.negative_interests, "未设置")}</div>
+    </div>
+    <div class="bole-profile-block bole-draft-box">
+      <span>阅读偏好</span>
+      <div class="bole-chip-row">${readingLabels.length ? renderBoleInterestTags(readingLabels, "未设置") : '<span class="bole-empty-chip">未设置</span>'}</div>
+    </div>
+  `;
+}
+
+function renderBoleRecommendationPreview(profile) {
+  if (boleRecommendationPreviewEl) boleRecommendationPreviewEl.innerHTML = "";
+}
+
+function renderBoleWorkbench() {
+  const status = state.personalizationStatus || {};
+  const profile = state.boleDraftPreview || status.draft_profile || status.active_profile || collectBoleDraftInput();
+  syncBoleStage();
+  renderBoleConversation();
+  renderBoleDraftPreview(profile);
+  renderBoleRecommendationPreview(profile);
+  renderBoleRecognizedProfile(profile);
+  renderBoleSettingsStatus();
+  syncBoleActionButtons();
+}
+
+async function advanceBoleQuestion(text = "") {
+  const question = activeBoleQuestion(state.boleStage);
+  if (!question) return;
+  const nextText = normalizeBoleLabel(text);
+  if (!nextText) return;
+  const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+  mergeBoleAnswer(question.id, { choices: answer.choices, text: nextText, ai_note: "正在理解..." });
+  renderBoleWorkbench();
+  const interpretation = await interpretBoleInput(question, nextText, answer.choices);
+  mergeBoleAnswer(question.id, {
+    choices: answer.choices,
+    text: nextText,
+    ai_labels: interpretation.labels,
+    ai_note: interpretation.note,
+    follow_up: interpretation.follow_up,
+    source: interpretation.source,
+  });
+  state.boleDraftPreview = collectBoleDraftInput();
+  renderBoleWorkbench();
+  scheduleBoleAdvance(question.id, BOLE_TEXT_ADVANCE_DELAY_MS);
+}
+
+function openBoleWorkbench() {
+  if (!boleWorkbenchEl) return;
+  if (!apiBaseUrl) {
+    state.personalizationUnavailable = true;
+  }
+  renderBoleWorkbench();
+  setBoleWorkbenchStatus("");
+  boleWorkbenchEl.hidden = false;
+  document.body.classList.add("bole-workbench-open");
+  window.requestAnimationFrame(() => boleWorkbenchEl.classList.add("open"));
+  if (state.boleStage !== "draft") boleChatInputEl?.focus();
+}
+
+function closeBoleWorkbench() {
+  if (!boleWorkbenchEl) return;
+  boleWorkbenchEl.classList.remove("open");
+  boleWorkbenchEl.hidden = true;
+  document.body.classList.remove("bole-workbench-open");
+}
+
+async function loadPersonalization(options = {}) {
+  if (!apiBaseUrl) {
+    state.personalizationUnavailable = true;
+    renderBoleWorkbench();
+    return null;
+  }
+  try {
+    const payload = await apiFetch("/api/personalization");
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = payload.draft_profile || payload.active_profile || state.boleDraftPreview;
+    renderBoleWorkbench();
+    if (options.autoOpen && payload.state === "not_started") openBoleWorkbench();
+    return payload;
+  } catch (err) {
+    state.personalizationUnavailable = true;
+    renderBoleWorkbench();
+    if (!options.quiet) setBoleWorkbenchStatus(err.message || "伯乐画像不可用");
+    return null;
+  }
+}
+
+async function saveBoleDraft(options = {}) {
+  if (!apiBaseUrl) {
+    state.personalizationUnavailable = true;
+    renderBoleWorkbench();
+    setBoleWorkbenchStatus("暂时无法保存");
+    return false;
+  }
+  const profile = collectBoleDraftInput();
+  const evidence = buildBoleDraftEvidence({
+    calibrationAnswers: collectBoleCalibrationAnswers(),
+  });
+  evidence.positive_count = profile.positive_interests.length;
+  evidence.negative_count = profile.negative_interests.length;
+  state.boleDraftPreview = profile;
+  renderBoleWorkbench();
+  if (boleConfirmButtonEl) boleConfirmButtonEl.disabled = true;
+  if (!options.silent) setBoleWorkbenchStatus("保存中...");
+  try {
+    const payload = await apiFetch("/api/personalization/draft", {
+      method: "POST",
+      body: JSON.stringify({
+        profile,
+        evidence,
+      }),
+    });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = payload.draft_profile || profile;
+    renderBoleWorkbench();
+    if (!options.silent) setBoleWorkbenchStatus("已保存");
+    return true;
+  } catch (err) {
+    setBoleWorkbenchStatus(err.message || "草稿生成失败");
+    return false;
+  } finally {
+    syncBoleActionButtons();
+  }
+}
+
+async function confirmBoleProfile() {
+  const saved = await saveBoleDraft({ silent: true });
+  if (!saved) return;
+  if (boleConfirmButtonEl) boleConfirmButtonEl.disabled = true;
+  setBoleWorkbenchStatus("保存中...");
+  try {
+    const payload = await apiFetch("/api/personalization/confirm", { method: "POST" });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = payload.active_profile || null;
+    renderBoleWorkbench();
+    setBoleWorkbenchStatus("已保存");
+    closeBoleWorkbench();
+  } catch (err) {
+    setBoleWorkbenchStatus(err.message || "保存失败");
+  } finally {
+    syncBoleActionButtons();
+  }
+}
+
+async function skipBolePersonalization() {
+  if (!apiBaseUrl) return;
+  setBoleWorkbenchStatus("跳过中...");
+  try {
+    const payload = await apiFetch("/api/personalization/skip", { method: "POST" });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = null;
+    renderBoleWorkbench();
+    closeBoleWorkbench();
+  } catch (err) {
+    setBoleWorkbenchStatus(err.message || "跳过失败");
+  }
+}
+
+async function resetBolePersonalization() {
+  if (!apiBaseUrl) {
+    renderBoleWorkbench();
+    return;
+  }
+  setSettingsStatus("重置伯乐画像中...");
+  try {
+    const payload = await apiFetch("/api/personalization/reset", { method: "POST" });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = null;
+    state.boleAnswers = {};
+    state.boleShownQuestionIds = new Set(["attention_goal"]);
+    state.boleConfirmedQuestionIds = new Set();
+    state.boleAnswerInterpretations = {};
+    state.boleActiveQuestionId = "attention_goal";
+    state.boleStage = "calibration";
+    if (boleChatInputEl) boleChatInputEl.value = "";
+    renderBoleWorkbench();
+    setSettingsStatus("伯乐画像已重置");
+  } catch (err) {
+    setSettingsStatus(err.message || "重置失败");
+  }
+}
+
+async function disableBolePersonalization() {
+  if (!apiBaseUrl) {
+    renderBoleWorkbench();
+    return;
+  }
+  setSettingsStatus("停用伯乐画像中...");
+  try {
+    const payload = await apiFetch("/api/personalization/disable", { method: "POST" });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = payload.active_profile || null;
+    renderBoleWorkbench();
+    setSettingsStatus("伯乐画像已停用");
+  } catch (err) {
+    setSettingsStatus(err.message || "停用失败");
+  }
+}
+
 function setSettingsStatus(text) {
   if (settingsStatusEl) settingsStatusEl.textContent = text;
 }
@@ -1510,6 +2358,7 @@ async function loadSettings() {
     const settings = await apiFetch("/api/settings");
     applySettings(settings);
     await loadAiProfiles();
+    await loadPersonalization({ autoOpen: true });
     setSettingsStatus("已登录");
     return settings;
   } catch (_) {
@@ -2343,6 +3192,36 @@ function sourceGroupKey(siteId, source) {
   return `${siteId || ""}::${source || ""}`;
 }
 
+function findSourceGroupNode(sourceKey) {
+  const groups = newsListEl?.querySelectorAll(".source-group") || [];
+  return Array.from(groups).find((group) => group.dataset.sourceKey === sourceKey) || null;
+}
+
+function findSiteGroupNode(siteId) {
+  const groups = newsListEl?.querySelectorAll(".site-group") || [];
+  return Array.from(groups).find((group) => group.dataset.siteId === siteId) || null;
+}
+
+function collapseSourceGroup(sourceKey) {
+  state.expandedSourceGroups.delete(sourceKey);
+  renderList();
+  window.requestAnimationFrame(() => {
+    const group = findSourceGroupNode(sourceKey);
+    const header = group?.querySelector(".source-group-head");
+    if (header) header.scrollIntoView({ behavior: "auto", block: "start" });
+  });
+}
+
+function collapseSiteGroup(siteId) {
+  state.expandedSites.delete(siteId);
+  renderList();
+  window.requestAnimationFrame(() => {
+    const group = findSiteGroupNode(siteId);
+    const header = group?.querySelector(".site-group-head");
+    if (header) header.scrollIntoView({ behavior: "auto", block: "start" });
+  });
+}
+
 function sourcePreferenceHiddenCount() {
   const prefs = state.sourcePrefs || emptySourcePrefs();
   return uniqueStrings(prefs.hiddenSites).length
@@ -2718,7 +3597,7 @@ function closeSourceHiddenDialog() {
 }
 
 function scorePercent(item) {
-  const score = Number(item.ai_score ?? item.score ?? 0);
+  const score = Number(item.priority_score ?? item.ai_score ?? item.score ?? 0);
   if (!Number.isFinite(score) || score <= 0) return 0;
   return Math.round(score <= 1 ? score * 100 : score);
 }
@@ -2775,6 +3654,11 @@ function normalizedEventText(text) {
     .replace(/[，。、“”‘’：:；;！!？?（）()\[\]【】《》<>·.,/\\|_-]/g, "");
 }
 
+function eventActionToken(normalized) {
+  const action = normalized.match(/(pricing|price|benchmark|coding|release|launch|shipping|upgrade|update|outage|policy|funding|acquisition|收购|融资|发布|上线|升级|更新|降价|定价|价格|评测|榜单|基准|故障|政策)/);
+  return action ? action[1] : "";
+}
+
 function eventKey(item) {
   const raw = itemTitleText(item);
   const bracket = raw.match(/《([^》]{4,40})》/);
@@ -2782,7 +3666,10 @@ function eventKey(item) {
 
   const normalized = normalizedEventText(raw);
   const model = normalized.match(/(bitcpmcann|deepseekv\d+(?:pro)?|grokv\d+(?:medium)?|gemini\d+(?:\.\d+)?(?:flash|pro)?|gpt\d+(?:\.\d+)?|llama\d+)/);
-  if (model) return `entity:${model[1]}`;
+  if (model) {
+    const action = eventActionToken(normalized);
+    return `entity:${model[1]}:${action || normalized.slice(0, 28)}`;
+  }
 
   return `title:${normalized.slice(0, 34)}`;
 }
@@ -2864,7 +3751,7 @@ function pickBoleItems(items) {
 
   const picked = [];
   const addPick = (cluster) => {
-    if (cluster && !picked.includes(cluster) && picked.length < 8) picked.push(cluster);
+    if (cluster && !picked.includes(cluster) && picked.length < BOLE_PICK_LIMIT) picked.push(cluster);
   };
   ["AI HOT精选", "HN热议", "GitHub趋势"].forEach((signal) => {
     addPick(sorted.find((cluster) => cluster.sourceSignals.includes(signal)));
@@ -3070,21 +3957,13 @@ function renderItemNode(item) {
   return node;
 }
 
-function buildShowMoreButton(text, className, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = className;
-  button.textContent = text;
-  button.addEventListener("click", onClick);
-  return button;
-}
-
 function buildSourceGroupNode(source, items, siteId = "") {
   const sourceKey = sourceGroupKey(siteId, source);
   const expanded = state.expandedSourceGroups.has(sourceKey);
   const previewItems = expanded ? items : items.slice(0, SOURCE_ITEM_PREVIEW_COUNT);
   const section = document.createElement("section");
   section.className = "source-group";
+  section.dataset.sourceKey = sourceKey;
   const header = document.createElement("header");
   header.className = "source-group-head";
   const title = document.createElement("h3");
@@ -3110,11 +3989,11 @@ function buildSourceGroupNode(source, items, siteId = "") {
     toggle.append(label, icon);
     toggle.addEventListener("click", () => {
       if (expanded) {
-        state.expandedSourceGroups.delete(sourceKey);
+        collapseSourceGroup(sourceKey);
       } else {
         state.expandedSourceGroups.add(sourceKey);
+        renderList();
       }
-      renderList();
     });
     meta.append(count, toggle);
   } else {
@@ -3180,42 +4059,54 @@ function renderGroupedBySiteAndSource(items) {
   sites.forEach(([siteId, site]) => {
     const siteSection = document.createElement("section");
     siteSection.className = "site-group";
+    siteSection.dataset.siteId = siteId;
     const header = document.createElement("header");
     header.className = "site-group-head";
     const title = document.createElement("h3");
     title.textContent = site.siteName;
+    const meta = document.createElement("div");
+    meta.className = "site-toggle-meta";
     const count = document.createElement("span");
     count.textContent = `${fmtNumber(site.items.length)} 条`;
     const siteListEl = document.createElement("div");
     siteListEl.className = "site-group-list";
-    header.append(title, count);
-    siteSection.append(header, siteListEl);
 
     const sourceGroups = groupBySource(site.items);
     const siteExpanded = state.expandedSites.has(siteId);
+    if (sourceGroups.length > SOURCE_GROUP_PREVIEW_COUNT) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "site-toggle-action";
+      toggle.setAttribute("aria-expanded", String(siteExpanded));
+      toggle.setAttribute("aria-label", siteExpanded ? `收起 ${site.siteName}` : `展开 ${site.siteName} 全部 ${fmtNumber(sourceGroups.length)} 个来源`);
+      const label = document.createElement("span");
+      label.className = "site-toggle-label";
+      label.textContent = siteExpanded ? "收起" : "展开";
+      const icon = document.createElement("span");
+      icon.className = "site-toggle-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = siteExpanded ? "▴" : "▾";
+      toggle.append(label, icon);
+      toggle.addEventListener("click", () => {
+        if (siteExpanded) {
+          collapseSiteGroup(siteId);
+        } else {
+          state.expandedSites.add(siteId);
+          renderList();
+        }
+      });
+      meta.append(count, toggle);
+    } else {
+      meta.appendChild(count);
+    }
+
+    header.append(title, meta);
+    siteSection.append(header, siteListEl);
+
     const visibleGroups = siteExpanded ? sourceGroups : sourceGroups.slice(0, SOURCE_GROUP_PREVIEW_COUNT);
     visibleGroups.forEach(([source, groupItems]) => {
       siteListEl.appendChild(buildSourceGroupNode(source, groupItems, siteId));
     });
-    if (!siteExpanded && sourceGroups.length > SOURCE_GROUP_PREVIEW_COUNT) {
-      siteSection.appendChild(buildShowMoreButton(
-        `展开 ${site.siteName} 全部 ${fmtNumber(sourceGroups.length)} 个来源`,
-        "site-show-more",
-        () => {
-          state.expandedSites.add(siteId);
-          renderList();
-        }
-      ));
-    } else if (siteExpanded && sourceGroups.length > SOURCE_GROUP_PREVIEW_COUNT) {
-      siteSection.appendChild(buildShowMoreButton(
-        `收起 ${site.siteName}`,
-        "site-show-more",
-        () => {
-          state.expandedSites.delete(siteId);
-          renderList();
-        }
-      ));
-    }
     frag.appendChild(siteSection);
   });
 
@@ -3574,6 +4465,11 @@ document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
     setMobileView(btn.dataset.view || "today");
   });
 });
+desktopViewButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    setMobileView(btn.dataset.view || "today");
+  });
+});
 
 if (dataDrawerButtonEl) dataDrawerButtonEl.addEventListener("click", openDataDrawer);
 if (dataDrawerCloseEl) dataDrawerCloseEl.addEventListener("click", closeDataDrawer);
@@ -3604,10 +4500,115 @@ document.addEventListener("keydown", (event) => {
   closeDataDrawer();
   closeSourceSortDialog();
   closeSourceHiddenDialog();
+  closeBoleWorkbench();
 });
+
+if (boleWorkbenchOpenEl) {
+  boleWorkbenchOpenEl.addEventListener("click", async () => {
+    if (!state.personalizationStatus && apiBaseUrl) await loadPersonalization({ quiet: true });
+    openBoleWorkbench();
+  });
+}
+if (boleSettingsOpenEl) {
+  boleSettingsOpenEl.addEventListener("click", async () => {
+    if (!state.personalizationStatus && apiBaseUrl) await loadPersonalization({ quiet: true });
+    openBoleWorkbench();
+  });
+}
+if (boleWorkbenchCloseEl) boleWorkbenchCloseEl.addEventListener("click", closeBoleWorkbench);
+if (boleWorkbenchEl) {
+  boleWorkbenchEl.addEventListener("click", (event) => {
+    if (event.target === boleWorkbenchEl) closeBoleWorkbench();
+  });
+}
+boleStageButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const stage = button.dataset.boleStage || "calibration";
+    if (stage === "draft") state.boleDraftPreview = collectBoleDraftInput();
+    setBoleStage(stage);
+  });
+});
+if (boleDialogueTurnsEl) {
+  boleDialogueTurnsEl.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-bole-question-choice]");
+    if (!button) {
+      const turn = event.target.closest("[data-bole-question-id]");
+      if (turn) activateBoleQuestion(turn.dataset.boleQuestionId);
+      return;
+    }
+    const questionId = button.dataset.boleQuestionChoice;
+    const choice = button.dataset.boleChoice || button.textContent;
+    activateBoleQuestion(questionId);
+    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+    const choices = answer.choices.includes(choice)
+      ? answer.choices.filter((item) => item !== choice)
+      : uniqueBoleLabels([...answer.choices, choice]);
+    mergeBoleAnswer(questionId, { choices });
+    state.boleDraftPreview = collectBoleDraftInput();
+    renderBoleWorkbench();
+    if (choices.length) scheduleBoleAdvance(questionId, BOLE_CHOICE_ADVANCE_DELAY_MS);
+    else clearBoleAdvanceTimer();
+  });
+}
+if (boleReadingTurnsEl) {
+  boleReadingTurnsEl.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-bole-question-choice]");
+    if (!button) {
+      const turn = event.target.closest("[data-bole-question-id]");
+      if (turn) activateBoleQuestion(turn.dataset.boleQuestionId);
+      return;
+    }
+    const questionId = button.dataset.boleQuestionChoice;
+    const choice = button.dataset.boleChoice || button.textContent;
+    activateBoleQuestion(questionId);
+    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+    const choices = answer.choices.includes(choice)
+      ? answer.choices.filter((item) => item !== choice)
+      : uniqueBoleLabels([...answer.choices, choice]);
+    mergeBoleAnswer(questionId, { choices });
+    state.boleDraftPreview = collectBoleDraftInput();
+    renderBoleWorkbench();
+    if (choices.length) scheduleBoleAdvance(questionId, BOLE_CHOICE_ADVANCE_DELAY_MS);
+    else clearBoleAdvanceTimer();
+  });
+}
+if (boleChatFormEl) {
+  boleChatFormEl.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = boleChatInputEl?.value || "";
+    await advanceBoleQuestion(text);
+  });
+}
+if (boleRecognizedProfileEl) {
+  boleRecognizedProfileEl.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-bole-remove-question]");
+    if (!button) return;
+    removeBoleProfileLabel(button.dataset.boleRemoveQuestion, button.dataset.boleRemoveLabel || "");
+  });
+}
+if (boleConfirmButtonEl) {
+  boleConfirmButtonEl.addEventListener("click", () => {
+    if (state.boleStage === "draft") confirmBoleProfile();
+    else saveBoleDraft();
+  });
+}
+if (boleSkipButtonEl) boleSkipButtonEl.addEventListener("click", skipBolePersonalization);
+if (boleResetButtonEl) boleResetButtonEl.addEventListener("click", resetBolePersonalization);
+if (boleDisableButtonEl) boleDisableButtonEl.addEventListener("click", disableBolePersonalization);
+if (boleContinueButtonEl) {
+  boleContinueButtonEl.addEventListener("click", () => {
+    if (state.boleStage === "calibration") setBoleStage("preferences");
+    else if (state.boleStage === "preferences") setBoleStage("draft");
+  });
+}
 
 if (askAiButtonEl) {
   askAiButtonEl.addEventListener("click", () => {
+    openAskAi();
+  });
+}
+if (desktopAskAiButtonEl) {
+  desktopAskAiButtonEl.addEventListener("click", () => {
     openAskAi();
   });
 }
@@ -3718,4 +4719,5 @@ if (adminPasswordInputEl) {
 }
 
 setMobileView(state.mobileView);
+renderBoleWorkbench();
 init();

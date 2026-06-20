@@ -27,9 +27,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 try:
-    from scripts.ai_relevance import add_ai_relevance_fields, score_ai_relevance
+    from scripts.ai_relevance import AI_RELEVANCE_SCORE_VERSION, add_ai_relevance_fields, score_ai_relevance
 except ModuleNotFoundError:  # pragma: no cover - direct `python scripts/update_news.py`
-    from ai_relevance import add_ai_relevance_fields, score_ai_relevance
+    from ai_relevance import AI_RELEVANCE_SCORE_VERSION, add_ai_relevance_fields, score_ai_relevance
 
 try:
     import feedparser
@@ -3130,6 +3130,7 @@ def build_latest_payloads(latest_payload: dict[str, Any]) -> tuple[dict[str, Any
         "generated_at": latest_payload.get("generated_at"),
         "window_hours": latest_payload.get("window_hours"),
         "topic_filter": latest_payload.get("topic_filter"),
+        "score_version": latest_payload.get("score_version"),
         "ai_relevance_threshold": latest_payload.get("ai_relevance_threshold"),
         "total_items_raw": latest_payload.get("total_items_raw"),
         "total_items_all_mode": latest_payload.get("total_items_all_mode"),
@@ -3317,7 +3318,8 @@ def main() -> int:
         "total_items_ai_raw": len(latest_items),
         "total_items_raw": len(latest_items_all),
         "total_items_all_mode": len(latest_items_all_dedup),
-        "topic_filter": "ai_relevance_scoring_v0_4",
+        "topic_filter": AI_RELEVANCE_SCORE_VERSION,
+        "score_version": AI_RELEVANCE_SCORE_VERSION,
         "ai_relevance_threshold": 0.65,
         "archive_total": len(archive),
         "site_count": len(site_stat),

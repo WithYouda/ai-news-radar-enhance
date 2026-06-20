@@ -1,7 +1,17 @@
+import subprocess
+import re
+import textwrap
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _nav_buttons(html: str, nav_id: str):
+    start = html.index(f'id="{nav_id}"')
+    end = html.index("</nav>", start)
+    nav = html[start:end]
+    return re.findall(r'<button[^>]*data-view="([^"]+)"[^>]*>([^<]+)</button>', nav)
 
 
 def test_mobile_nav_and_ask_entry_exist():
@@ -12,6 +22,55 @@ def test_mobile_nav_and_ask_entry_exist():
     assert 'data-view="verification"' in html
     assert 'data-view="settings"' in html
     assert 'id="askAiButton"' in html
+
+
+def test_desktop_navigation_exposes_every_mobile_view_without_hiding_itself():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="desktopViewNav"' in html
+    assert 'id="desktopAskAiButton"' in html
+    assert 'class="desktop-view-strip" data-mobile-view' not in html
+    assert 'class="desktop-view-nav" data-mobile-view' not in html
+    assert 'class="desktop-ask-button" data-mobile-view' not in html
+    for view in ("today", "categories", "verification", "settings"):
+        assert f'class="desktop-view-btn' in html
+        assert f'data-view="{view}"' in html
+    assert "desktopViewButtons" in js
+    assert "desktopAskAiButtonEl" in js
+    assert "desktopViewButtons.forEach" in js
+    assert 'btn.classList.toggle("active", btn.dataset.view === view)' in js
+    assert 'desktopAskAiButtonEl.addEventListener("click"' in js
+    assert ".desktop-view-strip" in css
+    assert ".desktop-view-nav" in css
+    assert ".desktop-view-btn" in css
+    assert ".desktop-ask-button" in css
+    assert ".desktop-view-strip {\n    display: none;" in css
+
+
+def test_desktop_and_mobile_main_navigation_stay_in_sync():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+
+    desktop_buttons = _nav_buttons(html, "desktopViewNav")
+    mobile_buttons = _nav_buttons(html, "mobileBottomNav")
+    assert desktop_buttons == mobile_buttons
+
+
+def test_mobile_settings_view_hides_ask_ai_fab_to_keep_form_clear():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="askAiButton" class="ask-ai-fab"' in html
+    assert "document.body.dataset.activeMobileView = view;" in js
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+    assert 'body[data-active-mobile-view="settings"] .ask-ai-fab' in mobile_css
+    settings_rule = mobile_css[
+        mobile_css.index('body[data-active-mobile-view="settings"] .ask-ai-fab') :
+    ]
+    assert "display: none;" in settings_rule[:160]
+    assert ".desktop-ask-button" in css
 
 
 def test_mobile_css_is_scoped_to_small_screens():
@@ -29,10 +88,387 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=source-toggle-header-0618" in html
+    assert "./assets/styles.css?v=personalized-bole-dialogue-0620" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=source-toggle-header-0618" in html
+    assert "./assets/app.js?v=personalized-bole-dialogue-0620" in html
+
+
+def test_personalized_bole_workbench_starts_hidden_and_not_mobile_view():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    workbench = html[html.index('id="boleWorkbench"') : html.index('id="readerSheet"')]
+
+    assert 'id="boleWorkbench"' in html
+    assert 'id="boleWorkbench" class="bole-workbench" hidden' in html
+    assert 'id="boleWorkbench" class="bole-workbench" data-mobile-view' not in html
+    assert 'id="boleWorkbenchOpen"' in html
+    assert 'id="boleSettingsOpen"' in html
+    assert "兴趣校准" in html
+    assert "阅读偏好" in html
+    assert "画像草稿" in html
+    assert "AI 访谈" not in html
+    assert "推荐预览" not in html
+    assert "确认保存" not in html
+    assert "首次登录" not in html
+    assert "确认前不保存" not in html
+    assert "1/4" not in html
+    assert "伯乐判断" not in workbench
+    assert "接下来我会追问" not in workbench
+    assert "每条都来自刚刚的选择或输入" not in workbench
+    assert "确认后用于为你推荐" not in workbench
+    assert "登录后使用伯乐画像" not in workbench
+    assert "后端未配置" not in workbench
+    assert "生成草稿" not in workbench
+    assert "继续校准" not in workbench
+
+
+def test_personalized_bole_workbench_uses_serial_b2_stage_layout():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    workbench = html[html.index('id="boleWorkbench"') : html.index('id="readerSheet"')]
+
+    assert 'class="bole-stage-tabs"' in workbench
+    assert 'data-bole-stage="calibration">兴趣校准' in workbench
+    assert 'data-bole-stage="preferences">阅读偏好' in workbench
+    assert 'data-bole-stage="draft">画像草稿' in workbench
+    assert 'class="bole-stage-track"' in workbench
+    assert 'data-bole-stage-panel="calibration"' in workbench
+    assert 'data-bole-stage-panel="preferences"' in workbench
+    assert 'data-bole-stage-panel="draft"' in workbench
+    assert 'class="bole-workbench-grid"' not in workbench
+    assert 'class="bole-workbench-section' not in workbench
+    assert ".bole-stage-track" in css
+    assert ".bole-dialogue" in css
+    assert ".bole-profile-rail" in css
+    assert "grid-template-columns: minmax(0, 1fr) minmax(280px, 316px);" in css
+    assert "transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);" in css
+
+
+def test_bole_interest_and_reading_questions_are_separate_with_single_ai_input():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    workbench = html[html.index('id="boleWorkbench"') : html.index('id="readerSheet"')]
+
+    assert workbench.count("data-bole-chat-input") == 1
+    assert "data-bole-free-text" not in workbench
+    assert "<textarea" not in workbench
+    assert "const BOLE_PROFILE_QUESTIONS" in js
+    question_bank = js[js.index("const BOLE_PROFILE_QUESTIONS") : js.index("function parseBoleTerms")]
+
+    expected_stages = {
+        "attention_goal": "interest",
+        "ai_domains": "interest",
+        "negative_preferences": "interest",
+        "deep_reading_policy": "reading",
+        "reading_depth": "reading",
+    }
+    for question_id, stage in expected_stages.items():
+        marker = f'id: "{question_id}"'
+        assert marker in question_bank
+        entry_start = question_bank.index(marker)
+        entry_end = question_bank.index("\n  }", entry_start)
+        entry = question_bank[entry_start:entry_end]
+        assert f'stage: "{stage}"' in entry
+        assert "choices: [" in entry
+        assert len(re.findall(r'"[^"]+"', entry[entry.index("choices: [") : entry.index("]", entry.index("choices: ["))])) >= 3
+    interest_bank = question_bank[
+        question_bank.index('id: "attention_goal"') : question_bank.index('id: "deep_reading_policy"')
+    ]
+    assert "deep_reading_policy" not in interest_bank
+    assert "reading_depth" not in interest_bank
+
+
+def test_bole_mobile_workbench_uses_compact_stage_flow_not_long_form():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    workbench = html[html.index('id="boleWorkbench"') : html.index('id="readerSheet"')]
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+
+    assert 'class="bole-stage-tabs"' in workbench
+    assert 'data-bole-stage="calibration">兴趣校准' in workbench
+    assert 'data-bole-stage="preferences">阅读偏好' in workbench
+    assert 'data-bole-stage="draft">画像草稿' in workbench
+    assert "scroll-snap-type: x mandatory;" not in mobile_css
+    assert ".bole-stage-track" in mobile_css
+    assert ".bole-stage-panel" in mobile_css
+    assert ".bole-dialogue" in mobile_css
+    assert ".bole-profile-rail" in mobile_css
+    assert "grid-auto-flow: column;" in mobile_css
+    assert workbench.count("data-bole-chat-input") == 1
+    assert workbench.count("data-bole-question-id") <= 1
+
+
+def test_personalized_bole_frontend_wires_authenticated_api_without_static_breakage():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "personalizationStatus" in js
+    assert "boleStage" in js
+    assert "boleAnswers" in js
+    assert "boleShownQuestionIds" in js
+    assert "boleConfirmedQuestionIds" in js
+    assert "boleAnswerInterpretations" in js
+    assert "boleAdvanceTimer" in js
+    assert "loadPersonalization" in js
+    assert "openBoleWorkbench" in js
+    assert "closeBoleWorkbench" in js
+    assert "setBoleStage" in js
+    assert "renderBoleConversation" in js
+    assert "renderBoleRecognizedProfile" in js
+    assert "scheduleBoleAdvance" in js
+    assert "interpretBoleInput" in js
+    assert "buildBoleConversationContext" in js
+    assert "buildBoleProfileDraft" in js
+    assert "buildBoleDraftEvidence" in js
+    assert 'apiFetch("/api/personalization")' in js
+    assert 'apiFetch("/api/personalization/interpret"' in js
+    assert 'apiFetch("/api/personalization/draft"' in js
+    assert 'apiFetch("/api/personalization/confirm"' in js
+    assert 'apiFetch("/api/personalization/skip"' in js
+    assert 'apiFetch("/api/personalization/reset"' in js
+    assert 'apiFetch("/api/personalization/disable"' in js
+    assert "if (!apiBaseUrl)" in js
+    assert "loadPersonalization({ autoOpen: true })" in js
+    assert ".bole-workbench" in css
+    assert ".bole-stage-track" in css
+    assert ".bole-dialogue" in css
+    assert ".bole-profile-rail" in css
+
+
+def test_bole_workbench_can_open_for_static_frontend_preview_without_backend():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    start = js.index("function openBoleWorkbench")
+    end = js.index("function closeBoleWorkbench", start)
+    body = js[start:end]
+    branch_start = body.index("if (!apiBaseUrl)")
+    unavailable_branch = body[branch_start : body.index("}", branch_start)]
+
+    assert "return;" not in unavailable_branch
+    assert "boleWorkbenchEl.hidden = false" in body
+    assert "后端未配置" not in body
+    assert "登录后使用伯乐画像" not in body
+
+
+def test_bole_dialogue_progression_preserves_later_questions_when_editing():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        if (start < 0 || end < 0) {{
+          throw new Error("missing bole helper slice");
+        }}
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal"]),
+            boleConfirmedQuestionIds: new Set(),
+            boleAnswerInterpretations: {{}},
+            boleAdvanceTimer: null,
+          }},
+          setTimeout,
+          clearTimeout,
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          mergeBoleAnswer("attention_goal", {{ choices: ["产品与工具"] }});
+          confirmBoleQuestion("attention_goal");
+          mergeBoleAnswer("ai_domains", {{ choices: ["Agent"] }});
+          confirmBoleQuestion("ai_domains");
+          mergeBoleAnswer("negative_preferences", {{ choices: ["营销稿"] }});
+          confirmBoleQuestion("negative_preferences");
+          activateBoleQuestion("ai_domains");
+          const visible = visibleBoleQuestionsForStage("calibration").map((item) => item.id);
+          result = {{
+            visible,
+            confirmed: Array.from(state.boleConfirmedQuestionIds),
+            active: activeBoleQuestion("calibration").id,
+          }};
+        `, sandbox);
+        if (sandbox.result.visible.join("|") !== "attention_goal|ai_domains|negative_preferences") {{
+          throw new Error(`editing a previous question hid later questions: ${{sandbox.result.visible.join("|")}}`);
+        }}
+        if (!sandbox.result.confirmed.includes("negative_preferences")) {{
+          throw new Error("later confirmed question was lost during edit");
+        }}
+        if (sandbox.result.active !== "ai_domains") {{
+          throw new Error(`expected ai_domains to reopen, got ${{sandbox.result.active}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_custom_input_uses_ai_interpretation_instead_of_raw_text_tags():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal"]),
+            boleConfirmedQuestionIds: new Set(),
+            boleAnswerInterpretations: {{}},
+            boleAdvanceTimer: null,
+          }},
+          setTimeout,
+          clearTimeout,
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          const raw = "我更关心企业内部知识库真正落地，不想看空泛观点";
+          mergeBoleAnswer("attention_goal", {{
+            text: raw,
+            ai_labels: ["企业知识库落地", "规避空泛观点"],
+            ai_note: "更偏向企业内部知识库场景。",
+            follow_up: "你更想看产品实践还是工程方案？",
+          }});
+          const answer = normalizeBoleAnswer(state.boleAnswers.attention_goal);
+          result = {{
+            text: answer.text,
+            labels: boleAnswerLabels(answer),
+            context: buildBoleConversationContext("ai_domains"),
+          }};
+        `, sandbox);
+        if (sandbox.result.text !== "我更关心企业内部知识库真正落地，不想看空泛观点") {{
+          throw new Error("raw custom answer was not preserved");
+        }}
+        if (sandbox.result.labels.join("|") !== "企业知识库落地|规避空泛观点") {{
+          throw new Error(`raw text leaked into profile tags: ${{sandbox.result.labels.join("|")}}`);
+        }}
+        const context = JSON.stringify(sandbox.result.context);
+        if (!context.includes("企业内部知识库真正落地") || !context.includes("企业知识库落地")) {{
+          throw new Error("conversation context should include raw answer and AI labels");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_right_rail_filters_by_stage_and_supports_removing_choices():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "boleProfileSectionsForStage" in js
+    assert 'state.boleStage === "calibration"' in js
+    assert 'state.boleStage === "preferences"' in js
+    assert "data-bole-remove-question" in js
+    assert "data-bole-remove-label" in js
+    assert "removeBoleProfileLabel" in js
+    assert "renderBoleProfileCards(readingLabels" not in js[js.index("function renderBoleRecognizedProfile") : js.index("function renderBoleDraftPreview")]
+    assert ".bole-profile-remove" in css
+
+
+def test_bole_stage_actions_are_minimal_and_contextual():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    workbench = html[html.index('id="boleWorkbench"') : html.index('id="readerSheet"')]
+
+    assert 'id="boleDraftButton"' not in workbench
+    assert "生成草稿" not in workbench
+    assert "继续校准" not in workbench
+    assert 'id="boleConfirmButton" class="bole-primary-button" type="button">保存</button>' in workbench
+    assert "syncBoleActionButtons" in js
+    assert 'boleConfirmButtonEl.textContent = state.boleStage === "draft" ? "保存画像" : "保存";' in js
+    assert 'boleContinueButtonEl.hidden = state.boleStage === "draft";' in js
+    assert 'boleSkipButtonEl.hidden = !isFirstUseStage || state.boleStage === "draft";' in js
+
+
+def test_bole_motion_is_stable_and_rail_scrollbar_is_compact():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    turn_rule = css[css.index(".bole-turn {") : css.index(".bole-turn.answered")]
+    profile_rule = css[css.index(".bole-profile-card {") : css.index(".bole-profile-card.avoid")]
+    assert "animation:" not in turn_rule
+    assert "animation:" not in profile_rule
+    assert ".bole-profile-list::-webkit-scrollbar" in css
+    rail_scrollbar = css[css.index(".bole-profile-list::-webkit-scrollbar") : css.index(".bole-profile-card", css.index(".bole-profile-list::-webkit-scrollbar"))]
+    assert "width: 4px;" in rail_scrollbar
+    assert "height: 4px;" in rail_scrollbar
+    assert "@keyframes bole-rise" not in css
+    assert "@keyframes bole-slide-in" not in css
+
+
+def test_personalized_bole_profile_draft_builder_dedupes_and_handles_empty_inputs():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function parseBoleTerms");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        if (start < 0 || end < 0) {{
+          throw new Error("missing bole profile draft helper slice");
+        }}
+        const code = js.slice(start, end)
+          + "\\nresult = {{"
+          + "\\n  empty: buildBoleProfileDraft({{ calibrationAnswers: {{}} }}),"
+          + "\\n  mixed: buildBoleProfileDraft({{"
+          + "\\n    calibrationAnswers: {{"
+          + "\\n      attention_goal: {{ choices: ['模型发布', 'Agent 产品化'], text: '模型评测, Agent 产品化 / 开源工具', ai_labels: ['模型评测', '开源工具'] }},"
+          + "\\n      negative_preferences: {{ choices: ['融资'], text: '融资；硬件八卦', ai_labels: ['硬件八卦'] }},"
+          + "\\n      ai_domains: {{ choices: ['Agent 产品化'], text: 'RAG / 知识库，多模态', ai_labels: ['RAG / 知识库', '多模态'] }},"
+          + "\\n      deep_reading_policy: {{ choices: ['高命中读正文'], text: '重大新闻先核验', ai_labels: ['重大新闻先核验'] }},"
+          + "\\n      reading_depth: {{ choices: ['深入分析'], text: '工程细节', ai_labels: ['工程细节'] }}"
+          + "\\n    }}"
+          + "\\n  }}),"
+          + "\\n  evidence: buildBoleDraftEvidence({{"
+          + "\\n    calibrationAnswers: {{ attention_goal: {{ choices: ['工具链'], text: '本地部署' }} }}"
+          + "\\n  }})"
+          + "\\n}};";
+        const sandbox = {{ result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        const empty = sandbox.result.empty;
+        const mixed = sandbox.result.mixed;
+        if (!Array.isArray(empty.positive_interests) || empty.positive_interests.length !== 0) {{
+          throw new Error("empty positive interests should stay valid and empty");
+        }}
+        if (!Array.isArray(empty.negative_interests) || empty.negative_interests.length !== 0) {{
+          throw new Error("empty negative interests should stay valid and empty");
+        }}
+        if (empty.behavior_preferences.summary_depth !== "standard") {{
+          throw new Error("empty draft should keep standard summary default");
+        }}
+        const positiveLabels = mixed.positive_interests.map((item) => item.label);
+        const negativeLabels = mixed.negative_interests.map((item) => item.label);
+        if (positiveLabels.join("|") !== "模型发布|Agent 产品化|模型评测|开源工具|RAG / 知识库|多模态") {{
+          throw new Error(`unexpected positive labels: ${{positiveLabels.join("|")}}`);
+        }}
+        if (negativeLabels.join("|") !== "融资|硬件八卦") {{
+          throw new Error(`unexpected negative labels: ${{negativeLabels.join("|")}}`);
+        }}
+        if (mixed.positive_interests[0].weight !== 0.85 || mixed.negative_interests[0].weight !== 0.8) {{
+          throw new Error("interest weights are not normalized as expected");
+        }}
+        if (mixed.behavior_preferences.summary_depth !== "deep") {{
+          throw new Error("summary depth was not preserved");
+        }}
+        if (mixed.behavior_preferences.verification_strictness !== "strict") {{
+          throw new Error("verification strictness was not preserved");
+        }}
+        if (mixed.behavior_preferences.deep_reading_policy[0] !== "高命中读正文") {{
+          throw new Error("deep reading policy was not preserved");
+        }}
+        if (sandbox.result.evidence.calibration_answers.attention_goal.text !== "本地部署") {{
+          throw new Error("calibration evidence should preserve free text");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
 
 
 def test_homepage_uses_compact_header_and_data_drawer():
@@ -94,7 +530,43 @@ def test_signal_flow_groups_default_to_compact_expandable_sections():
     assert "source-toggle-meta" in js
     assert "aria-expanded" in js
     assert "source-show-more" not in js
-    assert "site-show-more" in js
+    assert "site-show-more" not in js
+
+
+def test_signal_flow_site_toggle_lives_in_site_header_not_group_footer():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    function_start = js.index("function renderGroupedBySiteAndSource")
+    function_end = js.index("function renderList", function_start)
+    site_group_renderer = js[function_start:function_end]
+
+    assert "siteSection.dataset.siteId = siteId" in site_group_renderer
+    assert "site-toggle-meta" in site_group_renderer
+    assert "site-toggle-action" in site_group_renderer
+    assert "header.append(title, meta)" in site_group_renderer
+    assert "meta.append(count, toggle)" in site_group_renderer
+    assert "siteSection.appendChild(buildShowMoreButton(" not in site_group_renderer
+    assert "state.expandedSites.add(siteId)" in site_group_renderer
+    assert "collapseSiteGroup(siteId)" in site_group_renderer
+    assert "toggle.setAttribute(\"aria-label\"" in site_group_renderer
+
+
+def test_signal_flow_collapsing_site_returns_to_same_site_header():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    collapse_start = js.index("function collapseSiteGroup")
+    collapse_end = js.index("function sourcePrefsHiddenSourceSet", collapse_start)
+    collapse_code = js[collapse_start:collapse_end]
+    function_start = js.index("function renderGroupedBySiteAndSource")
+    function_end = js.index("function renderList", function_start)
+    site_group_renderer = js[function_start:function_end]
+
+    assert "collapseSiteGroup(siteId)" in site_group_renderer
+    assert "state.expandedSites.delete(siteId)" in collapse_code
+    assert "renderList()" in collapse_code
+    assert "window.requestAnimationFrame" in collapse_code
+    assert "findSiteGroupNode(siteId)" in collapse_code
+    assert 'scrollIntoView({ behavior: "auto", block: "start" })' in collapse_code
+    assert "state.expandedSites.add(siteId)" in site_group_renderer
+    assert "scrollIntoView" not in site_group_renderer
 
 
 def test_signal_flow_source_toggle_lives_in_source_header_not_group_footer():
@@ -107,8 +579,27 @@ def test_signal_flow_source_toggle_lives_in_source_header_not_group_footer():
     assert "meta.append(count, toggle)" in source_group_builder
     assert "section.appendChild(buildShowMoreButton(" not in source_group_builder
     assert "expandedSourceGroups.add(sourceKey)" in source_group_builder
-    assert "expandedSourceGroups.delete(sourceKey)" in source_group_builder
+    assert "collapseSourceGroup(sourceKey)" in source_group_builder
     assert "toggle.setAttribute(\"aria-label\"" in source_group_builder
+
+
+def test_signal_flow_collapsing_source_returns_to_same_source_header():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    collapse_start = js.index("function collapseSourceGroup")
+    collapse_end = js.index("function buildSourceGroupNode", collapse_start)
+    collapse_code = js[collapse_start:collapse_end]
+    function_start = js.index("function buildSourceGroupNode")
+    function_end = js.index("function groupBySource", function_start)
+    source_group_builder = js[function_start:function_end]
+
+    assert "collapseSourceGroup(sourceKey)" in source_group_builder
+    assert "state.expandedSourceGroups.delete(sourceKey)" in collapse_code
+    assert "renderList()" in collapse_code
+    assert "window.requestAnimationFrame" in collapse_code
+    assert "findSourceGroupNode(sourceKey)" in collapse_code
+    assert 'scrollIntoView({ behavior: "auto", block: "start" })' in collapse_code
+    assert "state.expandedSourceGroups.add(sourceKey)" in source_group_builder
+    assert "scrollIntoView" not in source_group_builder
 
 
 def test_signal_flow_source_toggle_is_unboxed_text_action_with_mobile_fallback():
@@ -117,11 +608,65 @@ def test_signal_flow_source_toggle_is_unboxed_text_action_with_mobile_fallback()
     assert ".source-toggle-action" in css
     assert ".source-toggle-meta" in css
     assert ".source-show-more" not in css
+    assert ".site-toggle-action" in css
+    assert ".site-toggle-meta" in css
+    assert ".site-show-more" not in css
     assert ".source-toggle-action {\n  border: 0;" in css
     assert "background: transparent;" in css
     assert "text-decoration: underline;" in css
+    assert ".site-toggle-action .site-toggle-label" in css
     assert ".source-toggle-action .source-toggle-label" in css
     assert "display: none;" in css
+
+
+def test_signal_flow_group_headers_stick_while_scanning_expanded_items():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    list_wrap_start = css.index(".bole-picks-wrap,")
+    list_wrap_end = css.index("}", list_wrap_start) + 1
+    list_wrap_css = css[list_wrap_start:list_wrap_end]
+    list_stack_start = css.index(".news-list,")
+    list_stack_end = css.index(".site-group {", list_stack_start)
+    list_stack_css = css[list_stack_start:list_stack_end]
+    site_selector_start = css.index(".site-group-head {")
+    site_selector_end = css.index(".source-group-head {", site_selector_start)
+    site_header_css = css[site_selector_start:site_selector_end]
+    selector_start = css.index(".source-group-head {")
+    selector_end = css.index(".site-group-head h3,", selector_start)
+    source_header_css = css[selector_start:selector_end]
+
+    assert "overflow: hidden;" not in list_wrap_css
+    assert ".list-wrap" in list_wrap_css
+    assert "overflow: visible;" in list_wrap_css
+    assert "display: block;" in list_stack_css
+    assert "display: grid;" not in list_stack_css
+    assert "position: sticky;" in site_header_css
+    assert "top: 0;" in site_header_css
+    assert "z-index:" in site_header_css
+    assert "box-shadow:" in site_header_css
+    assert "linear-gradient" in site_header_css
+    assert "var(--surface)" in site_header_css
+    assert "position: sticky;" in source_header_css
+    assert "top: var(--site-group-sticky-offset);" in source_header_css
+    assert "z-index:" in source_header_css
+    assert "box-shadow:" in source_header_css
+    assert "linear-gradient" in source_header_css
+    assert "var(--surface)" in source_header_css
+
+
+def test_signal_flow_uses_native_group_header_sticky_without_fixed_clone():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "ensureActiveSourceBar" not in js
+    assert "syncActiveSourceBar" not in js
+    assert "scheduleActiveSourceBarSync" not in js
+    assert "activeSourceBarEl" not in js
+    assert "active-source-bar" not in js
+    assert "activeSiteBar" not in js
+    assert "active-site-bar" not in js
+    assert "window.addEventListener(\"scroll\", scheduleActiveSourceBarSync" not in js
+    assert "active-source-bar" not in css
+    assert "active-site-bar" not in css
 
 
 def test_source_sort_dialog_uses_real_four_point_grip_icons():
@@ -163,6 +708,178 @@ def test_bole_picks_explain_selection_criteria():
     assert "多源命中" in js
     assert "官方源" in js
     assert "AI 分" in js
+
+
+def test_bole_picks_show_top_ten_candidates():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    picker_start = js.index("function pickBoleItems")
+    picker_end = js.index("function boleReasonText", picker_start)
+    picker = js[picker_start:picker_end]
+
+    assert "const BOLE_PICK_LIMIT = 10" in js
+    assert "picked.length < BOLE_PICK_LIMIT" in picker
+    assert "picked.length < 8" not in picker
+
+
+def test_bole_picks_limit_applies_when_more_than_ten_candidates_exist():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z' }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = pickBoleItems(items).length;";
+        const items = Array.from({{ length: 12 }}, (_, index) => ({{
+          title: `Distinct AI model update ${{index}}`,
+          site_name: "TechURLs",
+          site_id: "techurls",
+          source: `Source ${{index}}`,
+          ai_score: 0.9,
+          published_at: `2026-06-18T${{String(index).padStart(2, "0")}}:00:00Z`
+        }}));
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result !== 10) {{
+          throw new Error(`expected 10 picks, got ${{sandbox.result}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_prefers_priority_score_over_ai_score():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z' }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = pickBoleItems(items)[0].item.title;";
+        const items = [
+          {{
+            title: "High relevance but lower priority",
+            site_name: "TechURLs",
+            source: "Source A",
+            ai_score: 0.95,
+            priority_score: 0.70,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Lower relevance but higher priority",
+            site_name: "Official AI Updates",
+            source: "OpenAI News",
+            ai_score: 0.80,
+            priority_score: 0.98,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result !== "Lower relevance but higher priority") {{
+          throw new Error(`expected priority_score winner, got ${{sandbox.result}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_event_key_keeps_unrelated_same_model_stories_separate():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z' }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nconst ranked = items.map((item, index) => ({{ item, index, score: scorePercent(item) }}));"
+          + "\\nresult = clusterBoleEvents(ranked).length;";
+        const items = [
+          {{
+            title: "Gemini 2.5 Flash pricing cut reaches developers",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.90,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Gemini 2.5 Flash benchmark tops coding chart",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.89,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result !== 2) {{
+          throw new Error(`expected two unrelated clusters, got ${{sandbox.result}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_event_key_merges_same_model_same_action_stories():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z' }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nconst ranked = items.map((item, index) => ({{ item, index, score: scorePercent(item) }}));"
+          + "\\nconst clusters = clusterBoleEvents(ranked);"
+          + "\\nresult = {{ length: clusters.length, mergedCount: clusters[0].mergedCount }};";
+        const items = [
+          {{
+            title: "Gemini 2.5 Flash pricing cut reaches developers",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.90,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Google cuts Gemini 2.5 Flash pricing for API users",
+            site_name: "AI HOT",
+            source: "Source B",
+            priority_score: 0.91,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result.length !== 1 || sandbox.result.mergedCount !== 2) {{
+          throw new Error(`expected one merged pricing cluster, got ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
 
 
 def test_verification_view_contract_exists():
@@ -351,6 +1068,27 @@ def test_settings_view_contract_exists():
     assert "loginAdmin" in js
     assert "saveSettings" in js
     assert "ask_system_prompt" in js
+
+
+def test_settings_view_adapts_to_desktop_wide_layout_and_mobile_single_column():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'class="settings-section settings-login-section"' in html
+    assert 'class="settings-section settings-ai-section"' in html
+    assert 'class="settings-section settings-usage-section"' in html
+    assert 'class="settings-section settings-behavior-section"' in html
+    assert 'class="settings-section settings-bole-section"' in html
+    assert "max-width: 520px" not in css
+    assert ".settings-panel {\n  width: 100%;" in css
+    assert "align-content: start;" in css[css.index(".settings-section {") : css.index(".settings-login-section {")]
+    assert "grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);" in css
+    assert ".settings-login-section {\n  grid-column: 1 / -1;" in css
+    assert ".settings-ai-section {\n  grid-row: span 3;" in css
+    assert ".settings-ai-section .ai-profile-form {\n  grid-template-columns: repeat(2, minmax(0, 1fr));" in css
+    assert ".settings-panel {\n    grid-template-columns: 1fr;" in css
+    assert ".settings-login-section,\n  .settings-ai-section {\n    grid-column: auto;\n    grid-row: auto;" in css
+    assert ".settings-ai-section .ai-profile-form {\n    grid-template-columns: 1fr;" in css
 
 
 def test_verify_action_is_mobile_scoped():

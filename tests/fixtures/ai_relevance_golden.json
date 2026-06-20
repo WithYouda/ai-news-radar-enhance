@@ -1,0 +1,95 @@
+[
+  {
+    "name": "official model release",
+    "is_ai_related": true,
+    "required_signals": ["openai", "gpt"],
+    "record": {
+      "site_id": "official_ai",
+      "site_name": "Official AI Updates",
+      "source": "OpenAI News",
+      "title": "OpenAI releases a new GPT reasoning model",
+      "url": "https://openai.com/news/reasoning-model"
+    }
+  },
+  {
+    "name": "chinese world model research",
+    "is_ai_related": true,
+    "required_signals": ["世界模型"],
+    "record": {
+      "site_id": "opmlrss",
+      "site_name": "OPML RSS",
+      "source": "机器之心",
+      "title": "世界模型让机器人规划能力再进一步",
+      "url": "https://example.com/research/world-model-robot"
+    }
+  },
+  {
+    "name": "mixed vla robotics signal",
+    "is_ai_related": true,
+    "required_signals": ["vla"],
+    "record": {
+      "site_id": "buzzing",
+      "site_name": "Buzzing",
+      "source": "arxiv.org",
+      "title": "VLA policy improves embodied robot control",
+      "url": "https://example.com/papers/vla-robot-control"
+    }
+  },
+  {
+    "name": "agent era chinese phrasing",
+    "is_ai_related": true,
+    "required_signals": ["agent时代"],
+    "record": {
+      "site_id": "opmlrss",
+      "site_name": "OPML RSS",
+      "source": "BestBlogs.dev",
+      "title": "Agent时代的桌面自动化工具链",
+      "url": "https://example.com/posts/agent-era-desktop"
+    }
+  },
+  {
+    "name": "trusted ai source weak title",
+    "is_ai_related": true,
+    "required_signals": ["aihot"],
+    "record": {
+      "site_id": "aihot",
+      "site_name": "AI HOT",
+      "source": "AI HOT",
+      "title": "今日值得关注的产品更新",
+      "url": "https://aihot.virxact.com/post/1"
+    }
+  },
+  {
+    "name": "insurance agent false positive",
+    "is_ai_related": false,
+    "record": {
+      "site_id": "buzzing",
+      "site_name": "Buzzing",
+      "source": "finance.yahoo.com",
+      "title": "Insurance agent market faces a new pricing model",
+      "url": "https://finance.yahoo.com/news/insurance-agent-pricing-model"
+    }
+  },
+  {
+    "name": "business model chinese false positive",
+    "is_ai_related": false,
+    "record": {
+      "site_id": "buzzing",
+      "site_name": "Buzzing",
+      "source": "36kr",
+      "title": "这家公司的商业模型终于跑通了",
+      "url": "https://example.com/news/business-model"
+    }
+  },
+  {
+    "name": "url path ai noise false positive",
+    "is_ai_related": false,
+    "record": {
+      "site_id": "buzzing",
+      "site_name": "Buzzing",
+      "source": "general",
+      "title": "Quarterly retail sales report",
+      "url": "https://example.com/openai/gpt/agent/model?utm_campaign=ai"
+    }
+  }
+]

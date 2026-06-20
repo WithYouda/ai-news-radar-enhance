@@ -139,6 +139,19 @@ create table if not exists ai_provider_profiles (
   created_at text not null,
   updated_at text not null
 );
+
+create table if not exists personalization_state (
+  id integer primary key check (id = 1),
+  state text not null,
+  enabled integer not null default 0,
+  active_profile_json text,
+  draft_profile_json text,
+  evidence_json text not null default '{}',
+  version integer not null default 0,
+  created_at text not null,
+  updated_at text not null,
+  confirmed_at text
+);
 """
 
 

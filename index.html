@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=source-toggle-header-0618" />
+    <link rel="stylesheet" href="./assets/styles.css?v=personalized-bole-dialogue-0620" />
   </head>
   <body>
     <main class="shell">
@@ -64,6 +64,16 @@
           <section class="coverage-strip" id="coverageStrip" aria-label="Source coverage status"></section>
           <div class="source-health" id="sourceHealth">源状态加载中...</div>
         </div>
+      </section>
+
+      <section class="desktop-view-strip" aria-label="桌面主导航">
+        <nav id="desktopViewNav" class="desktop-view-nav" aria-label="桌面主导航">
+          <button type="button" class="desktop-view-btn active" data-view="today">今日</button>
+          <button type="button" class="desktop-view-btn" data-view="categories">分类</button>
+          <button type="button" class="desktop-view-btn" data-view="verification">核验</button>
+          <button type="button" class="desktop-view-btn" data-view="settings">设置</button>
+        </nav>
+        <button id="desktopAskAiButton" class="desktop-ask-button" type="button">问 AI</button>
       </section>
 
       <section class="primary-controls" data-mobile-view="today">
@@ -107,7 +117,10 @@
             <p class="section-eyebrow">BOLE PICKS</p>
             <h2>伯乐精选</h2>
           </div>
-          <span id="bolePicksMeta">按评分排序</span>
+          <div class="bole-picks-actions">
+            <span id="bolePicksMeta">按评分排序</span>
+            <button id="boleWorkbenchOpen" class="icon-pill bole-entry-button" type="button">为你推荐</button>
+          </div>
         </div>
         <div class="bole-picks-sub">为什么精选：优先展示多源命中、官方源、高 AI 分和近期热度更高的更新。</div>
         <div id="bolePicksList" class="bole-board"></div>
@@ -172,11 +185,11 @@
           <span id="settingsStatus">未登录</span>
         </div>
         <div class="settings-panel">
-          <section class="settings-section">
+          <section class="settings-section settings-login-section">
             <input id="adminPasswordInput" type="password" placeholder="管理员密码" />
             <button id="loginButton" type="button">登录</button>
           </section>
-          <section class="settings-section">
+          <section class="settings-section settings-ai-section">
             <div class="settings-section-head">
               <h3>AI 配置</h3>
               <span id="aiProfilesMeta">未加载</span>
@@ -207,7 +220,7 @@
                 <span>API Key</span>
                 <input id="aiProfileApiKeyInput" type="password" placeholder="留空则保留已有 key" />
               </label>
-              <label class="field">
+              <label class="field settings-full-field">
                 <span>请求头 JSON</span>
                 <textarea id="aiProfileHeadersInput" rows="4" placeholder='{"X-Custom-Header":"value"}'></textarea>
               </label>
@@ -222,7 +235,7 @@
               </div>
             </div>
           </section>
-          <section class="settings-section">
+          <section class="settings-section settings-usage-section">
             <div class="settings-section-head">
               <h3>用途选择</h3>
             </div>
@@ -242,7 +255,7 @@
               <select id="readingAssistantProviderSelect"></select>
             </label>
           </section>
-          <section class="settings-section">
+          <section class="settings-section settings-behavior-section">
             <label class="settings-toggle">
               <input id="deepVerificationToggle" type="checkbox" />
               <span>默认深度核验伯乐精选与分类 Top N</span>
@@ -260,6 +273,17 @@
               <textarea id="askSystemPromptInput" rows="7" placeholder="设置 Ask AI 的系统提示词"></textarea>
             </label>
             <button id="saveSettingsButton" type="button">保存设置</button>
+          </section>
+          <section class="settings-section settings-bole-section">
+            <div class="settings-section-head">
+              <h3>伯乐画像</h3>
+              <span id="boleSettingsStatus">未加载</span>
+            </div>
+            <div class="bole-settings-actions">
+              <button id="boleSettingsOpen" type="button">打开工作台</button>
+              <button id="boleDisableButton" type="button">停用</button>
+              <button id="boleResetButton" type="button">重置</button>
+            </div>
           </section>
         </div>
       </section>
@@ -295,6 +319,62 @@
           <button id="sourceHiddenClose" class="icon-close-button" type="button" aria-label="关闭已屏蔽来源">关闭</button>
         </header>
         <div id="sourceHiddenList" class="source-hidden-list"></div>
+      </div>
+    </section>
+
+    <section id="boleWorkbench" class="bole-workbench" hidden aria-label="伯乐画像工作台">
+      <div class="bole-workbench-panel">
+        <header class="bole-workbench-head">
+          <div class="bole-workbench-brand">
+            <span class="bole-workbench-mark">AI</span>
+            <div>
+              <h2>伯乐画像工作台</h2>
+            </div>
+          </div>
+          <button id="boleWorkbenchClose" class="icon-close-button" type="button" aria-label="关闭伯乐画像工作台">关闭</button>
+        </header>
+        <nav class="bole-stage-tabs" aria-label="伯乐画像阶段">
+          <button class="bole-stage-tab active" type="button" data-bole-stage="calibration">兴趣校准</button>
+          <button class="bole-stage-tab" type="button" data-bole-stage="preferences">阅读偏好</button>
+          <button class="bole-stage-tab" type="button" data-bole-stage="draft">画像草稿</button>
+        </nav>
+        <div class="bole-stage-shell">
+          <section class="bole-dialogue" aria-label="伯乐画像对话">
+            <div id="boleStageTrack" class="bole-stage-track">
+              <section class="bole-stage-panel active" data-bole-stage-panel="calibration" aria-labelledby="boleCalibrationTitle">
+                <h3 id="boleCalibrationTitle">兴趣校准</h3>
+                <div id="boleDialogueTurns" class="bole-dialogue-turns" data-bole-dialogue-turns></div>
+              </section>
+              <section class="bole-stage-panel" data-bole-stage-panel="preferences" aria-labelledby="bolePreferenceTitle">
+                <h3 id="bolePreferenceTitle">阅读偏好</h3>
+                <div id="boleReadingTurns" class="bole-dialogue-turns" data-bole-reading-turns></div>
+              </section>
+              <section class="bole-stage-panel" data-bole-stage-panel="draft" aria-labelledby="boleDraftTitle">
+                <h3 id="boleDraftTitle">画像草稿</h3>
+                <div id="boleDraftPreview" class="bole-draft-preview"></div>
+                <div id="boleRecommendationPreview" class="bole-recommendation-preview"></div>
+              </section>
+            </div>
+            <form id="boleChatForm" class="bole-chat-composer" data-bole-chat-form>
+              <input id="boleChatInput" type="text" data-bole-chat-input autocomplete="off" placeholder="继续告诉伯乐你的关注点" />
+              <button id="boleChatSend" class="bole-primary-button" type="submit" aria-label="发送">
+                <span class="bole-send-icon" aria-hidden="true"></span>
+              </button>
+            </form>
+          </section>
+          <aside class="bole-profile-rail" aria-label="已识别领域">
+            <div class="bole-profile-head">
+              <h3 id="boleProfileRailTitle">已识别领域</h3>
+            </div>
+            <div id="boleRecognizedProfile" class="bole-profile-list"></div>
+            <div class="bole-workbench-actions">
+              <button id="boleConfirmButton" class="bole-primary-button" type="button">保存</button>
+              <button id="boleContinueButton" class="bole-secondary-button" type="button">继续</button>
+              <button id="boleSkipButton" type="button">跳过</button>
+            </div>
+            <p id="boleWorkbenchStatus" class="bole-workbench-status" role="status"></p>
+          </aside>
+        </div>
       </div>
     </section>
 
@@ -376,7 +456,7 @@
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
     <script src="./assets/api-client.js?v=frontend-arch-0610"></script>
-    <script src="./assets/app.js?v=source-toggle-header-0618" defer></script>
+    <script src="./assets/app.js?v=personalized-bole-dialogue-0620" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

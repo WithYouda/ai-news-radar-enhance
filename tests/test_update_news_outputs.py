@@ -88,3 +88,12 @@ def test_main_writes_schema_version_to_public_json_outputs(monkeypatch, tmp_path
     ]:
         payload = json.loads((output_dir / filename).read_text(encoding="utf-8"))
         assert payload["schema_version"] == NEWS_PAYLOAD_SCHEMA_VERSION
+
+    latest_payload = json.loads((output_dir / "latest-24h.json").read_text(encoding="utf-8"))
+    assert latest_payload["topic_filter"] == "ai_relevance_scoring_v0_5"
+    assert latest_payload["score_version"] == "ai_relevance_scoring_v0_5"
+    item = latest_payload["items_ai"][0]
+    assert item["score_version"] == "ai_relevance_scoring_v0_5"
+    assert item["ai_score"] == item["ai_relevance_score"]
+    assert "source_trust_score" in item
+    assert "priority_score" in item

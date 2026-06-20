@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlparse
+
+AI_RELEVANCE_SCORE_VERSION = "ai_relevance_scoring_v0_5"
 
 AI_KEYWORDS = [
     "agent view",
@@ -27,13 +30,23 @@ AI_KEYWORDS = [
     "copilot",
     "codex",
     "mcp",
+    "vla",
+    "rag",
     "hugging face",
     "huggingface",
     "transformer",
     "prompt",
     "diffusion",
+    "agent sdk",
+    "ai coding",
+    "desktop agent",
+    "rca agent",
     "多模态",
+    "多模型",
+    "世界模型",
     "交互模型",
+    "推理模型",
+    "开源模型",
     "变换器",
     "语言模型",
     "视觉语言模型",
@@ -45,6 +58,12 @@ AI_KEYWORDS = [
     "机器学习",
     "深度学习",
     "智能体",
+    "智能体平台",
+    "agent时代",
+    "桌面agent",
+    "桌面 agent",
+    "ai 编程",
+    "ai 搜索",
     "算力",
     "推理",
     "微调",
@@ -174,6 +193,45 @@ def matched_keywords(haystack: str, keywords: list[str]) -> list[str]:
     return sorted({k for k in keywords if k in h})
 
 
+def host_for_scoring(raw_url: str) -> str:
+    """Return URL host text for scoring without path/query keyword leakage."""
+    try:
+        host = urlparse(str(raw_url or "")).netloc.lower()
+    except Exception:
+        return ""
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def source_trust_score_for_site(site_id: str) -> float:
+    if site_id == "official_ai":
+        return 0.9
+    if site_id in AI_DEFAULT_SOURCES:
+        return 0.85
+    if site_id == "followbuilders":
+        return 0.75
+    if site_id in SOURCE_PRIORS:
+        return round(min(0.8, 0.5 + SOURCE_PRIORS[site_id]), 2)
+    return 0.45
+
+
+def priority_score_from_relevance(
+    relevance_score: float,
+    *,
+    is_ai_related: bool,
+    source_trust_score: float,
+    signals: list[str],
+) -> float:
+    if not is_ai_related:
+        return relevance_score
+    trust_bonus = min(0.12, source_trust_score * 0.12)
+    signal_bonus = min(0.06, 0.01 * len(signals))
+    return min(1.0, relevance_score + trust_bonus + signal_bonus)
+
+
 def contains_meaningful_ai_signal(haystack: str) -> bool:
     h = haystack.lower()
     if MEANINGFUL_EN_SIGNAL_RE.search(h):
@@ -198,10 +256,23 @@ def _result(
     reason: str,
     signals: list[str] | None = None,
     noise: list[str] | None = None,
+    source_trust_score: float = 0.45,
 ) -> dict[str, Any]:
+    relevance_score = round(max(0.0, min(1.0, score)), 2)
+    trust_score = round(max(0.0, min(1.0, source_trust_score)), 2)
+    priority_score = priority_score_from_relevance(
+        relevance_score,
+        is_ai_related=is_ai_related,
+        source_trust_score=trust_score,
+        signals=signals or [],
+    )
     return {
         "is_ai_related": bool(is_ai_related),
-        "score": round(max(0.0, min(1.0, score)), 2),
+        "score": relevance_score,
+        "ai_relevance_score": relevance_score,
+        "source_trust_score": trust_score,
+        "priority_score": round(max(0.0, min(1.0, priority_score)), 2),
+        "score_version": AI_RELEVANCE_SCORE_VERSION,
         "label": label,
         "reason": reason,
         "signals": signals or [],
@@ -216,12 +287,14 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
     source = str(record.get("source") or "")
     site_name = str(record.get("site_name") or "")
     url = str(record.get("url") or "")
-    text = f"{title} {source} {site_name} {url}".lower()
+    url_host = host_for_scoring(url)
+    text = f"{title} {source} {site_name} {url_host}".lower()
 
     ai_signals = matched_keywords(text, AI_KEYWORDS)
     tech_signals = matched_keywords(text, TECH_KEYWORDS)
     noise = matched_keywords(text, NOISE_KEYWORDS) + matched_keywords(text, COMMERCE_NOISE_KEYWORDS)
     source_prior = SOURCE_PRIORS.get(site_id, 0.0)
+    source_trust_score = source_trust_score_for_site(site_id)
 
     if site_id == "zeli":
         if "24h" in source.lower() or "24h最热" in source:
@@ -232,6 +305,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
                 reason="zeli_24h_hot_allowlist",
                 signals=["zeli_24h_hot"],
                 noise=noise,
+                source_trust_score=source_trust_score,
             )
         return _result(
             is_ai_related=False,
@@ -240,6 +314,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
             reason="zeli_only_keeps_24h_hot_source",
             signals=ai_signals + tech_signals,
             noise=noise,
+            source_trust_score=source_trust_score,
         )
 
     if site_id == "tophub":
@@ -252,6 +327,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
                 reason="tophub_blocked_channel",
                 signals=ai_signals + tech_signals,
                 noise=noise or matched_keywords(source_l, TOPHUB_BLOCK_KEYWORDS),
+                source_trust_score=source_trust_score,
             )
         if not contains_any_keyword(source_l, TOPHUB_ALLOW_KEYWORDS):
             return _result(
@@ -261,6 +337,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
                 reason="tophub_channel_not_in_allowlist",
                 signals=ai_signals + tech_signals,
                 noise=noise,
+                source_trust_score=source_trust_score,
             )
 
     if site_id in AI_DEFAULT_SOURCES:
@@ -271,6 +348,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
             reason="trusted_ai_source_default_keep",
             signals=ai_signals or [site_id],
             noise=noise,
+            source_trust_score=source_trust_score,
         )
 
     has_ai = contains_meaningful_ai_signal(text)
@@ -285,6 +363,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
             reason="missing_meaningful_ai_signal",
             signals=ai_signals + tech_signals,
             noise=noise,
+            source_trust_score=source_trust_score,
         )
 
     if contains_any_keyword(text, COMMERCE_NOISE_KEYWORDS) and not has_ai:
@@ -295,6 +374,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
             reason="commerce_noise_without_strong_ai_signal",
             signals=ai_signals + tech_signals,
             noise=noise,
+            source_trust_score=source_trust_score,
         )
 
     if contains_any_keyword(text, NOISE_KEYWORDS) and not has_ai:
@@ -305,6 +385,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
             reason="noise_without_strong_ai_signal",
             signals=ai_signals + tech_signals,
             noise=noise,
+            source_trust_score=source_trust_score,
         )
 
     score = source_prior + (0.52 if has_ai else 0.34) + min(0.18, 0.04 * len(ai_signals)) + min(0.12, 0.03 * len(tech_signals))
@@ -322,6 +403,7 @@ def score_ai_relevance(record: dict[str, Any]) -> dict[str, Any]:
         reason="matched_ai_signal" if has_ai else "matched_broad_ai_plus_tech_signal",
         signals=ai_signals + tech_signals,
         noise=noise,
+        source_trust_score=source_trust_score,
     )
 
 
@@ -334,6 +416,10 @@ def add_ai_relevance_fields(record: dict[str, Any]) -> dict[str, Any]:
     out = dict(record)
     out["ai_is_related"] = relevance["is_ai_related"]
     out["ai_score"] = relevance["score"]
+    out["ai_relevance_score"] = relevance["ai_relevance_score"]
+    out["source_trust_score"] = relevance["source_trust_score"]
+    out["priority_score"] = relevance["priority_score"]
+    out["score_version"] = relevance["score_version"]
     out["ai_label"] = relevance["label"]
     out["ai_relevance_reason"] = relevance["reason"]
     out["ai_signals"] = relevance["signals"]

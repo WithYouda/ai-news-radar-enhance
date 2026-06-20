@@ -16,6 +16,12 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
 - Iron law: after drafting tests and again after implementation, review whether
   the tests are too narrowly tailored to the assumed bug. Add adversarial and
   corner-case coverage for adjacent failure modes before moving on.
+- Iron law: agents run verification commands, local preview servers, and local
+  browser checks themselves whenever permissions allow. Do not ask the user to
+  run commands for validation; the user should only need to open provided links,
+  inspect previews/screenshots, or report visible behavior. If sandbox,
+  credentials, network, or OS permissions prevent an agent-side command, state
+  the exact blocker and request approval or user-side verification.
 - Keep changes small and reviewable.
 - Search the repo before changing source fetchers or output schemas.
 - Do not commit private feeds, secrets, tokens, cookies, or `.env` values.
@@ -26,6 +32,27 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
 - Iron law: for any UI design or layout change, offer and use the visual
   companion workflow before implementation so the user can inspect mockups or
   previews instead of judging from text alone.
+- Iron law: reader-facing UI and visual companion mockups must stay concise.
+  Do not add filler explanations, duplicated guidance, or decorative text that
+  does not help the user make a decision or complete the workflow. Responsive
+  variants of the same feature must use consistent section titles and mental
+  models across desktop and mobile, while adapting layout density to the screen.
+  Do not expose implementation rules or internal flow labels such as "first
+  login auto popup", "not saved until confirmed", or "1/4" as visible UI copy
+  unless that exact text directly helps the reader act at that moment.
+- Iron law: UI design must stay elegant, simple, and faithful to the user's
+  stated intent. Do not add new visible elements, labels, panels, controls,
+  decorative details, or explanatory copy that the user did not explicitly ask
+  for or clearly imply. If the intent is ambiguous, ask a concise clarification
+  instead of inventing extra UI.
+- Iron law: any user-customizable capability must have a corresponding
+  reader-facing, highly readable setting inside the app. Do not add hidden-only
+  customization through environment variables, code constants, undocumented
+  JSON, or maintainer-only files when the feature is meant for user choice.
+  Advanced options such as enabling X API, choosing tracked X accounts, tuning
+  recommendation interests, source preferences, or AI behavior must be visible,
+  explainable, editable, and reversible in the app UI, with clear disabled and
+  fallback states.
 - Prefer stable public RSS/Atom/OPML sources before adding custom scrapers.
 - Keep the reader-facing product simple: default to a curated AI-focused view, hide noisy or advanced source details behind existing filters/docs.
 

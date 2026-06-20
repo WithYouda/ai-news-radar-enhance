@@ -408,6 +408,8 @@ class TopicFilterTests(unittest.TestCase):
         latest_payload = {
             "generated_at": "2026-05-03T00:00:00Z",
             "window_hours": 24,
+            "topic_filter": "ai_relevance_scoring_v0_5",
+            "score_version": "ai_relevance_scoring_v0_5",
             "total_items": 1,
             "total_items_raw": 3,
             "total_items_all_mode": 2,
@@ -421,6 +423,7 @@ class TopicFilterTests(unittest.TestCase):
         self.assertNotIn("items_all_raw", slim)
         self.assertEqual(slim["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
         self.assertEqual(all_payload["schema_version"], NEWS_PAYLOAD_SCHEMA_VERSION)
+        self.assertEqual(all_payload["score_version"], "ai_relevance_scoring_v0_5")
         self.assertEqual(all_payload["items_all"][0]["title"], "All post")
         self.assertEqual(all_payload["items_all_raw"][0]["title"], "Raw post")
 

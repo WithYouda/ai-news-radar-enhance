@@ -9,6 +9,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.ai_relevance import AI_RELEVANCE_SCORE_VERSION
+except ModuleNotFoundError:  # pragma: no cover - direct `python scripts/audit_ai_relevance.py`
+    from ai_relevance import AI_RELEVANCE_SCORE_VERSION
+
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -23,12 +28,25 @@ def short(text: str, max_chars: int = 96) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1].rstrip() + "…"
 
 
+def score_value(item: dict[str, Any]) -> float:
+    return float(item.get("ai_relevance_score", item.get("ai_score") or 0) or 0)
+
+
+def score_bucket(score: float) -> str:
+    bounded = max(0.0, min(1.0, score))
+    low = int(bounded * 10) / 10
+    if bounded >= 1.0:
+        low = 0.9
+    high = 1.0 if low >= 0.9 else low + 0.09
+    return f"{low:.2f}-{high:.2f}"
+
+
 def table_rows(items: list[dict[str, Any]], limit: int) -> list[str]:
     rows = []
     for item in items[:limit]:
         rows.append(
             "| {score:.2f} | {label} | {site} | {source} | {title} | {reason} |".format(
-                score=float(item.get("ai_score") or 0),
+                score=score_value(item),
                 label=str(item.get("ai_label") or ""),
                 site=str(item.get("site_name") or item.get("site_id") or ""),
                 source=short(str(item.get("source") or ""), 32),
@@ -39,12 +57,12 @@ def table_rows(items: list[dict[str, Any]], limit: int) -> list[str]:
     return rows
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit AI relevance scoring output")
     parser.add_argument("--data-dir", default="data", help="Directory containing latest-24h*.json")
     parser.add_argument("--output", required=True, help="Markdown report path")
     parser.add_argument("--sample-size", type=int, default=30)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     data_dir = Path(args.data_dir)
     latest = load_json(data_dir / "latest-24h.json")
@@ -55,6 +73,7 @@ def main() -> int:
     dropped = [item for item in raw if not item.get("ai_is_related")]
 
     label_counts = collections.Counter(str(item.get("ai_label") or "unknown") for item in kept_raw)
+    bucket_counts = collections.Counter(score_bucket(score_value(item)) for item in raw)
     site_kept = collections.Counter(str(item.get("site_id") or "unknown") for item in kept_raw)
     site_raw = collections.Counter(str(item.get("site_id") or "unknown") for item in raw)
     site_rows = []
@@ -65,13 +84,13 @@ def main() -> int:
     review_band = [
         item
         for item in raw
-        if 0.45 <= float(item.get("ai_score") or 0) < float(latest.get("ai_relevance_threshold") or 0.65)
+        if 0.45 <= score_value(item) < float(latest.get("ai_relevance_threshold") or 0.65)
     ]
-    high_drops = sorted(dropped, key=lambda item: float(item.get("ai_score") or 0), reverse=True)
-    top_kept = sorted(kept_raw, key=lambda item: float(item.get("ai_score") or 0), reverse=True)
+    high_drops = sorted(dropped, key=score_value, reverse=True)
+    top_kept = sorted(kept_raw, key=score_value, reverse=True)
 
     lines = [
-        "# AI Relevance Audit — v0.4.0",
+        f"# AI Relevance Audit — {latest.get('score_version') or AI_RELEVANCE_SCORE_VERSION}",
         "",
         "## Summary",
         "",
@@ -91,6 +110,14 @@ def main() -> int:
         "| --- | ---: |",
     ]
     lines.extend(f"| {label} | {count} |" for label, count in label_counts.most_common())
+    lines.extend([
+        "",
+        "## Score buckets",
+        "",
+        "| score_bucket | count |",
+        "| --- | ---: |",
+    ])
+    lines.extend(f"| {bucket} | {bucket_counts.get(bucket, 0)} |" for bucket in sorted(bucket_counts.keys(), reverse=True))
     lines.extend([
         "",
         "## Source keep rate",
@@ -126,7 +153,7 @@ def main() -> int:
         "| score | label | site | source | title | reason |",
         "| ---: | --- | --- | --- | --- | --- |",
     ])
-    lines.extend(table_rows(sorted(review_band, key=lambda item: float(item.get("ai_score") or 0), reverse=True), args.sample_size))
+    lines.extend(table_rows(sorted(review_band, key=score_value, reverse=True), args.sample_size))
     lines.append("")
 
     out = Path(args.output)
