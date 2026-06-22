@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-06-22T16:18:53.104084Z",
+  "generated_at": "2026-06-22T19:57:54.058630Z",
   "timezone": "Asia/Shanghai",
   "root_url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview",
   "history_url": "https://waytoagi.feishu.cn/wiki/FjiOwWp2giA7hRk6jjfcPioCnAc",
   "window_days": 7,
   "latest_date": "2026-06-22",
-  "count_today": 4,
+  "count_today": 7,
   "updates_today": [
     {
       "date": "2026-06-22",
@@ -19,7 +19,22 @@
     },
     {
       "date": "2026-06-22",
+      "title": "在深耕一年Agent基础设施、服务五百余名用户后，作者发现分层可独立的迭代才是优质智能体架构的核心。于是做了一个更好的 Agent 框架：FastClaw，面向云原生多租户场景设计，更快、更轻量、更好用。这篇文章记录了他对 OpenClaw 架构的理解，以及对 FastClaw 架构设计的经验总结。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
       "title": "不少人给Claude Code、Codex设置Goal时经常会堆砌特别长的提示词，导致AI擅自拓展任务、严重偏离需求。老金的开源工具GoalPro针对性地解决了这一问题。它内置了五层校验闸门，逐层理清真实需求、划定操作边界、明确验收依据、设置高危暂停机制，输出标准化可复核的目标合约，把任务决策权留在使用者手中。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
+      "title": "YC合伙人Tom Blomfield 在这期对话中带我们揭秘公司如何把自己改造成一个会学习的系统：如果 AI 能读取公司的知识、调用工具、观察结果、改写流程，一家公司还需要像过去那样靠层级、会议和中层管理来传递信息吗？",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
+      "title": "Codex最近更新了一个录制回放的插件：Record & Replay 。简单来说，你在电脑上先手动把一个工作流程走一遍，Codex会观察并记录你的操作，随后转成一份可复用、可迭代的Agent Skill。这个插件到底怎么用、和传统 RPA是不是一回事，这篇文章带你拆清楚。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
@@ -28,7 +43,7 @@
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     }
   ],
-  "count_7d": 30,
+  "count_7d": 33,
   "updates_7d": [
     {
       "date": "2026-06-22",
@@ -42,7 +57,22 @@
     },
     {
       "date": "2026-06-22",
+      "title": "在深耕一年Agent基础设施、服务五百余名用户后，作者发现分层可独立的迭代才是优质智能体架构的核心。于是做了一个更好的 Agent 框架：FastClaw，面向云原生多租户场景设计，更快、更轻量、更好用。这篇文章记录了他对 OpenClaw 架构的理解，以及对 FastClaw 架构设计的经验总结。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
       "title": "不少人给Claude Code、Codex设置Goal时经常会堆砌特别长的提示词，导致AI擅自拓展任务、严重偏离需求。老金的开源工具GoalPro针对性地解决了这一问题。它内置了五层校验闸门，逐层理清真实需求、划定操作边界、明确验收依据、设置高危暂停机制，输出标准化可复核的目标合约，把任务决策权留在使用者手中。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
+      "title": "YC合伙人Tom Blomfield 在这期对话中带我们揭秘公司如何把自己改造成一个会学习的系统：如果 AI 能读取公司的知识、调用工具、观察结果、改写流程，一家公司还需要像过去那样靠层级、会议和中层管理来传递信息吗？",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-06-22",
+      "title": "Codex最近更新了一个录制回放的插件：Record & Replay 。简单来说，你在电脑上先手动把一个工作流程走一遍，Codex会观察并记录你的操作，随后转成一份可复用、可迭代的Agent Skill。这个插件到底怎么用、和传统 RPA是不是一回事，这篇文章带你拆清楚。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
