@@ -51,6 +51,19 @@ def _draft_profile():
     }
 
 
+def _feedback_item():
+    return {
+        "id": "agent-runtime-1",
+        "title": "Agent runtime adds local deployment controls",
+        "summary": "Developer teams can run agent workflows locally.",
+        "site_name": "Official AI Updates",
+        "source": "OpenAI News",
+        "url": "https://example.com/agent-runtime-local",
+        "published_at": "2026-06-18T09:00:00Z",
+        "ai_signals": ["Agent", "local deployment"],
+    }
+
+
 def test_personalization_status_defaults_to_not_started(tmp_path):
     status = get_personalization_status(tmp_path / "radar.db")
 
@@ -71,6 +84,9 @@ def test_personalization_routes_require_login(tmp_path):
     assert client.post("/api/personalization/skip").status_code == 401
     assert client.post("/api/personalization/reset").status_code == 401
     assert client.post("/api/personalization/disable").status_code == 401
+    assert client.get("/api/personalization/feedback").status_code == 401
+    assert client.post("/api/personalization/feedback", json={"action": "more_relevant", "item": _feedback_item()}).status_code == 401
+    assert client.delete("/api/personalization/feedback/1").status_code == 401
 
 
 def test_save_profile_draft_does_not_mutate_active_profile(tmp_path):
@@ -218,6 +234,169 @@ def test_confirm_without_draft_is_rejected(tmp_path):
 
     assert res.status_code == 400
     assert "draft" in res.text.lower()
+
+
+def test_feedback_api_persists_recent_feedback_without_leaking_url_noise(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+
+    created = client.post(
+        "/api/personalization/feedback",
+        json={
+            "action": "more_relevant",
+            "item": _feedback_item(),
+            "reason": "Agent local deployment is useful",
+        },
+    )
+    listed = client.get("/api/personalization/feedback")
+
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["feedback"]["id"] >= 1
+    assert payload["feedback"]["action"] == "more_relevant"
+    assert payload["feedback"]["item"]["title"] == "Agent runtime adds local deployment controls"
+    assert payload["feedback"]["item"]["site_name"] == "Official AI Updates"
+    assert payload["feedback"]["item"]["url"] == "https://example.com"
+    assert "agent-runtime-local" not in str(payload["feedback"]["item"])
+    assert payload["draft_suggestion"] is None
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["id"] == payload["feedback"]["id"]
+
+
+def test_feedback_api_preserves_explicit_feedback_target_for_history_and_suggestions(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+    item = {
+        **_feedback_item(),
+        "id": "zeli-openai-movie-1",
+        "title": "Amazon drops Sam Altman movie after announcing OpenAI partnership",
+        "summary": "",
+        "site_name": "Zeli",
+        "source": "Hacker News · 24h最热",
+        "url": "https://example.com/openai-agent-url-noise",
+        "ai_label": "curated_hotlist",
+        "ai_signals": ["zeli_24h_hot"],
+        "feedback_target": "OpenAI",
+        "matched_targets": ["OpenAI", "Amazon", "整条新闻", "", "OpenAI"],
+    }
+
+    first = client.post(
+        "/api/personalization/feedback",
+        json={"action": "more_like_this", "item": item},
+    )
+    second = client.post(
+        "/api/personalization/feedback",
+        json={"action": "more_like_this", "item": {**item, "id": "zeli-openai-movie-2"}},
+    )
+    listed = client.get("/api/personalization/feedback")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["feedback"]["item"]["feedback_target"] == "OpenAI"
+    assert first.json()["feedback"]["item"]["matched_targets"] == ["OpenAI", "Amazon"]
+    assert listed.json()["items"][0]["item"]["feedback_target"] == "OpenAI"
+    assert listed.json()["items"][0]["item"]["matched_targets"] == ["OpenAI", "Amazon"]
+    suggestion = second.json()["draft_suggestion"]
+    labels = [entry["label"] for entry in suggestion["profile_patch"]["positive_interests"]]
+    assert labels == ["OpenAI", "Amazon"]
+    assert "openai-agent-url-noise" not in str(suggestion)
+
+
+def test_feedback_api_rejects_invalid_action_without_persisting(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+
+    res = client.post(
+        "/api/personalization/feedback",
+        json={"action": "delete_everything", "item": _feedback_item()},
+    )
+
+    assert res.status_code == 400
+    assert "action" in res.text
+    assert client.get("/api/personalization/feedback").json()["items"] == []
+
+
+def test_feedback_delete_undo_removes_record(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+    created = client.post(
+        "/api/personalization/feedback",
+        json={"action": "not_interested", "item": _feedback_item()},
+    ).json()
+
+    deleted = client.delete(f"/api/personalization/feedback/{created['feedback']['id']}")
+
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    assert client.get("/api/personalization/feedback").json()["items"] == []
+
+
+def test_repeated_strong_feedback_returns_draft_suggestion_but_keeps_active_profile(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+    client.post("/api/personalization/draft", json={"profile": _draft_profile()})
+    confirmed_before = client.post("/api/personalization/confirm").json()
+    assert confirmed_before["active_profile"]["positive_interests"][0]["label"] == "Agent 产品化"
+
+    first = client.post(
+        "/api/personalization/feedback",
+        json={"action": "not_interested", "item": {**_feedback_item(), "title": "Funding-only AI startup roundup"}},
+    )
+    second = client.post(
+        "/api/personalization/feedback",
+        json={"action": "not_interested", "item": {**_feedback_item(), "id": "funding-2", "title": "Funding-only AI startup recap"}},
+    )
+    status_after = client.get("/api/personalization").json()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    suggestion = second.json()["draft_suggestion"]
+    assert suggestion["state"] == "draft_suggestion"
+    assert suggestion["profile_patch"]["negative_interests"][0]["label"] == "融资"
+    assert suggestion["evidence"]["feedback_count"] == 2
+    assert status_after["state"] == "confirmed"
+    assert status_after["draft_profile"] is None
+    assert status_after["active_profile"] == confirmed_before["active_profile"]
+
+
+def test_repeated_strong_feedback_suggests_semantic_signal_not_full_title_or_url(tmp_path):
+    client = _client(tmp_path)
+    _login(client)
+
+    first = client.post(
+        "/api/personalization/feedback",
+        json={
+            "action": "more_like_this",
+            "item": {
+                **_feedback_item(),
+                "id": "agent-1",
+                "title": "Vendor blog announces a broad launch",
+                "url": "https://example.com/not-a-topic/openai-agent-path",
+                "ai_signals": ["Agent"],
+            },
+        },
+    )
+    second = client.post(
+        "/api/personalization/feedback",
+        json={
+            "action": "more_like_this",
+            "item": {
+                **_feedback_item(),
+                "id": "agent-2",
+                "title": "Another vendor blog launch note",
+                "url": "https://example.com/not-a-topic/openai-agent-path-2",
+                "ai_signals": ["Agent"],
+            },
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    suggestion = second.json()["draft_suggestion"]
+    label = suggestion["profile_patch"]["positive_interests"][0]["label"]
+    assert label == "Agent"
+    assert "vendor blog" not in label.lower()
+    assert "openai-agent-path" not in str(suggestion)
 
 
 def test_init_db_migrates_existing_database_with_personalization_table(tmp_path):

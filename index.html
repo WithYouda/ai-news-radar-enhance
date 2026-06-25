@@ -25,7 +25,7 @@
     />
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./assets/styles.css?v=personalized-bole-dialogue-0620" />
+    <link rel="stylesheet" href="./assets/styles.css?v=personalized-bole-feedback-multitag-0624" />
   </head>
   <body>
     <main class="shell">
@@ -119,10 +119,32 @@
           </div>
           <div class="bole-picks-actions">
             <span id="bolePicksMeta">按评分排序</span>
-            <button id="boleWorkbenchOpen" class="icon-pill bole-entry-button" type="button">为你推荐</button>
+            <button id="boleSortButton" class="icon-pill bole-sort-button" type="button" aria-expanded="false" aria-controls="boleSortPopover">排序</button>
+            <button id="boleFeedbackButton" class="icon-pill bole-feedback-button" type="button" aria-expanded="false" aria-controls="boleFeedbackDialog">最近反馈</button>
+            <button id="boleWorkbenchOpen" class="icon-pill bole-entry-button" type="button">画像</button>
+            <div id="boleSortPopover" class="bole-sort-popover" hidden role="dialog" aria-label="排序">
+              <button class="bole-sort-option active" type="button" data-bole-sort-mode="score">
+                <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="m3 16 4 4 4-4"></path>
+                  <path d="M7 20V4"></path>
+                  <path d="M11 4h10"></path>
+                  <path d="M11 8h7"></path>
+                  <path d="M11 12h4"></path>
+                </svg>
+                <span>按得分</span>
+                <span class="bole-sort-check" aria-hidden="true">✓</span>
+              </button>
+              <button class="bole-sort-option" type="button" data-bole-sort-mode="time">
+                <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 6v6l4 2"></path>
+                </svg>
+                <span>按时间</span>
+                <span class="bole-sort-check" aria-hidden="true">✓</span>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="bole-picks-sub">为什么精选：优先展示多源命中、官方源、高 AI 分和近期热度更高的更新。</div>
         <div id="bolePicksList" class="bole-board"></div>
       </section>
 
@@ -279,6 +301,13 @@
               <h3>伯乐画像</h3>
               <span id="boleSettingsStatus">未加载</span>
             </div>
+            <label class="field">
+              <span>画像冲突策略</span>
+              <select id="boleConflictStrategySelect">
+                <option value="ask">每次询问</option>
+                <option value="last_decision">最后决断</option>
+              </select>
+            </label>
             <div class="bole-settings-actions">
               <button id="boleSettingsOpen" type="button">打开工作台</button>
               <button id="boleDisableButton" type="button">停用</button>
@@ -322,6 +351,71 @@
       </div>
     </section>
 
+    <section id="aiConfigDialog" class="ai-config-dialog" hidden aria-label="AI 配置">
+      <div class="ai-config-panel" role="dialog" aria-modal="true" aria-labelledby="aiConfigTitle">
+        <header class="ai-config-head">
+          <div>
+            <h2 id="aiConfigTitle">连接模型</h2>
+            <p>用于伯乐理解、阅读助手和摘要。</p>
+          </div>
+          <span id="aiConfigHeadStatus" class="ai-config-status-pill">未连接</span>
+        </header>
+        <div class="ai-config-body">
+          <div class="ai-config-form-grid">
+            <label class="field">
+              <span>名称</span>
+              <input id="aiConfigNameInput" type="text" placeholder="默认 AI" />
+            </label>
+            <label class="field">
+              <span>接口类型</span>
+              <select id="aiConfigTypeSelect">
+                <option value="chat_completions">Chat Completions</option>
+                <option value="responses">Responses</option>
+              </select>
+            </label>
+            <label class="field ai-config-full-field">
+              <span>Base URL</span>
+              <input id="aiConfigBaseUrlInput" type="url" placeholder="https://api.openai.com/v1" />
+            </label>
+            <label class="field">
+              <span>模型</span>
+              <input id="aiConfigModelInput" type="text" placeholder="gpt5.5" />
+            </label>
+            <label class="field">
+              <span>API Key</span>
+              <input id="aiConfigApiKeyInput" type="password" placeholder="sk-..." />
+            </label>
+          </div>
+
+          <div class="ai-config-advanced-row">
+            <button id="aiConfigAdvancedToggle" class="ai-config-advanced-toggle" type="button">
+              <strong>高级设置</strong>
+              <span id="aiConfigAdvancedState">展开</span>
+            </button>
+            <div id="aiConfigAdvancedPanel" class="ai-config-advanced-panel" hidden>
+              <label class="field">
+                <span>请求头 JSON</span>
+                <textarea id="aiConfigHeadersInput" rows="4" placeholder='{"X-Custom-Header":"value"}'></textarea>
+              </label>
+              <label class="field">
+                <span>超时秒数</span>
+                <input id="aiConfigTimeoutInput" type="number" min="5" max="180" value="45" />
+              </label>
+            </div>
+          </div>
+
+          <div class="ai-config-actions">
+            <button id="aiConfigSkipButton" class="ai-config-ghost-button" type="button">跳过</button>
+            <div id="aiConfigStatus" class="ai-config-status" role="status">可跳过进入画像工作台。</div>
+            <div class="ai-config-action-right">
+              <button id="aiConfigTestButton" class="ai-config-secondary-button" type="button">测试</button>
+              <button id="aiConfigSaveButton" class="ai-config-secondary-button" type="button">保存并继续</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="boleWorkbench" class="bole-workbench" hidden aria-label="伯乐画像工作台">
       <div class="bole-workbench-panel">
         <header class="bole-workbench-head">
@@ -342,11 +436,17 @@
           <section class="bole-dialogue" aria-label="伯乐画像对话">
             <div id="boleStageTrack" class="bole-stage-track">
               <section class="bole-stage-panel active" data-bole-stage-panel="calibration" aria-labelledby="boleCalibrationTitle">
-                <h3 id="boleCalibrationTitle">兴趣校准</h3>
+                <div class="bole-stage-panel-head">
+                  <h3 id="boleCalibrationTitle">兴趣校准</h3>
+                  <div class="bole-question-dots" data-bole-question-dots="calibration"></div>
+                </div>
                 <div id="boleDialogueTurns" class="bole-dialogue-turns" data-bole-dialogue-turns></div>
               </section>
               <section class="bole-stage-panel" data-bole-stage-panel="preferences" aria-labelledby="bolePreferenceTitle">
-                <h3 id="bolePreferenceTitle">阅读偏好</h3>
+                <div class="bole-stage-panel-head">
+                  <h3 id="bolePreferenceTitle">阅读偏好</h3>
+                  <div class="bole-question-dots" data-bole-question-dots="preferences"></div>
+                </div>
                 <div id="boleReadingTurns" class="bole-dialogue-turns" data-bole-reading-turns></div>
               </section>
               <section class="bole-stage-panel" data-bole-stage-panel="draft" aria-labelledby="boleDraftTitle">
@@ -356,9 +456,9 @@
               </section>
             </div>
             <form id="boleChatForm" class="bole-chat-composer" data-bole-chat-form>
-              <input id="boleChatInput" type="text" data-bole-chat-input autocomplete="off" placeholder="继续告诉伯乐你的关注点" />
+              <input id="boleChatInput" type="text" data-bole-chat-input autocomplete="off" placeholder="自由输入" />
               <button id="boleChatSend" class="bole-primary-button" type="submit" aria-label="发送">
-                <span class="bole-send-icon" aria-hidden="true"></span>
+                确认回答
               </button>
             </form>
           </section>
@@ -378,6 +478,100 @@
       </div>
     </section>
 
+    <section id="boleFeedbackDialog" class="bole-feedback-dialog" hidden aria-label="最近反馈">
+      <div class="bole-feedback-panel" role="dialog" aria-modal="true" aria-labelledby="boleFeedbackTitle">
+        <header class="bole-feedback-head">
+          <div>
+            <h2 id="boleFeedbackTitle">最近反馈</h2>
+            <span id="boleFeedbackCount" class="bole-feedback-count"></span>
+          </div>
+          <button id="boleFeedbackClose" class="icon-close-button" type="button" aria-label="关闭最近反馈">关闭</button>
+        </header>
+        <div class="bole-feedback-tools">
+          <label class="bole-feedback-search">
+            <span class="sr-only">搜索反馈</span>
+            <svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m20 20-3.5-3.5"></path>
+            </svg>
+            <input id="boleFeedbackSearch" type="search" placeholder="搜索反馈" autocomplete="off">
+          </label>
+          <select id="boleFeedbackTopicFilter" aria-label="筛选主题"></select>
+          <select id="boleFeedbackActionFilter" aria-label="筛选反馈类型"></select>
+          <select id="boleFeedbackSortSelect" aria-label="排序"></select>
+          <div id="boleFeedbackActionOrder" class="bole-feedback-action-order" hidden></div>
+        </div>
+        <div id="boleFeedbackList" class="bole-feedback-list"></div>
+      </div>
+    </section>
+
+    <div id="boleTunePopover" class="bole-tune-popover" hidden role="dialog" aria-label="调整推荐">
+      <button class="feedback-option negative" type="button" data-bole-tune-action="less_relevant">
+        <span class="mark" aria-hidden="true">
+          <svg class="lucide-icon" viewBox="0 0 24 24">
+            <path d="M17 14V2"></path>
+            <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path>
+          </svg>
+        </span>
+        <strong>少看类似</strong>
+      </button>
+      <button class="feedback-option negative strong" type="button" data-bole-tune-action="not_interested">
+        <span class="mark" aria-hidden="true">
+          <svg class="lucide-icon" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="m4.9 4.9 14.2 14.2"></path>
+          </svg>
+        </span>
+        <strong>不感兴趣</strong>
+      </button>
+    </div>
+
+    <section id="boleDraftSuggestionDialog" class="bole-draft-suggestion-dialog" hidden aria-label="画像建议">
+      <div class="bole-draft-suggestion-panel" role="dialog" aria-modal="true" aria-labelledby="boleDraftSuggestionTitle">
+        <header class="bole-draft-suggestion-head">
+          <h2 id="boleDraftSuggestionTitle">画像建议</h2>
+          <button id="boleDraftSuggestionClose" class="icon-close-button" type="button" aria-label="关闭画像建议">关闭</button>
+        </header>
+        <div id="boleDraftSuggestionBody" class="bole-draft-suggestion-body"></div>
+        <div class="bole-draft-suggestion-actions">
+          <button id="boleDraftSuggestionDismiss" type="button">稍后</button>
+          <button id="boleDraftSuggestionSave" type="button">查看草稿</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="boleProfileConflictDialog" class="bole-profile-conflict-dialog" hidden aria-label="画像冲突">
+      <div class="bole-profile-conflict-panel" role="dialog" aria-modal="true" aria-labelledby="boleProfileConflictTitle">
+        <header class="bole-profile-conflict-head">
+          <div>
+            <span class="bole-profile-conflict-kicker">需要您确认</span>
+            <h2 id="boleProfileConflictTitle">画像冲突</h2>
+            <p id="boleProfileConflictSummary">同一主题出现了相反信号。</p>
+          </div>
+          <button id="boleProfileConflictClose" class="icon-close-button" type="button" aria-label="关闭画像冲突">关闭</button>
+        </header>
+        <div class="bole-profile-conflict-topic">
+          <strong id="boleProfileConflictLabel">主题</strong>
+          <span id="boleProfileConflictPolicy">每次询问</span>
+        </div>
+        <div class="bole-profile-conflict-sources">
+          <article class="bole-profile-conflict-source positive">
+            <strong id="boleProfileConflictExistingTitle">当前画像</strong>
+            <span id="boleProfileConflictExistingSource"></span>
+          </article>
+          <article class="bole-profile-conflict-source negative">
+            <strong id="boleProfileConflictIncomingTitle">新反馈</strong>
+            <span id="boleProfileConflictIncomingSource"></span>
+          </article>
+        </div>
+        <div class="bole-profile-conflict-actions">
+          <button type="button" data-bole-conflict-decision="positive">多推荐</button>
+          <button type="button" data-bole-conflict-decision="negative">少推荐</button>
+          <button type="button" data-bole-conflict-decision="ignore">暂不处理</button>
+        </div>
+      </div>
+    </section>
+
     <section id="readerSheet" class="reader-sheet" hidden aria-label="干净阅读">
       <div class="reader-panel">
         <header class="reader-head sheet-drag-zone">
@@ -392,7 +586,51 @@
           <button id="readerTranslateButton" type="button" hidden>翻译</button>
           <button id="readerSummaryButton" type="button">总结</button>
           <button id="readerFactCheckButton" type="button">核验</button>
+          <button id="readerFeedbackTrigger" class="reader-feedback-trigger" type="button" aria-expanded="false" aria-controls="readerFeedbackPopover">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <line x1="21" x2="14" y1="4" y2="4"></line>
+              <line x1="10" x2="3" y1="4" y2="4"></line>
+              <line x1="21" x2="12" y1="12" y2="12"></line>
+              <line x1="8" x2="3" y1="12" y2="12"></line>
+              <line x1="21" x2="16" y1="20" y2="20"></line>
+              <line x1="12" x2="3" y1="20" y2="20"></line>
+              <line x1="14" x2="14" y1="2" y2="6"></line>
+              <line x1="8" x2="8" y1="10" y2="14"></line>
+              <line x1="16" x2="16" y1="18" y2="22"></line>
+            </svg>
+            <span>反馈</span>
+            <span class="feedback-caret" aria-hidden="true"></span>
+          </button>
           <span id="readerAccessBadge" class="reader-access-badge" hidden></span>
+        </div>
+        <div id="readerFeedbackPopover" class="reader-feedback-popover" hidden role="dialog" aria-label="推荐反馈">
+          <button class="feedback-option positive" type="button" data-bole-feedback-action="more_like_this">
+            <span class="mark" aria-hidden="true">
+              <svg class="lucide-icon feedback-thumb-icon" viewBox="-1 -1 26 26">
+                <path d="M7 10v12"></path>
+                <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path>
+              </svg>
+            </span>
+            <strong>感兴趣</strong>
+          </button>
+          <button class="feedback-option negative" type="button" data-bole-feedback-action="less_relevant">
+            <span class="mark" aria-hidden="true">
+              <svg class="lucide-icon" viewBox="0 0 24 24">
+                <path d="M17 14V2"></path>
+                <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path>
+              </svg>
+            </span>
+            <strong>少看类似</strong>
+          </button>
+          <button class="feedback-option negative strong" type="button" data-bole-feedback-action="not_interested">
+            <span class="mark" aria-hidden="true">
+              <svg class="lucide-icon" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="m4.9 4.9 14.2 14.2"></path>
+              </svg>
+            </span>
+            <strong>不感兴趣</strong>
+          </button>
         </div>
         <article id="readerBody" class="reader-article" translate="yes"></article>
         <button id="readerAskButton" class="reader-ask-fab" type="button">问 AI</button>
@@ -456,7 +694,7 @@
 
     <script src="./assets/config.js?v=info-arch-0602"></script>
     <script src="./assets/api-client.js?v=frontend-arch-0610"></script>
-    <script src="./assets/app.js?v=personalized-bole-dialogue-0620" defer></script>
+    <script src="./assets/app.js?v=personalized-bole-feedback-multitag-0624" defer></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

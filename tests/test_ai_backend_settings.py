@@ -17,6 +17,7 @@ def test_settings_default_deep_verification_is_limited(tmp_path):
     assert settings["translation_provider_mode"] == "browser"
     assert settings["translation_provider_id"] == ""
     assert settings["reading_assistant_provider_id"] == "env"
+    assert settings["bole_conflict_strategy"] == "ask"
 
 
 def test_update_settings_persists_values(tmp_path):
@@ -66,6 +67,26 @@ def test_update_settings_persists_provider_usage(tmp_path):
     assert settings["translation_provider_mode"] == "ai"
     assert settings["translation_provider_id"] == "translate-profile"
     assert settings["reading_assistant_provider_id"] == "reader-profile"
+
+
+def test_update_settings_persists_bole_conflict_strategy(tmp_path):
+    db_path = tmp_path / "radar.db"
+
+    update_settings(db_path, {"bole_conflict_strategy": "last_decision"})
+    settings = get_settings(db_path)
+
+    assert settings["bole_conflict_strategy"] == "last_decision"
+
+
+def test_update_settings_rejects_invalid_bole_conflict_strategy(tmp_path):
+    db_path = tmp_path / "radar.db"
+
+    try:
+        update_settings(db_path, {"bole_conflict_strategy": "silent_merge"})
+    except ValueError as exc:
+        assert "bole_conflict_strategy" in str(exc)
+    else:
+        raise AssertionError("invalid Bole conflict strategy should be rejected")
 
 
 def test_update_settings_rejects_invalid_translation_mode(tmp_path):

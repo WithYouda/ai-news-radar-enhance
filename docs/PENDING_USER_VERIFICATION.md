@@ -19,6 +19,38 @@ Each entry should include:
 
 ## Open
 
+### 2026-06-23: Personalized Bole phase 2 cloud verification gaps
+
+- Area: Personalized 伯乐 phase 2 ranking, feedback, and profile draft
+  suggestions.
+- Change: Local phase 2 implementation applies confirmed profiles to Bole Picks,
+  supports reversible feedback, shows recent feedback metadata, and drafts
+  profile adjustments from repeated strong feedback.
+- Agent-side evidence:
+  - `python3 -m pytest -q tests/test_ai_backend_personalization.py` passed with
+    21 tests.
+  - `python3 -m pytest -q tests/test_mobile_frontend_contract.py` passed with
+    102 tests.
+  - `python3 -m pytest -q` passed with 340 tests.
+  - `node --check assets/app.js`, backend `py_compile`, and `git diff --check`
+    passed.
+  - Local Chromium checks passed for desktop and mobile phase 2 interactions.
+- User-side verification blocked: the user asked to defer the remaining
+  deployment-level checks until the next cloud rollout.
+- Next user-visible checks:
+  - Verify a real logged-in backend session can record, reload, and undo
+    persisted feedback after deployment.
+  - Verify PWA/mobile cache mixing across old and new frontend assets.
+  - Verify the positive feedback thumb icon visually remains unclipped across
+    deployed desktop/mobile browsers.
+  - Verify multi-user isolation, fast repeated feedback, and duplicate-item
+    behavior against the deployed backend.
+  - Verify Chinese and mixed Chinese/English topic sorting in real recent
+    feedback data.
+  - Decide and test how profile draft suggestions handle a same-label conflict
+    when one signal likes a topic and another dislikes it.
+- Status: Pending cloud rollout verification.
+
 ### 2026-06-12: WeChat clean-reader images
 
 - Area: Backend clean article reader for `mp.weixin.qq.com` pages.

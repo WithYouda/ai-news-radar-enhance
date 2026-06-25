@@ -20,9 +20,11 @@ DEFAULT_SETTINGS = {
     "translation_provider_mode": "browser",
     "translation_provider_id": "",
     "reading_assistant_provider_id": "env",
+    "bole_conflict_strategy": "ask",
 }
 VALID_DEEP_VERIFICATION_SCOPES = {"bole_picks_and_topic_top_n"}
 VALID_TRANSLATION_PROVIDER_MODES = {"browser", "ai"}
+VALID_BOLE_CONFLICT_STRATEGIES = {"ask", "last_decision"}
 
 
 def get_settings(db_path: str | Path) -> dict:
@@ -44,16 +46,20 @@ def get_settings(db_path: str | Path) -> dict:
 def update_settings(db_path: str | Path, values: dict) -> dict:
     merged = get_settings(db_path)
     merged.update(values)
-    if merged["deep_verification_scope"] not in VALID_DEEP_VERIFICATION_SCOPES:
-        raise ValueError("deep_verification_scope is not supported in V1")
-    if merged["translation_provider_mode"] not in VALID_TRANSLATION_PROVIDER_MODES:
-        raise ValueError("translation_provider_mode is not supported")
     merged["deep_verification_top_n"] = int(merged["deep_verification_top_n"])
     merged["deep_verification_enabled"] = bool(merged["deep_verification_enabled"])
     merged["ask_streaming_enabled"] = bool(merged.get("ask_streaming_enabled"))
     merged["ask_system_prompt"] = str(merged.get("ask_system_prompt") or DEFAULT_ASK_SYSTEM_PROMPT).strip()
+    merged["translation_provider_mode"] = str(merged.get("translation_provider_mode") or "browser").strip() or "browser"
     merged["translation_provider_id"] = str(merged.get("translation_provider_id") or "").strip()
     merged["reading_assistant_provider_id"] = str(merged.get("reading_assistant_provider_id") or "env").strip() or "env"
+    merged["bole_conflict_strategy"] = str(merged.get("bole_conflict_strategy") or "ask").strip() or "ask"
+    if merged["deep_verification_scope"] not in VALID_DEEP_VERIFICATION_SCOPES:
+        raise ValueError("deep_verification_scope is not supported in V1")
+    if merged["translation_provider_mode"] not in VALID_TRANSLATION_PROVIDER_MODES:
+        raise ValueError("translation_provider_mode is not supported")
+    if merged["bole_conflict_strategy"] not in VALID_BOLE_CONFLICT_STRATEGIES:
+        raise ValueError("bole_conflict_strategy is not supported")
     with connect_db(db_path) as conn:
         conn.execute(
             """

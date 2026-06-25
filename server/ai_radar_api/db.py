@@ -152,6 +152,22 @@ create table if not exists personalization_state (
   updated_at text not null,
   confirmed_at text
 );
+
+create table if not exists personalization_feedback (
+  id integer primary key autoincrement,
+  action text not null,
+  item_key text not null,
+  item_json text not null,
+  reason text not null default '',
+  draft_suggestion_json text,
+  created_at text not null
+);
+
+create index if not exists idx_personalization_feedback_created_at
+on personalization_feedback(created_at);
+
+create index if not exists idx_personalization_feedback_item_key
+on personalization_feedback(item_key);
 """
 
 

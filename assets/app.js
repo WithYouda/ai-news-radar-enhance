@@ -153,6 +153,23 @@ const state = {
   aiProfiles: [],
   personalizationStatus: null,
   personalizationUnavailable: false,
+  boleConflictStrategy: "ask",
+  aiConfigSkipped: false,
+  aiConfigProfileId: "",
+  boleSortMode: "score",
+  boleFeedbackItems: [],
+  boleFeedbackByKey: new Map(),
+  boleFeedbackUndoTombstones: new Set(),
+  boleFeedbackFilters: {
+    query: "",
+    topic: "",
+    action: "",
+    sort: "time",
+    actionOrder: ["more_like_this", "less_relevant", "not_interested"],
+  },
+  boleTuneItem: null,
+  bolePendingDraftSuggestion: null,
+  bolePendingProfileConflict: null,
   boleDraftPreview: null,
   boleStage: "calibration",
   boleAnswers: {},
@@ -160,7 +177,9 @@ const state = {
   boleConfirmedQuestionIds: new Set(),
   boleAnswerInterpretations: {},
   boleActiveQuestionId: "attention_goal",
-  boleAdvanceTimer: null,
+  boleQuestionTransitionTimer: null,
+  boleTransitionStage: "",
+  boleEnteringQuestionId: "",
   translationProviderMode: "browser",
   translationProviderId: "",
   readingAssistantProviderId: "env",
@@ -199,6 +218,32 @@ const waytoagi7dBtnEl = document.getElementById("waytoagi7dBtn");
 const coverageStripEl = document.getElementById("coverageStrip");
 const bolePicksListEl = document.getElementById("bolePicksList");
 const bolePicksMetaEl = document.getElementById("bolePicksMeta");
+const boleSortButtonEl = document.getElementById("boleSortButton");
+const boleSortPopoverEl = document.getElementById("boleSortPopover");
+const boleFeedbackButtonEl = document.getElementById("boleFeedbackButton");
+const boleFeedbackDialogEl = document.getElementById("boleFeedbackDialog");
+const boleFeedbackCloseEl = document.getElementById("boleFeedbackClose");
+const boleFeedbackListEl = document.getElementById("boleFeedbackList");
+const boleFeedbackCountEl = document.getElementById("boleFeedbackCount");
+const boleFeedbackSearchEl = document.getElementById("boleFeedbackSearch");
+const boleFeedbackTopicFilterEl = document.getElementById("boleFeedbackTopicFilter");
+const boleFeedbackActionFilterEl = document.getElementById("boleFeedbackActionFilter");
+const boleFeedbackSortSelectEl = document.getElementById("boleFeedbackSortSelect");
+const boleFeedbackActionOrderEl = document.getElementById("boleFeedbackActionOrder");
+const boleTunePopoverEl = document.getElementById("boleTunePopover");
+const boleDraftSuggestionDialogEl = document.getElementById("boleDraftSuggestionDialog");
+const boleDraftSuggestionBodyEl = document.getElementById("boleDraftSuggestionBody");
+const boleDraftSuggestionCloseEl = document.getElementById("boleDraftSuggestionClose");
+const boleDraftSuggestionDismissEl = document.getElementById("boleDraftSuggestionDismiss");
+const boleDraftSuggestionSaveEl = document.getElementById("boleDraftSuggestionSave");
+const boleProfileConflictDialogEl = document.getElementById("boleProfileConflictDialog");
+const boleProfileConflictCloseEl = document.getElementById("boleProfileConflictClose");
+const boleProfileConflictLabelEl = document.getElementById("boleProfileConflictLabel");
+const boleProfileConflictPolicyEl = document.getElementById("boleProfileConflictPolicy");
+const boleProfileConflictExistingTitleEl = document.getElementById("boleProfileConflictExistingTitle");
+const boleProfileConflictExistingSourceEl = document.getElementById("boleProfileConflictExistingSource");
+const boleProfileConflictIncomingTitleEl = document.getElementById("boleProfileConflictIncomingTitle");
+const boleProfileConflictIncomingSourceEl = document.getElementById("boleProfileConflictIncomingSource");
 const sourceSortButtonEl = document.getElementById("sourceSortButton");
 const sourceHiddenButtonEl = document.getElementById("sourceHiddenButton");
 const sourceHiddenCountEl = document.getElementById("sourceHiddenCount");
@@ -237,6 +282,7 @@ const deepVerificationTopNEl = document.getElementById("deepVerificationTopN");
 const askStreamingToggleEl = document.getElementById("askStreamingToggle");
 const askSystemPromptInputEl = document.getElementById("askSystemPromptInput");
 const saveSettingsButtonEl = document.getElementById("saveSettingsButton");
+const boleConflictStrategySelectEl = document.getElementById("boleConflictStrategySelect");
 const aiProfilesMetaEl = document.getElementById("aiProfilesMeta");
 const aiProfilesListEl = document.getElementById("aiProfilesList");
 const aiProfileIdInputEl = document.getElementById("aiProfileIdInput");
@@ -250,6 +296,23 @@ const aiProfileTimeoutInputEl = document.getElementById("aiProfileTimeoutInput")
 const saveAiProfileButtonEl = document.getElementById("saveAiProfileButton");
 const testAiProfileButtonEl = document.getElementById("testAiProfileButton");
 const resetAiProfileFormButtonEl = document.getElementById("resetAiProfileFormButton");
+const aiConfigDialogEl = document.getElementById("aiConfigDialog");
+const aiConfigPanelEl = aiConfigDialogEl?.querySelector(".ai-config-panel");
+const aiConfigHeadStatusEl = document.getElementById("aiConfigHeadStatus");
+const aiConfigNameInputEl = document.getElementById("aiConfigNameInput");
+const aiConfigTypeSelectEl = document.getElementById("aiConfigTypeSelect");
+const aiConfigBaseUrlInputEl = document.getElementById("aiConfigBaseUrlInput");
+const aiConfigModelInputEl = document.getElementById("aiConfigModelInput");
+const aiConfigApiKeyInputEl = document.getElementById("aiConfigApiKeyInput");
+const aiConfigAdvancedToggleEl = document.getElementById("aiConfigAdvancedToggle");
+const aiConfigAdvancedStateEl = document.getElementById("aiConfigAdvancedState");
+const aiConfigAdvancedPanelEl = document.getElementById("aiConfigAdvancedPanel");
+const aiConfigHeadersInputEl = document.getElementById("aiConfigHeadersInput");
+const aiConfigTimeoutInputEl = document.getElementById("aiConfigTimeoutInput");
+const aiConfigSkipButtonEl = document.getElementById("aiConfigSkipButton");
+const aiConfigStatusEl = document.getElementById("aiConfigStatus");
+const aiConfigTestButtonEl = document.getElementById("aiConfigTestButton");
+const aiConfigSaveButtonEl = document.getElementById("aiConfigSaveButton");
 const boleWorkbenchOpenEl = document.getElementById("boleWorkbenchOpen");
 const boleSettingsOpenEl = document.getElementById("boleSettingsOpen");
 const boleSettingsStatusEl = document.getElementById("boleSettingsStatus");
@@ -262,6 +325,7 @@ const boleStagePanels = Array.from(document.querySelectorAll("[data-bole-stage-p
 const boleStageButtons = Array.from(document.querySelectorAll("[data-bole-stage]"));
 const boleDialogueTurnsEl = document.getElementById("boleDialogueTurns");
 const boleReadingTurnsEl = document.getElementById("boleReadingTurns");
+const boleQuestionDotGroups = Array.from(document.querySelectorAll("[data-bole-question-dots]"));
 const boleChatFormEl = document.getElementById("boleChatForm");
 const boleChatInputEl = document.getElementById("boleChatInput");
 const boleChatSendEl = document.getElementById("boleChatSend");
@@ -290,6 +354,8 @@ const readerAskButtonEl = document.getElementById("readerAskButton");
 const readerTranslateButtonEl = document.getElementById("readerTranslateButton");
 const readerSummaryButtonEl = document.getElementById("readerSummaryButton");
 const readerFactCheckButtonEl = document.getElementById("readerFactCheckButton");
+const readerFeedbackTriggerEl = document.getElementById("readerFeedbackTrigger");
+const readerFeedbackPopoverEl = document.getElementById("readerFeedbackPopover");
 const readerAccessBadgeEl = document.getElementById("readerAccessBadge");
 const ASK_DRAG_ACTIVATION_PX = 8;
 const ASK_DRAG_CLOSE_THRESHOLD = 132;
@@ -1323,48 +1389,49 @@ const BOLE_PROFILE_QUESTIONS = [
   {
     id: "attention_goal",
     stage: "interest",
-    title: "先选你的 AI 新闻重心。",
-    prompt: "可以点选，也可以直接打字。你写得越具体，我越能继续问到真正有用的领域。",
-    placeholder: "继续告诉伯乐你的关注点",
-    choices: ["产品与工具", "工程与部署", "研究与评测", "开源项目", "产业商业", "安全监管"],
-  },
-  {
-    id: "ai_domains",
-    stage: "interest",
-    title: "这些方向里，你最想优先看哪种落地场景？",
-    prompt: "可以从个人效率工具、团队研发体系、私有化部署成本里选，也可以直接补充。",
-    placeholder: "补充一个你关心的 AI 方向",
-    choices: ["个人效率工具", "团队研发体系", "私有化部署", "Agent", "Code AI", "本地部署", "RAG / 知识库"],
+    title: "您最想优先看到哪类 AI 新闻？",
+    prompt: "",
+    placeholder: "自由输入",
+    choices: ["产品与工具", "模型能力", "开发者集成", "研究学习", "行业影响", "商业信号"],
   },
   {
     id: "negative_preferences",
     stage: "interest",
-    title: "哪些内容你通常不想看？",
-    prompt: "这些内容会被降权。你也可以写得更具体，比如只排除某类快讯。",
-    placeholder: "补充你不想看的内容",
-    choices: ["纯融资快讯", "营销稿", "重复转载", "空泛观点", "过度学术", "浅摘要"],
+    title: "哪些内容您通常不想看？",
+    prompt: "",
+    placeholder: "自由输入",
+    choices: ["纯融资快讯", "营销稿", "重复转载", "空泛观点", "过度学术", "浅层汇总"],
+  },
+  {
+    id: "ai_domains",
+    stage: "interest",
+    title: "您更关注哪些 AI 方向？",
+    prompt: "",
+    placeholder: "自由输入",
+    choices: ["Agent", "Code AI", "多模态", "开源模型", "本地部署", "RAG / 知识库", "AI 搜索"],
   },
   {
     id: "deep_reading_policy",
     stage: "reading",
-    title: "高命中新闻怎么处理？",
-    prompt: "这是阅读偏好，不会混进兴趣领域。",
-    placeholder: "补充高命中新闻的处理方式",
-    choices: ["只提高排名", "高命中读正文", "生成总结", "事实核验", "点开再读"],
+    title: "高命中新闻默认怎么处理？",
+    prompt: "",
+    placeholder: "自由输入",
+    multiple: false,
+    choices: ["只提高排序", "自动读正文并摘要", "先核验再推荐", "打开文章时再处理"],
   },
   {
     id: "reading_depth",
     stage: "reading",
-    title: "你偏好的阅读深度是什么？",
-    prompt: "选择你希望伯乐默认给到的阅读层级。",
-    placeholder: "补充你喜欢的阅读深度",
-    choices: ["快速扫读", "标准摘要", "深入分析", "工程细节", "先核验"],
+    title: "您偏好的阅读深度是什么？",
+    prompt: "",
+    placeholder: "自由输入",
+    multiple: false,
+    choices: ["快速扫读", "标准摘要", "深度分析", "工程细节", "先做核验"],
   },
 ];
 
 const BOLE_STAGE_ORDER = ["calibration", "preferences", "draft"];
-const BOLE_CHOICE_ADVANCE_DELAY_MS = 1350;
-const BOLE_TEXT_ADVANCE_DELAY_MS = 1550;
+const BOLE_QUESTION_TRANSITION_MS = 380;
 
 function parseBoleTerms(text) {
   const protectedText = String(text || "").replace(/RAG\s*\/\s*知识库/gi, "RAG__BOLE_SLASH__知识库");
@@ -1485,10 +1552,14 @@ function boleQuestionById(questionId) {
   return BOLE_PROFILE_QUESTIONS.find((question) => question.id === questionId) || null;
 }
 
-function clearBoleAdvanceTimer() {
-  if (state.boleAdvanceTimer) {
-    clearTimeout(state.boleAdvanceTimer);
-    state.boleAdvanceTimer = null;
+function clearBoleQuestionTransitionTimer() {
+  if (state.boleQuestionTransitionTimer) {
+    clearTimeout(state.boleQuestionTransitionTimer);
+    state.boleQuestionTransitionTimer = null;
+  }
+  if (state.boleTransitionStage) {
+    questionContainerForStage(state.boleTransitionStage)?.classList.remove("is-transitioning");
+    state.boleTransitionStage = "";
   }
 }
 
@@ -1498,7 +1569,7 @@ function ensureBoleStageStarted(stage = state.boleStage) {
   const hasVisible = questions.some((question) => state.boleShownQuestionIds.has(question.id));
   if (hasVisible) return;
   state.boleShownQuestionIds.add(questions[0].id);
-  state.boleActiveQuestionId = questions[0].id;
+  if (stage === state.boleStage) state.boleActiveQuestionId = questions[0].id;
 }
 
 function visibleBoleQuestionsForStage(stage = state.boleStage) {
@@ -1552,13 +1623,13 @@ function nextBoleQuestionAfter(questionId) {
   return index >= 0 ? questions[index + 1] || null : null;
 }
 
-function confirmBoleQuestion(questionId) {
+function confirmBoleQuestion(questionId, options = {}) {
   const question = boleQuestionById(questionId);
   if (!question) return null;
   state.boleConfirmedQuestionIds.add(questionId);
   state.boleShownQuestionIds.add(questionId);
   const nextQuestion = nextBoleQuestionAfter(questionId);
-  if (nextQuestion) {
+  if (nextQuestion && options.revealNext !== false) {
     state.boleShownQuestionIds.add(nextQuestion.id);
     state.boleActiveQuestionId = nextQuestion.id;
   }
@@ -1568,37 +1639,84 @@ function confirmBoleQuestion(questionId) {
 function activateBoleQuestion(questionId) {
   const question = boleQuestionById(questionId);
   if (!question) return;
-  clearBoleAdvanceTimer();
+  clearBoleQuestionTransitionTimer();
   state.boleStage = question.stage === "reading" ? "preferences" : "calibration";
   state.boleShownQuestionIds.add(questionId);
   state.boleActiveQuestionId = questionId;
+  const enteringQuestionId = state.boleEnteringQuestionId;
   if (typeof renderBoleWorkbench === "function") renderBoleWorkbench();
+  if (state.boleEnteringQuestionId === enteringQuestionId) state.boleEnteringQuestionId = "";
   if (typeof boleChatInputEl !== "undefined" && boleChatInputEl) {
     boleChatInputEl.focus();
     boleChatInputEl.setSelectionRange?.(boleChatInputEl.value.length, boleChatInputEl.value.length);
   }
 }
 
-function advanceBoleQuestionFrom(questionId) {
-  const nextQuestion = confirmBoleQuestion(questionId);
+function isBoleQuestionReady(questionId) {
+  const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  if (answer.text && answer.ai_note === "正在理解...") return false;
+  if (answer.text && !answer.ai_labels.length) return false;
+  return boleAnswerLabels(answer).length > 0;
+}
+
+function isLastBoleQuestionInStage(questionId) {
+  const question = boleQuestionById(questionId);
+  if (!question) return false;
+  const questions = BOLE_PROFILE_QUESTIONS.filter((item) => item.stage === question.stage);
+  return questions.findIndex((item) => item.id === questionId) === questions.length - 1;
+}
+
+function primaryBoleActionLabel(questionId = state.boleActiveQuestionId) {
+  const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  if (answer.ai_note === "正在理解...") return "理解中...";
+  if (!isBoleQuestionReady(questionId)) return "确认回答";
+  return isLastBoleQuestionInStage(questionId) ? "下一环节" : "下一题";
+}
+
+function questionContainerForStage(stage = state.boleStage) {
+  return stage === "preferences" ? boleReadingTurnsEl : boleDialogueTurnsEl;
+}
+
+function finishBoleQuestionTransition(targetQuestionId, targetStage) {
+  state.boleQuestionTransitionTimer = null;
+  const stageForContainer = state.boleTransitionStage || state.boleStage;
+  questionContainerForStage(stageForContainer)?.classList.remove("is-transitioning");
+  state.boleTransitionStage = "";
+  if (targetStage) {
+    setBoleStage(targetStage, { animate: false });
+    return;
+  }
+  state.boleEnteringQuestionId = targetQuestionId;
+  activateBoleQuestion(targetQuestionId);
+}
+
+function transitionBoleQuestion(questionId, options = {}) {
+  const question = boleQuestionById(questionId);
+  if (!question) return;
+  const targetStage = question.stage === "reading" ? "preferences" : "calibration";
+  const currentContainer = questionContainerForStage(state.boleStage);
+  const currentCard = currentContainer?.querySelector(`[data-bole-question-id="${state.boleActiveQuestionId}"]`);
+  clearBoleQuestionTransitionTimer();
+  state.boleShownQuestionIds.add(questionId);
+  if (options.animate === false || !currentCard || state.boleStage !== targetStage || state.boleActiveQuestionId === questionId) {
+    activateBoleQuestion(questionId);
+    return;
+  }
+  currentContainer.classList.add("is-transitioning");
+  currentCard.classList.add("exiting");
+  state.boleTransitionStage = state.boleStage;
+  state.boleQuestionTransitionTimer = setTimeout(() => finishBoleQuestionTransition(questionId), BOLE_QUESTION_TRANSITION_MS);
+}
+
+function advanceBoleQuestionFrom(questionId, options = {}) {
+  const nextQuestion = confirmBoleQuestion(questionId, { revealNext: false });
   if (!nextQuestion) {
-    if (state.boleStage === "calibration") setBoleStage("preferences");
-    else if (state.boleStage === "preferences") setBoleStage("draft");
+    if (state.boleStage === "calibration") setBoleStage("preferences", options);
+    else if (state.boleStage === "preferences") setBoleStage("draft", options);
     else renderBoleWorkbench();
     return;
   }
-  renderBoleWorkbench();
-}
-
-function scheduleBoleAdvance(questionId, delay = BOLE_CHOICE_ADVANCE_DELAY_MS) {
-  clearBoleAdvanceTimer();
-  state.boleAdvanceTimer = setTimeout(() => {
-    state.boleAdvanceTimer = null;
-    if (state.boleActiveQuestionId !== questionId) return;
-    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
-    if (!boleAnswerLabels(answer).length && !answer.text) return;
-    advanceBoleQuestionFrom(questionId);
-  }, delay);
+  transitionBoleQuestion(nextQuestion.id, options);
 }
 
 function buildBoleConversationContext(currentQuestionId = "") {
@@ -1691,14 +1809,14 @@ function syncBoleStage() {
   if (boleChatFormEl) boleChatFormEl.hidden = stage === "draft";
   if (boleChatInputEl) {
     const question = activeBoleQuestion(stage);
-    boleChatInputEl.placeholder = question?.placeholder || "继续告诉伯乐你的关注点";
+    boleChatInputEl.placeholder = question?.placeholder || "自由输入";
     boleChatInputEl.value = stage === "draft" ? "" : normalizeBoleAnswer(state.boleAnswers[question?.id]).text;
   }
 }
 
-function setBoleStage(stage) {
+function setBoleStage(stage, options = {}) {
   if (!BOLE_STAGE_ORDER.includes(stage)) return;
-  clearBoleAdvanceTimer();
+  clearBoleQuestionTransitionTimer();
   state.boleStage = stage;
   ensureBoleStageStarted(stage);
   if (stage !== "draft") {
@@ -1725,17 +1843,18 @@ function renderBoleQuestionTurn(question) {
   const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
   const labels = boleAnswerLabels(answer);
   const active = question.id === activeBoleQuestion(state.boleStage)?.id;
-  const answered = state.boleConfirmedQuestionIds.has(question.id) && !active;
-  const userLine = answer.text ? `<p class="bole-user-evidence">你说：${escapeHtml(answer.text)}</p>` : "";
+  const answered = !active && (state.boleConfirmedQuestionIds.has(question.id) || labels.length > 0 || Boolean(answer.text));
+  const userLine = answer.text ? `<p class="bole-user-evidence">您说：${escapeHtml(answer.text)}</p>` : "";
   const interpretation = labels.length
     ? `<div class="bole-interpretation"><span>伯乐理解为</span><strong>${escapeHtml(labels.join("、"))}</strong></div>`
     : "";
   const followUp = answer.follow_up ? `<p>${escapeHtml(answer.follow_up)}</p>` : `<p>${escapeHtml(question.prompt)}</p>`;
   return `
-    <article class="bole-turn bole-turn-ai${answered ? " answered" : ""}" data-bole-question-id="${escapeHtml(question.id)}">
-      <span class="bole-turn-label">伯乐</span>
+    <article class="bole-turn bole-turn-ai${answered ? " answered" : ""}${
+      active && state.boleEnteringQuestionId === question.id ? " entering" : ""
+    }" data-bole-question-id="${escapeHtml(question.id)}">
       <h4>${escapeHtml(question.title)}</h4>
-      ${active ? followUp : ""}
+      ${active && question.prompt ? followUp : ""}
       ${userLine}
       ${interpretation}
       ${active ? `<div class="bole-seed-row" aria-label="预设选项">${renderBoleChoiceButtons(question)}</div>` : ""}
@@ -1743,12 +1862,31 @@ function renderBoleQuestionTurn(question) {
   `;
 }
 
+function renderBoleQuestionDots(stage) {
+  return boleQuestionsForUiStage(stage)
+    .map((question, index) => {
+      const active = question.id === state.boleActiveQuestionId && stage === state.boleStage;
+      const done = isBoleQuestionReady(question.id);
+      return `<button class="bole-question-dot${active ? " active" : ""}${done ? " done" : ""}" type="button" data-bole-question-dot="${escapeHtml(question.id)}" aria-label="${escapeHtml(question.title)}"></button>`;
+    })
+    .join("");
+}
+
+function renderBoleTurnDeck() {
+  return '<div class="bole-turn-deck-card one"></div><div class="bole-turn-deck-card two"></div>';
+}
+
 function renderBoleConversation() {
+  boleQuestionDotGroups.forEach((group) => {
+    group.innerHTML = renderBoleQuestionDots(group.dataset.boleQuestionDots || "calibration");
+  });
   if (boleDialogueTurnsEl) {
-    boleDialogueTurnsEl.innerHTML = visibleBoleQuestionsForStage("calibration").map(renderBoleQuestionTurn).join("");
+    const question = state.boleStage === "calibration" ? activeBoleQuestion("calibration") : activeBoleQuestion("calibration");
+    boleDialogueTurnsEl.innerHTML = `${renderBoleTurnDeck()}${question ? renderBoleQuestionTurn(question) : ""}`;
   }
   if (boleReadingTurnsEl) {
-    boleReadingTurnsEl.innerHTML = visibleBoleQuestionsForStage("preferences").map(renderBoleQuestionTurn).join("");
+    const question = activeBoleQuestion("preferences");
+    boleReadingTurnsEl.innerHTML = `${renderBoleTurnDeck()}${question ? renderBoleQuestionTurn(question) : ""}`;
   }
 }
 
@@ -1787,6 +1925,13 @@ function syncBoleActionButtons() {
   const unavailable = !apiBaseUrl || state.personalizationUnavailable;
   if (boleDisableButtonEl) boleDisableButtonEl.disabled = unavailable || !state.personalizationStatus?.active_profile;
   if (boleResetButtonEl) boleResetButtonEl.disabled = unavailable || !state.personalizationStatus;
+  if (boleChatSendEl && state.boleStage !== "draft") {
+    const question = activeBoleQuestion(state.boleStage);
+    const answer = normalizeBoleAnswer(state.boleAnswers[question?.id]);
+    const hasInput = Boolean(answer.text || boleChatInputEl?.value.trim() || boleAnswerLabels(answer).length);
+    boleChatSendEl.textContent = primaryBoleActionLabel(question?.id);
+    boleChatSendEl.disabled = answer.ai_note === "正在理解..." || !hasInput;
+  }
 }
 
 function collectBoleCalibrationAnswers() {
@@ -1946,6 +2091,10 @@ function renderBoleWorkbench() {
 async function advanceBoleQuestion(text = "") {
   const question = activeBoleQuestion(state.boleStage);
   if (!question) return;
+  if (isBoleQuestionReady(question.id)) {
+    advanceBoleQuestionFrom(question.id);
+    return;
+  }
   const nextText = normalizeBoleLabel(text);
   if (!nextText) return;
   const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
@@ -1962,7 +2111,6 @@ async function advanceBoleQuestion(text = "") {
   });
   state.boleDraftPreview = collectBoleDraftInput();
   renderBoleWorkbench();
-  scheduleBoleAdvance(question.id, BOLE_TEXT_ADVANCE_DELAY_MS);
 }
 
 function openBoleWorkbench() {
@@ -1989,6 +2137,7 @@ async function loadPersonalization(options = {}) {
   if (!apiBaseUrl) {
     state.personalizationUnavailable = true;
     renderBoleWorkbench();
+    renderBolePicks();
     return null;
   }
   try {
@@ -1996,12 +2145,15 @@ async function loadPersonalization(options = {}) {
     state.personalizationStatus = payload;
     state.personalizationUnavailable = false;
     state.boleDraftPreview = payload.draft_profile || payload.active_profile || state.boleDraftPreview;
+    loadBoleFeedback({ quiet: true });
     renderBoleWorkbench();
-    if (options.autoOpen && payload.state === "not_started") openBoleWorkbench();
+    renderBolePicks();
+    if (options.autoOpen && payload.state === "not_started") openBolePersonalizationEntry({ auto: Boolean(options.autoOpen) });
     return payload;
   } catch (err) {
     state.personalizationUnavailable = true;
     renderBoleWorkbench();
+    renderBolePicks();
     if (!options.quiet) setBoleWorkbenchStatus(err.message || "伯乐画像不可用");
     return null;
   }
@@ -2014,10 +2166,13 @@ async function saveBoleDraft(options = {}) {
     setBoleWorkbenchStatus("暂时无法保存");
     return false;
   }
-  const profile = collectBoleDraftInput();
+  const profile = currentBoleDraftProfile();
   const evidence = buildBoleDraftEvidence({
     calibrationAnswers: collectBoleCalibrationAnswers(),
   });
+  if (state.bolePendingDraftSuggestion) {
+    evidence.feedback_suggestion = state.bolePendingDraftSuggestion.evidence || state.bolePendingDraftSuggestion;
+  }
   evidence.positive_count = profile.positive_interests.length;
   evidence.negative_count = profile.negative_interests.length;
   state.boleDraftPreview = profile;
@@ -2036,7 +2191,7 @@ async function saveBoleDraft(options = {}) {
     state.personalizationUnavailable = false;
     state.boleDraftPreview = payload.draft_profile || profile;
     renderBoleWorkbench();
-    if (!options.silent) setBoleWorkbenchStatus("已保存");
+    if (!options.silent) setBoleWorkbenchStatus("");
     return true;
   } catch (err) {
     setBoleWorkbenchStatus(err.message || "草稿生成失败");
@@ -2057,7 +2212,8 @@ async function confirmBoleProfile() {
     state.personalizationUnavailable = false;
     state.boleDraftPreview = payload.active_profile || null;
     renderBoleWorkbench();
-    setBoleWorkbenchStatus("已保存");
+    renderBolePicks();
+    setBoleWorkbenchStatus("");
     closeBoleWorkbench();
   } catch (err) {
     setBoleWorkbenchStatus(err.message || "保存失败");
@@ -2075,6 +2231,7 @@ async function skipBolePersonalization() {
     state.personalizationUnavailable = false;
     state.boleDraftPreview = null;
     renderBoleWorkbench();
+    renderBolePicks();
     closeBoleWorkbench();
   } catch (err) {
     setBoleWorkbenchStatus(err.message || "跳过失败");
@@ -2097,9 +2254,11 @@ async function resetBolePersonalization() {
     state.boleConfirmedQuestionIds = new Set();
     state.boleAnswerInterpretations = {};
     state.boleActiveQuestionId = "attention_goal";
+    clearBoleQuestionTransitionTimer();
     state.boleStage = "calibration";
     if (boleChatInputEl) boleChatInputEl.value = "";
     renderBoleWorkbench();
+    renderBolePicks();
     setSettingsStatus("伯乐画像已重置");
   } catch (err) {
     setSettingsStatus(err.message || "重置失败");
@@ -2118,6 +2277,7 @@ async function disableBolePersonalization() {
     state.personalizationUnavailable = false;
     state.boleDraftPreview = payload.active_profile || null;
     renderBoleWorkbench();
+    renderBolePicks();
     setSettingsStatus("伯乐画像已停用");
   } catch (err) {
     setSettingsStatus(err.message || "停用失败");
@@ -2126,6 +2286,171 @@ async function disableBolePersonalization() {
 
 function setSettingsStatus(text) {
   if (settingsStatusEl) settingsStatusEl.textContent = text;
+}
+
+function setAiConfigStatus(text, tone = "") {
+  if (aiConfigStatusEl) {
+    aiConfigStatusEl.textContent = text || "";
+    aiConfigStatusEl.classList.toggle("ok", tone === "ok");
+    aiConfigStatusEl.classList.toggle("warn", tone === "warn");
+  }
+  if (aiConfigHeadStatusEl) {
+    aiConfigHeadStatusEl.textContent = tone === "ok" ? "已连接" : "未连接";
+  }
+}
+
+function hasSavedAiConfigProfile() {
+  return (state.aiProfiles || []).some((profile) => profile && profile.id !== "env" && !profile.readonly);
+}
+
+function shouldPromptForAiConfigBeforeBole() {
+  if (!apiBaseUrl || state.aiConfigSkipped) return false;
+  const status = state.personalizationStatus || {};
+  if (status.state && status.state !== "not_started") return false;
+  return !hasSavedAiConfigProfile();
+}
+
+function resetAiConfigForm() {
+  state.aiConfigProfileId = "";
+  if (aiConfigNameInputEl) aiConfigNameInputEl.value = "";
+  if (aiConfigTypeSelectEl) aiConfigTypeSelectEl.value = "chat_completions";
+  if (aiConfigBaseUrlInputEl) aiConfigBaseUrlInputEl.value = "";
+  if (aiConfigModelInputEl) aiConfigModelInputEl.value = "";
+  if (aiConfigApiKeyInputEl) aiConfigApiKeyInputEl.value = "";
+  if (aiConfigHeadersInputEl) aiConfigHeadersInputEl.value = "";
+  if (aiConfigTimeoutInputEl) aiConfigTimeoutInputEl.value = "45";
+}
+
+function closeAiConfigDialog() {
+  if (!aiConfigDialogEl) return;
+  aiConfigDialogEl.classList.remove("open");
+  aiConfigDialogEl.hidden = true;
+  document.body.classList.remove("ai-config-dialog-open");
+}
+
+function openAiConfigDialog() {
+  if (!aiConfigDialogEl) {
+    openBoleWorkbench();
+    return;
+  }
+  resetAiConfigForm();
+  setAiConfigStatus("可跳过进入画像工作台。");
+  aiConfigDialogEl.hidden = false;
+  document.body.classList.add("ai-config-dialog-open");
+  window.requestAnimationFrame(() => aiConfigDialogEl.classList.add("open"));
+  aiConfigNameInputEl?.focus();
+}
+
+function skipAiConfigDialog() {
+  state.aiConfigSkipped = true;
+  closeAiConfigDialog();
+  openBoleWorkbench();
+}
+
+function aiConfigProfilePayload() {
+  const headersText = aiConfigHeadersInputEl?.value.trim() || "";
+  if (headersText) JSON.parse(headersText);
+  return {
+    name: aiConfigNameInputEl?.value.trim() || "默认 AI",
+    type: aiConfigTypeSelectEl?.value || "chat_completions",
+    base_url: aiConfigBaseUrlInputEl?.value.trim() || "",
+    model: aiConfigModelInputEl?.value.trim() || "",
+    api_key: aiConfigApiKeyInputEl?.value || "",
+    headers_json: headersText,
+    timeout_seconds: Number(aiConfigTimeoutInputEl?.value || 45),
+    enabled: true,
+  };
+}
+
+async function saveReadingAssistantProvider(profileId) {
+  if (!apiBaseUrl || !profileId) return;
+  const topN = Math.max(1, Math.min(10, Number(deepVerificationTopNEl?.value || 3)));
+  const translationMode = translationProviderModeSelectEl?.value || state.translationProviderMode || "browser";
+  const payload = {
+    deep_verification_enabled: Boolean(deepVerificationToggleEl?.checked),
+    deep_verification_scope: "bole_picks_and_topic_top_n",
+    deep_verification_top_n: topN,
+    ask_streaming_enabled: Boolean(askStreamingToggleEl?.checked),
+    ask_system_prompt: askSystemPromptInputEl?.value || "",
+    translation_provider_mode: translationMode,
+    translation_provider_id: translationMode === "ai" ? translationProviderSelectEl?.value || state.translationProviderId || "env" : "",
+    reading_assistant_provider_id: profileId,
+  };
+  const settings = await apiFetch("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  applySettings(settings);
+}
+
+async function saveAiConfigAndContinue() {
+  if (!apiBaseUrl) {
+    skipAiConfigDialog();
+    return;
+  }
+  let payload;
+  try {
+    payload = aiConfigProfilePayload();
+  } catch (_) {
+    setAiConfigStatus("请求头 JSON 格式错误", "warn");
+    return;
+  }
+  if (aiConfigSaveButtonEl) aiConfigSaveButtonEl.disabled = true;
+  setAiConfigStatus("保存中...");
+  try {
+    const profileId = state.aiConfigProfileId;
+    const profile = await apiFetch(profileId ? `/api/ai-profiles/${encodeURIComponent(profileId)}` : "/api/ai-profiles", {
+      method: profileId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+    state.aiConfigProfileId = profile.id;
+    state.aiProfiles = [profile, ...(state.aiProfiles || []).filter((item) => item.id !== "env" && item.id !== profile.id)];
+    renderAiProfiles();
+    await saveReadingAssistantProvider(profile.id);
+    setAiConfigStatus("已保存", "ok");
+    closeAiConfigDialog();
+    openBoleWorkbench();
+  } catch (err) {
+    setAiConfigStatus(err.message || "AI 配置保存失败", "warn");
+  } finally {
+    if (aiConfigSaveButtonEl) aiConfigSaveButtonEl.disabled = false;
+  }
+}
+
+async function testAiConfigConnection() {
+  if (!apiBaseUrl) return;
+  let payload;
+  try {
+    payload = aiConfigProfilePayload();
+  } catch (_) {
+    setAiConfigStatus("请求头 JSON 格式错误", "warn");
+    return;
+  }
+  if (aiConfigTestButtonEl) aiConfigTestButtonEl.disabled = true;
+  setAiConfigStatus("测试中...");
+  try {
+    const profile = await apiFetch("/api/ai-profiles", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    state.aiConfigProfileId = profile.id;
+    state.aiProfiles = [profile, ...(state.aiProfiles || []).filter((item) => item.id !== "env" && item.id !== profile.id)];
+    renderAiProfiles();
+    await apiFetch(`/api/ai-profiles/${encodeURIComponent(profile.id)}/test`, { method: "POST" });
+    setAiConfigStatus("AI 连接正常", "ok");
+  } catch (err) {
+    setAiConfigStatus(err.message || "AI 连接失败", "warn");
+  } finally {
+    if (aiConfigTestButtonEl) aiConfigTestButtonEl.disabled = false;
+  }
+}
+
+function openBolePersonalizationEntry(options = {}) {
+  if (shouldPromptForAiConfigBeforeBole()) {
+    openAiConfigDialog();
+    return;
+  }
+  openBoleWorkbench();
 }
 
 function applySettings(settings) {
@@ -2146,9 +2471,11 @@ function applySettings(settings) {
   state.translationProviderMode = settings.translation_provider_mode || "browser";
   state.translationProviderId = settings.translation_provider_id || "";
   state.readingAssistantProviderId = settings.reading_assistant_provider_id || "env";
+  state.boleConflictStrategy = settings.bole_conflict_strategy === "last_decision" ? "last_decision" : "ask";
   if (translationProviderModeSelectEl) translationProviderModeSelectEl.value = state.translationProviderMode;
   if (translationProviderSelectEl) translationProviderSelectEl.value = state.translationProviderId || "env";
   if (readingAssistantProviderSelectEl) readingAssistantProviderSelectEl.value = state.readingAssistantProviderId || "env";
+  if (boleConflictStrategySelectEl) boleConflictStrategySelectEl.value = state.boleConflictStrategy;
   syncTranslationProviderMode();
 }
 
@@ -2388,6 +2715,7 @@ async function saveSettings() {
         translation_provider_mode: translationMode,
         translation_provider_id: translationMode === "ai" ? translationProviderSelectEl?.value || "env" : "",
         reading_assistant_provider_id: readingAssistantProviderSelectEl?.value || "env",
+        bole_conflict_strategy: boleConflictStrategySelectEl?.value || "ask",
       }),
     });
     applySettings(settings);
@@ -2790,6 +3118,7 @@ async function readerItemId(item) {
 
 function closeReader() {
   if (!readerSheetEl) return;
+  closeReaderFeedbackPopover();
   if (readerCloseTimer) window.clearTimeout(readerCloseTimer);
   if (readerSheetEl.hidden || !readerPanelEl) {
     finishCloseReader();
@@ -3027,6 +3356,7 @@ async function loadCleanArticle(item, cacheKey = "") {
 async function openReader(item) {
   if (!readerSheetEl) return;
   if (readerCloseTimer) window.clearTimeout(readerCloseTimer);
+  closeReaderFeedbackPopover();
   state.readerItem = item;
   const id = await readerItemId(item);
   state.readerArticleKey = id;
@@ -3075,6 +3405,19 @@ async function loadVerificationSummary() {
   } catch (err) {
     return { items: [], unavailable: true, error: err.message };
   }
+}
+
+async function loadOptionalBackendData() {
+  const [taxonomyResult, verificationResult] = await Promise.allSettled([
+    loadTaxonomy(),
+    loadVerificationSummary(),
+  ]);
+  state.taxonomy = taxonomyResult.status === "fulfilled" ? taxonomyResult.value : fallbackTaxonomy;
+  state.verificationPayload = verificationResult.status === "fulfilled"
+    ? verificationResult.value
+    : { items: [], unavailable: true, error: verificationResult.reason?.message || "核验数据加载失败" };
+  renderCategoryView(state.taxonomy, state.itemsAi);
+  renderVerificationView(state.verificationPayload);
 }
 
 async function deepVerifyItem(itemId, item = null) {
@@ -3186,6 +3529,495 @@ function getFilteredItems() {
 
 function itemTitleText(item) {
   return (item.title_zh || item.title || item.title_en || "未命名更新").trim();
+}
+
+function boleFeedbackItemKey(item) {
+  if (!item || typeof item !== "object") return "";
+  return String(item.item_id || item.id || item.url || itemTitleText(item)).trim();
+}
+
+function boleFeedbackActionLabel(action) {
+  const labels = {
+    more_relevant: "更相关",
+    more_like_this: "多看类似",
+    less_relevant: "少看类似",
+    not_interested: "不感兴趣",
+  };
+  return labels[action] || "已反馈";
+}
+
+function boleFeedbackAdjustment(action) {
+  if (action === "more_like_this") return 24;
+  if (action === "more_relevant") return 16;
+  if (action === "less_relevant") return -18;
+  if (action === "not_interested") return -34;
+  return 0;
+}
+
+const BOLE_FEEDBACK_DEFAULT_ACTION_ORDER = ["more_like_this", "less_relevant", "not_interested"];
+const BOLE_FEEDBACK_GENERIC_TARGET = "整条新闻";
+const BOLE_FEEDBACK_TOPIC_SORT_KEYS = {
+  Agent: "agent",
+  OpenAI: "openai",
+  Anthropic: "anthropic",
+  Google: "google",
+  Microsoft: "microsoft",
+  Amazon: "amazon",
+  Meta: "meta",
+  NVIDIA: "nvidia",
+  GitHub: "github",
+  "Code AI": "code ai",
+  "RAG / 知识库": "rag zhishiku",
+  本地部署: "bendibushu",
+  多模态: "duomotai",
+  开源模型: "kaiyuanmoxing",
+  "AI 搜索": "ai sousuo",
+  产品与工具: "chanpin gongju",
+  模型能力: "moxing nengli",
+  开发者集成: "kaifazhe jicheng",
+  研究学习: "yanjiu xuexi",
+  行业影响: "hangye yingxiang",
+  商业信号: "shangye xinhao",
+  纯融资快讯: "rongzi",
+  融资: "rongzi",
+  营销稿: "yingxiao",
+  重复转载: "chongfu",
+  空泛观点: "kongfan",
+  过度学术: "xueshu",
+  浅层汇总: "huizong",
+  整条新闻: "zhengwen",
+};
+
+const BOLE_FEEDBACK_EXTRA_TARGET_ALIASES = {
+  OpenAI: ["openai", "chatgpt", "gpt", "sam altman"],
+  Anthropic: ["anthropic", "claude"],
+  Google: ["google", "gemini", "deepmind"],
+  Microsoft: ["microsoft", "copilot"],
+  Amazon: ["amazon", "aws"],
+  Meta: ["meta", "llama"],
+  NVIDIA: ["nvidia", "cuda"],
+  GitHub: ["github"],
+  融资: ["融资", "funding", "capital", "投资", "raises"],
+  营销稿: ["营销", "marketing", "sponsored"],
+};
+
+function ensureBoleFeedbackFilters() {
+  if (!state.boleFeedbackFilters || typeof state.boleFeedbackFilters !== "object") {
+    state.boleFeedbackFilters = {};
+  }
+  const filters = state.boleFeedbackFilters;
+  filters.query = String(filters.query || "");
+  filters.topic = String(filters.topic || "");
+  filters.action = String(filters.action || "");
+  filters.sort = ["time", "topic", "action"].includes(filters.sort) ? filters.sort : "time";
+  filters.actionOrder = Array.isArray(filters.actionOrder) && filters.actionOrder.length
+    ? filters.actionOrder.filter((action) => BOLE_FEEDBACK_DEFAULT_ACTION_ORDER.includes(action))
+    : [...BOLE_FEEDBACK_DEFAULT_ACTION_ORDER];
+  BOLE_FEEDBACK_DEFAULT_ACTION_ORDER.forEach((action) => {
+    if (!filters.actionOrder.includes(action)) filters.actionOrder.push(action);
+  });
+  return filters;
+}
+
+function boleFeedbackRecordId(feedback) {
+  if (!feedback || typeof feedback !== "object") return "";
+  const id = String(feedback.id || feedback.local_id || "").trim();
+  if (id) return id;
+  const key = String(feedback.item_key || boleFeedbackItemKey(feedback.item)).trim();
+  return key ? `session:${key}` : "";
+}
+
+function boleFeedbackIsServerId(id) {
+  const value = String(id || "");
+  return Boolean(value) && !value.startsWith("session:");
+}
+
+function boleFeedbackTombstoneKeys(feedback) {
+  const keys = [];
+  const id = boleFeedbackRecordId(feedback);
+  const itemKey = feedback?.item_key || boleFeedbackItemKey(feedback?.item);
+  if (id) keys.push(`id:${id}`);
+  if (itemKey) keys.push(`item:${itemKey}`);
+  return keys;
+}
+
+function isBoleFeedbackTombstoned(feedback) {
+  if (!state.boleFeedbackUndoTombstones) state.boleFeedbackUndoTombstones = new Set();
+  return boleFeedbackTombstoneKeys(feedback).some((key) => state.boleFeedbackUndoTombstones.has(key));
+}
+
+function rememberBoleFeedbackUndo(feedback) {
+  if (!state.boleFeedbackUndoTombstones) state.boleFeedbackUndoTombstones = new Set();
+  boleFeedbackTombstoneKeys(feedback).forEach((key) => state.boleFeedbackUndoTombstones.add(key));
+}
+
+function clearBoleFeedbackUndo(feedback) {
+  if (!state.boleFeedbackUndoTombstones) state.boleFeedbackUndoTombstones = new Set();
+  boleFeedbackTombstoneKeys(feedback).forEach((key) => state.boleFeedbackUndoTombstones.delete(key));
+}
+
+function boleFeedbackSemanticText(item) {
+  if (!item || typeof item !== "object") return "";
+  const signals = Array.isArray(item.ai_signals) ? item.ai_signals.join(" ") : "";
+  const tags = Array.isArray(item.ai_tags) ? item.ai_tags.join(" ") : "";
+  return [
+    item.title,
+    item.title_zh,
+    item.title_en,
+    item.summary,
+    item.description,
+    item.ai_label,
+    signals,
+    tags,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function boleFeedbackKnownTargetLabels() {
+  return [...Object.keys(BOLE_FEEDBACK_EXTRA_TARGET_ALIASES), ...Object.keys(BOLE_PROFILE_LABEL_ALIASES || {})];
+}
+
+function boleFeedbackMatchedTargetLabels(feedback) {
+  const labels = [];
+  const add = (label) => {
+    const value = String(label || "").trim();
+    if (!value || isBoleFeedbackGenericTarget(value) || labels.includes(value)) return;
+    labels.push(value);
+  };
+  add(feedback?.target || feedback?.topic || feedback?.item?.feedback_target);
+  const item = feedback?.item || {};
+  const storedTargets = Array.isArray(item.matched_targets) ? item.matched_targets : [];
+  storedTargets.forEach(add);
+  const signals = Array.isArray(item.ai_signals) ? item.ai_signals.map((signal) => String(signal || "").trim()).filter(Boolean) : [];
+  const knownLabels = boleFeedbackKnownTargetLabels();
+  signals.forEach((signal) => {
+    if (knownLabels.includes(signal) || BOLE_FEEDBACK_TOPIC_SORT_KEYS[signal]) add(signal);
+  });
+  const hay = boleFeedbackSemanticText(item);
+  for (const label of knownLabels) {
+    if (label === "融资" && signals.includes("融资")) {
+      add(label);
+      continue;
+    }
+    const aliases = BOLE_PROFILE_LABEL_ALIASES[label] || BOLE_FEEDBACK_EXTRA_TARGET_ALIASES[label] || [];
+    const candidates = [label, ...aliases].map((value) => String(value || "").toLowerCase()).filter(Boolean);
+    if (candidates.some((candidate) => hay.includes(candidate))) add(label);
+  }
+  return labels;
+}
+
+function boleFeedbackTargetLabel(feedback) {
+  const matched = boleFeedbackMatchedTargetLabels(feedback);
+  if (matched.length) return matched[0];
+  return BOLE_FEEDBACK_GENERIC_TARGET;
+}
+
+function formatBoleFeedbackTime(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return "刚刚";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function boleFeedbackSearchText(feedback) {
+  return [
+    feedback?.item?.title,
+    feedback?.item?.title_zh,
+    feedback?.item?.title_en,
+    feedback?.item?.summary,
+    feedback?.item?.description,
+    feedback?.item?.site_name,
+    feedback?.item?.source,
+    boleFeedbackActionLabel(feedback?.action),
+    boleFeedbackTargetLabel(feedback),
+    ...boleFeedbackMatchedTargetLabels(feedback),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function boleFeedbackTopicSortKey(label) {
+  const value = String(label || BOLE_FEEDBACK_GENERIC_TARGET).trim();
+  return (BOLE_FEEDBACK_TOPIC_SORT_KEYS[value] || value).toLowerCase();
+}
+
+function isBoleFeedbackGenericTarget(label) {
+  return String(label || "").trim() === BOLE_FEEDBACK_GENERIC_TARGET || String(label || "").trim() === "这条新闻";
+}
+
+function boleFeedbackSpecificTargetLabel(feedback) {
+  const label = boleFeedbackTargetLabel(feedback);
+  return isBoleFeedbackGenericTarget(label) ? "" : label;
+}
+
+function boleFeedbackTopicOptions(items = state.boleFeedbackItems) {
+  return Array.from(
+    new Set(
+      (Array.isArray(items) ? items : [])
+        .filter((feedback) => feedback && !isBoleFeedbackTombstoned(feedback))
+        .map(boleFeedbackTargetLabel)
+        .filter((label) => label && !isBoleFeedbackGenericTarget(label)),
+    ),
+  ).sort((a, b) => boleFeedbackTopicSortKey(a).localeCompare(boleFeedbackTopicSortKey(b), "zh-Hans-CN"));
+}
+
+function boleFeedbackVisibleItems() {
+  const filters = ensureBoleFeedbackFilters();
+  const query = filters.query.trim().toLowerCase();
+  const actionOrder = filters.actionOrder.length ? filters.actionOrder : BOLE_FEEDBACK_DEFAULT_ACTION_ORDER;
+  const rows = (Array.isArray(state.boleFeedbackItems) ? state.boleFeedbackItems : [])
+    .filter((feedback) => feedback && !isBoleFeedbackTombstoned(feedback))
+    .filter((feedback) => {
+      if (filters.topic && boleFeedbackTargetLabel(feedback) !== filters.topic) return false;
+      if (filters.action && feedback.action !== filters.action) return false;
+      if (query && !boleFeedbackSearchText(feedback).includes(query)) return false;
+      return true;
+    });
+  return rows.sort((a, b) => {
+    if (filters.sort === "topic") {
+      const byTopic = boleFeedbackTopicSortKey(boleFeedbackTargetLabel(b)) < boleFeedbackTopicSortKey(boleFeedbackTargetLabel(a)) ? 1
+        : boleFeedbackTopicSortKey(boleFeedbackTargetLabel(a)) < boleFeedbackTopicSortKey(boleFeedbackTargetLabel(b)) ? -1
+        : 0;
+      if (byTopic) return byTopic;
+    } else if (filters.sort === "action") {
+      const byAction = actionOrder.indexOf(a.action) - actionOrder.indexOf(b.action);
+      if (byAction) return byAction;
+    }
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  });
+}
+
+function currentBoleFeedbackForItem(item) {
+  const key = boleFeedbackItemKey(item);
+  if (!key || !state.boleFeedbackByKey) return null;
+  return state.boleFeedbackByKey.get(key) || null;
+}
+
+function recordBoleSessionFeedback(feedback, options = {}) {
+  if (!feedback || !feedback.item) return null;
+  const key = boleFeedbackItemKey(feedback.item);
+  if (!key) return null;
+  if (!state.boleFeedbackByKey) state.boleFeedbackByKey = new Map();
+  const normalized = {
+    id: feedback.id || feedback.local_id || `session:${key}`,
+    action: feedback.action || "",
+    item: feedback.item,
+    item_key: key,
+    target: feedback.target || feedback.topic || boleFeedbackTargetLabel(feedback),
+    matched_targets: uniqueBolePickStrings([
+      ...(Array.isArray(feedback.matched_targets) ? feedback.matched_targets : []),
+      ...(Array.isArray(feedback.item?.matched_targets) ? feedback.item.matched_targets : []),
+      ...boleFeedbackMatchedTargetLabels(feedback),
+    ]).filter((label) => !isBoleFeedbackGenericTarget(label)).slice(0, 8),
+    created_at: feedback.created_at || new Date().toISOString(),
+  };
+  if (!options.preserveUndoTombstone) clearBoleFeedbackUndo(normalized);
+  state.boleFeedbackByKey.set(key, normalized);
+  return normalized;
+}
+
+function removeBoleSessionFeedback(feedback) {
+  const item = feedback?.item || feedback;
+  const key = feedback?.item_key || boleFeedbackItemKey(item);
+  if (key && state.boleFeedbackByKey) state.boleFeedbackByKey.delete(key);
+}
+
+const BOLE_PROFILE_LABEL_ALIASES = {
+  Agent: ["agent", "智能体", "agentic"],
+  "Code AI": ["code ai", "coding", "代码", "编程"],
+  "RAG / 知识库": ["rag", "知识库", "retrieval"],
+  "本地部署": ["本地", "local", "部署", "量化", "quantization", "on-device"],
+  多模态: ["多模态", "multimodal", "图像", "视频", "语音"],
+  开源模型: ["开源", "open model", "open-source model"],
+  "AI 搜索": ["ai search", "搜索"],
+  产品与工具: ["产品", "工具", "product", "tool", "app"],
+  模型能力: ["模型", "model", "benchmark", "能力"],
+  开发者集成: ["开发者", "developer", "api", "sdk", "integration"],
+  研究学习: ["研究", "research", "paper", "arxiv"],
+  行业影响: ["行业", "industry", "policy", "企业"],
+  商业信号: ["商业", "business", "pricing", "funding", "融资"],
+  纯融资快讯: ["融资", "funding"],
+  营销稿: ["营销稿", "营销", "marketing", "软文"],
+  重复转载: ["转载", "duplicate", "repost"],
+  空泛观点: ["空泛", "opinion"],
+  过度学术: ["过度学术"],
+  浅层汇总: ["浅层", "roundup"],
+};
+
+function uniqueBolePickStrings(values) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    result.push(text);
+  });
+  return result;
+}
+
+function normalizeBolePickText(value) {
+  return String(value || "").toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function compactBolePickText(value) {
+  return normalizeBolePickText(value).replace(/[，。、“”‘’：:；;！!？?（）()\[\]【】《》<>·.,/\\|\s_-]/g, "");
+}
+
+function boleProfileEntryLabel(entry) {
+  if (typeof entry === "string") return entry;
+  if (!entry || typeof entry !== "object") return "";
+  return entry.label || entry.source || "";
+}
+
+function activeBolePersonalizationProfile() {
+  const status = state.personalizationStatus || {};
+  if (status.state !== "confirmed" || status.enabled === false) return null;
+  return status.active_profile && typeof status.active_profile === "object" ? status.active_profile : null;
+}
+
+function boleProfileInterestLabels(profile, key) {
+  if (!profile || typeof profile !== "object") return [];
+  return uniqueBolePickStrings((Array.isArray(profile[key]) ? profile[key] : []).map(boleProfileEntryLabel));
+}
+
+function boleProfileSourcePreferences(profile) {
+  if (!profile || typeof profile !== "object" || !Array.isArray(profile.source_preferences)) return [];
+  return profile.source_preferences
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const source = String(entry.source || "").trim();
+      const weight = Number(entry.weight || 0);
+      if (!source || !Number.isFinite(weight)) return null;
+      return { source, weight };
+    })
+    .filter(Boolean);
+}
+
+function boleProfileLabelTokens(label) {
+  const normalized = normalizeBolePickText(label);
+  const aliases = BOLE_PROFILE_LABEL_ALIASES[label] || BOLE_PROFILE_LABEL_ALIASES[normalized] || [];
+  const parts = normalized.split(/[\s,，、;；/|]+/);
+  return uniqueBolePickStrings([normalized, ...aliases, ...parts])
+    .map((token) => normalizeBolePickText(token))
+    .filter((token) => token && token !== "ai" && compactBolePickText(token).length >= 2);
+}
+
+function boleProfileSearchText(item) {
+  const signals = Array.isArray(item.ai_signals) ? item.ai_signals.join(" ") : "";
+  return normalizeBolePickText([
+    item.title_zh,
+    item.title,
+    item.title_en,
+    item.summary,
+    item.description,
+    item.ai_label,
+    item.ai_relevance_reason,
+    signals,
+    item.site_name,
+    item.source,
+  ].filter(Boolean).join(" "));
+}
+
+function boleSourceSearchText(item) {
+  return normalizeBolePickText([
+    item.site_name,
+    item.site_id,
+    item.source,
+  ].filter(Boolean).join(" "));
+}
+
+function boleSourcePreferenceMatchesItem(source, item) {
+  const normalized = normalizeBolePickText(source);
+  if (!normalized) return false;
+  const text = boleSourceSearchText(item);
+  return text.includes(normalized);
+}
+
+function boleBehaviorSearchText(item) {
+  const signals = Array.isArray(item.ai_signals) ? item.ai_signals.join(" ") : "";
+  return normalizeBolePickText([
+    item.title_zh,
+    item.title,
+    item.title_en,
+    item.summary,
+    item.description,
+    item.ai_label,
+    item.ai_relevance_reason,
+    signals,
+    item.site_name,
+    item.source,
+  ].filter(Boolean).join(" "));
+}
+
+function boleBehaviorMatchForItem(item, profile) {
+  const behavior = profile?.behavior_preferences || {};
+  const labels = uniqueBolePickStrings([
+    behavior.summary_depth,
+    behavior.verification_strictness,
+    ...(Array.isArray(behavior.deep_reading_policy) ? behavior.deep_reading_policy : []),
+    ...(Array.isArray(behavior.reading_depth) ? behavior.reading_depth : []),
+  ]);
+  const preferenceText = normalizeBolePickText(labels.join(" "));
+  const itemText = boleBehaviorSearchText(item);
+  const positive = [];
+  let adjustment = 0;
+  if (
+    (/工程|细节|deep|developer|engineering/.test(preferenceText))
+    && (/工程|开发|集成|部署|sdk|api|developer|tooling|engineering|integration|workflow|trace|hook/.test(itemText))
+  ) {
+    positive.push("工程细节");
+    adjustment += 14;
+  }
+  if ((/核验|事实|strict|verify|fact/.test(preferenceText)) && (/官方|official|benchmark|policy|incident|安全|合规/.test(itemText))) {
+    positive.push("事实核验");
+    adjustment += 8;
+  }
+  return {
+    positive: uniqueBolePickStrings(positive).slice(0, 2),
+    adjustment: Math.min(16, adjustment),
+  };
+}
+
+function boleProfileLabelMatchesItem(label, item) {
+  const text = boleProfileSearchText(item);
+  const compactText = compactBolePickText(text);
+  return boleProfileLabelTokens(label).some((token) => {
+    const normalized = normalizeBolePickText(token);
+    const compact = compactBolePickText(token);
+    return text.includes(normalized) || (compact && compactText.includes(compact));
+  });
+}
+
+function boleProfileMatchForItem(item, profile = activeBolePersonalizationProfile()) {
+  if (!profile) return { positive: [], negative: [], sourcePositive: [], sourceNegative: [], behaviorPositive: [], adjustment: 0 };
+  const positive = boleProfileInterestLabels(profile, "positive_interests")
+    .filter((label) => boleProfileLabelMatchesItem(label, item))
+    .slice(0, 3);
+  const negative = boleProfileInterestLabels(profile, "negative_interests")
+    .filter((label) => boleProfileLabelMatchesItem(label, item))
+    .slice(0, 3);
+  const positiveBonus = Math.min(18, positive.length * 10);
+  const negativePenalty = Math.min(32, negative.length * 18);
+  const sourcePreferences = boleProfileSourcePreferences(profile).filter((entry) => boleSourcePreferenceMatchesItem(entry.source, item));
+  const sourcePositive = sourcePreferences.filter((entry) => entry.weight > 0).map((entry) => entry.source).slice(0, 2);
+  const sourceNegative = sourcePreferences.filter((entry) => entry.weight < 0).map((entry) => entry.source).slice(0, 2);
+  const sourceAdjustment = Math.max(
+    -18,
+    Math.min(18, Math.round(sourcePreferences.reduce((sum, entry) => sum + entry.weight * 18, 0))),
+  );
+  const behaviorMatch = boleBehaviorMatchForItem(item, profile);
+  return {
+    positive,
+    negative,
+    sourcePositive,
+    sourceNegative,
+    behaviorPositive: behaviorMatch.positive,
+    adjustment: positiveBonus - negativePenalty + sourceAdjustment + behaviorMatch.adjustment,
+  };
+}
+
+function personalizedBoleScore(item, baseScore, profile = activeBolePersonalizationProfile()) {
+  const matches = boleProfileMatchForItem(item, profile);
+  const score = Math.max(1, Math.min(100, Math.round(baseScore + matches.adjustment)));
+  return { score, matches };
 }
 
 function sourceGroupKey(siteId, source) {
@@ -3596,6 +4428,606 @@ function closeSourceHiddenDialog() {
   document.body.classList.remove("source-control-open");
 }
 
+function renderBoleFeedbackList() {
+  if (!boleFeedbackListEl) return;
+  syncBoleFeedbackFilterControls();
+  const items = boleFeedbackVisibleItems();
+  boleFeedbackListEl.innerHTML = "";
+  if (typeof boleFeedbackCountEl !== "undefined" && boleFeedbackCountEl) {
+    const total = (Array.isArray(state.boleFeedbackItems) ? state.boleFeedbackItems : []).filter((feedback) => !isBoleFeedbackTombstoned(feedback)).length;
+    boleFeedbackCountEl.textContent = items.length === total ? `${total} 条` : `${items.length} / ${total} 条`;
+  }
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "bole-feedback-empty";
+    empty.textContent = "没有匹配记录";
+    boleFeedbackListEl.appendChild(empty);
+    return;
+  }
+  items.slice(0, 30).forEach((feedback) => {
+    const row = document.createElement("div");
+    const tone = feedback.action === "more_like_this" || feedback.action === "more_relevant" ? " positive" : " negative";
+    row.className = `bole-feedback-row${tone}`;
+    row.dataset.feedbackId = boleFeedbackRecordId(feedback);
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    if (typeof mark.setAttribute === "function") mark.setAttribute("aria-hidden", "true");
+    else mark.ariaHidden = "true";
+    mark.innerHTML = feedback.action === "more_like_this" || feedback.action === "more_relevant"
+      ? '<svg class="lucide-icon feedback-thumb-icon" viewBox="-1 -1 26 26"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path></svg>'
+      : '<svg class="lucide-icon" viewBox="0 0 24 24"><path d="M8 12h8"></path><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"></path></svg>';
+    const text = document.createElement("div");
+    text.className = "bole-feedback-row-text";
+    const title = document.createElement("strong");
+    title.textContent = feedback.item?.title || "未命名更新";
+    const meta = document.createElement("span");
+    meta.textContent = `${boleFeedbackActionLabel(feedback.action)}：${boleFeedbackTargetLabel(feedback)} · ${formatBoleFeedbackTime(feedback.created_at)}`;
+    const source = document.createElement("span");
+    source.textContent = [feedback.item?.site_name, feedback.item?.source].filter(Boolean).join(" · ");
+    text.append(title, meta, source);
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.textContent = "撤销";
+    undo.dataset.boleFeedbackUndo = boleFeedbackRecordId(feedback);
+    row.append(mark, text, undo);
+    boleFeedbackListEl.appendChild(row);
+  });
+}
+
+function renderBoleFeedbackOptions(select, rows, value) {
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = rows.map((row) => `<option value="${escapeHtml(row.value)}">${escapeHtml(row.label)}</option>`).join("");
+  select.value = rows.some((row) => row.value === value) ? value : previous;
+  if (!rows.some((row) => row.value === select.value)) select.value = "";
+}
+
+function syncBoleFeedbackFilterControls() {
+  const filters = ensureBoleFeedbackFilters();
+  if (typeof boleFeedbackSearchEl !== "undefined" && boleFeedbackSearchEl && boleFeedbackSearchEl.value !== filters.query) boleFeedbackSearchEl.value = filters.query;
+  const topics = boleFeedbackTopicOptions();
+  if (filters.topic && !topics.includes(filters.topic)) filters.topic = "";
+  renderBoleFeedbackOptions(
+    typeof boleFeedbackTopicFilterEl !== "undefined" ? boleFeedbackTopicFilterEl : null,
+    [{ value: "", label: "全部主题" }, ...topics.map((topic) => ({ value: topic, label: topic }))],
+    filters.topic,
+  );
+  if (typeof boleFeedbackTopicFilterEl !== "undefined" && boleFeedbackTopicFilterEl) boleFeedbackTopicFilterEl.value = topics.includes(filters.topic) ? filters.topic : "";
+  renderBoleFeedbackOptions(
+    typeof boleFeedbackActionFilterEl !== "undefined" ? boleFeedbackActionFilterEl : null,
+    [
+      { value: "", label: "全部反馈" },
+      { value: "more_like_this", label: "感兴趣" },
+      { value: "less_relevant", label: "少看类似" },
+      { value: "not_interested", label: "不感兴趣" },
+    ],
+    filters.action,
+  );
+  if (typeof boleFeedbackActionFilterEl !== "undefined" && boleFeedbackActionFilterEl) boleFeedbackActionFilterEl.value = filters.action;
+  renderBoleFeedbackOptions(
+    typeof boleFeedbackSortSelectEl !== "undefined" ? boleFeedbackSortSelectEl : null,
+    [
+      { value: "time", label: "按时间" },
+      { value: "topic", label: "按主题" },
+      { value: "action", label: "按反馈类型" },
+    ],
+    filters.sort,
+  );
+  if (typeof boleFeedbackSortSelectEl !== "undefined" && boleFeedbackSortSelectEl) boleFeedbackSortSelectEl.value = filters.sort;
+  if (typeof boleFeedbackActionOrderEl !== "undefined" && boleFeedbackActionOrderEl) {
+    boleFeedbackActionOrderEl.hidden = filters.sort !== "action";
+    boleFeedbackActionOrderEl.innerHTML = filters.actionOrder.map((action, index) => `
+      <span class="bole-feedback-order-chip">
+        ${escapeHtml(boleFeedbackActionLabel(action))}
+        <button type="button" data-bole-feedback-action-order="${escapeHtml(action)}" data-direction="-1" aria-label="${escapeHtml(boleFeedbackActionLabel(action))} 上移"${index === 0 ? " disabled" : ""}>↑</button>
+        <button type="button" data-bole-feedback-action-order="${escapeHtml(action)}" data-direction="1" aria-label="${escapeHtml(boleFeedbackActionLabel(action))} 下移"${index === filters.actionOrder.length - 1 ? " disabled" : ""}>↓</button>
+      </span>
+    `).join("");
+  }
+}
+
+function setBoleFeedbackFilter(name, value) {
+  const filters = ensureBoleFeedbackFilters();
+  if (name === "query") filters.query = String(value || "");
+  if (name === "topic") filters.topic = String(value || "");
+  if (name === "action") filters.action = String(value || "");
+  if (name === "sort") filters.sort = ["time", "topic", "action"].includes(value) ? value : "time";
+  renderBoleFeedbackList();
+}
+
+function moveBoleFeedbackActionOrder(action, direction) {
+  const filters = ensureBoleFeedbackFilters();
+  const index = filters.actionOrder.indexOf(action);
+  const target = index + Number(direction);
+  if (index < 0 || target < 0 || target >= filters.actionOrder.length) return;
+  const [entry] = filters.actionOrder.splice(index, 1);
+  filters.actionOrder.splice(target, 0, entry);
+  renderBoleFeedbackList();
+}
+
+async function loadBoleFeedback(options = {}) {
+  if (!apiBaseUrl) return { items: [] };
+  try {
+    const payload = await apiFetch("/api/personalization/feedback");
+    state.boleFeedbackItems = (Array.isArray(payload.items) ? payload.items : []).filter((feedback) => !isBoleFeedbackTombstoned(feedback));
+    state.boleFeedbackByKey = new Map();
+    state.boleFeedbackItems = state.boleFeedbackItems.map((feedback) => recordBoleSessionFeedback(feedback, { preserveUndoTombstone: true })).filter(Boolean);
+    renderBoleFeedbackList();
+    renderBolePicks();
+    return payload;
+  } catch (err) {
+    if (!options.quiet && boleFeedbackListEl) {
+      boleFeedbackListEl.innerHTML = `<div class="bole-feedback-empty">${escapeHtml(err.message || "反馈暂时不可用")}</div>`;
+    }
+    return { items: [] };
+  }
+}
+
+async function openBoleFeedbackDialog() {
+  if (!boleFeedbackDialogEl) return;
+  renderBoleFeedbackList();
+  boleFeedbackDialogEl.hidden = false;
+  document.body.classList.add("bole-feedback-dialog-open");
+  if (boleFeedbackButtonEl) boleFeedbackButtonEl.setAttribute("aria-expanded", "true");
+  window.requestAnimationFrame(() => boleFeedbackDialogEl.classList.add("open"));
+  await loadBoleFeedback({ quiet: true });
+}
+
+function closeBoleFeedbackDialog() {
+  if (!boleFeedbackDialogEl) return;
+  boleFeedbackDialogEl.classList.remove("open");
+  boleFeedbackDialogEl.hidden = true;
+  document.body.classList.remove("bole-feedback-dialog-open");
+  if (boleFeedbackButtonEl) boleFeedbackButtonEl.setAttribute("aria-expanded", "false");
+}
+
+function syncBoleSortControls() {
+  if (!boleSortPopoverEl) return;
+  const mode = state.boleSortMode === "time" ? "time" : "score";
+  boleSortPopoverEl.querySelectorAll("[data-bole-sort-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.boleSortMode === mode);
+  });
+}
+
+function openBoleSortPopover() {
+  if (!boleSortPopoverEl) return;
+  syncBoleSortControls();
+  boleSortPopoverEl.hidden = false;
+  if (boleSortButtonEl) boleSortButtonEl.setAttribute("aria-expanded", "true");
+  window.requestAnimationFrame(() => boleSortPopoverEl.classList.add("open"));
+}
+
+function closeBoleSortPopover() {
+  if (!boleSortPopoverEl) return;
+  boleSortPopoverEl.classList.remove("open");
+  boleSortPopoverEl.hidden = true;
+  if (boleSortButtonEl) boleSortButtonEl.setAttribute("aria-expanded", "false");
+}
+
+function toggleBoleSortPopover() {
+  if (!boleSortPopoverEl) return;
+  if (boleSortPopoverEl.hidden) openBoleSortPopover();
+  else closeBoleSortPopover();
+}
+
+function setBoleSortMode(mode) {
+  state.boleSortMode = mode === "time" ? "time" : "score";
+  syncBoleSortControls();
+  renderBolePicks();
+}
+
+function openReaderFeedbackPopover() {
+  if (!readerFeedbackPopoverEl) return;
+  readerFeedbackPopoverEl.hidden = false;
+  if (readerFeedbackTriggerEl) readerFeedbackTriggerEl.setAttribute("aria-expanded", "true");
+  window.requestAnimationFrame(() => readerFeedbackPopoverEl.classList.add("open"));
+}
+
+function closeReaderFeedbackPopover() {
+  if (!readerFeedbackPopoverEl) return;
+  readerFeedbackPopoverEl.classList.remove("open");
+  readerFeedbackPopoverEl.hidden = true;
+  if (readerFeedbackTriggerEl) readerFeedbackTriggerEl.setAttribute("aria-expanded", "false");
+}
+
+function toggleReaderFeedbackPopover() {
+  if (!readerFeedbackPopoverEl) return;
+  if (readerFeedbackPopoverEl.hidden) {
+    openReaderFeedbackPopover();
+  } else {
+    closeReaderFeedbackPopover();
+  }
+}
+
+function closeBoleTunePopover() {
+  if (!boleTunePopoverEl) return;
+  boleTunePopoverEl.classList.remove("open");
+  boleTunePopoverEl.hidden = true;
+  state.boleTuneItem = null;
+}
+
+function positionBoleTunePopover(anchor) {
+  if (!boleTunePopoverEl || !anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(210, window.innerWidth - 24);
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.right - width));
+  const top = Math.max(12, Math.min(window.innerHeight - 120, rect.bottom + 8));
+  boleTunePopoverEl.style.left = `${left}px`;
+  boleTunePopoverEl.style.top = `${top}px`;
+  boleTunePopoverEl.style.width = `${width}px`;
+}
+
+function openBoleTunePopover(anchor, item) {
+  if (!boleTunePopoverEl) return;
+  state.boleTuneItem = item;
+  positionBoleTunePopover(anchor);
+  boleTunePopoverEl.hidden = false;
+  window.requestAnimationFrame(() => boleTunePopoverEl.classList.add("open"));
+}
+
+function openBoleDraftSuggestionDialog(suggestion) {
+  if (!boleDraftSuggestionDialogEl || !suggestion) return;
+  state.bolePendingDraftSuggestion = suggestion;
+  const current = baseBoleProfileForSuggestion();
+  const patch = suggestion.profile_patch || {};
+  const conflict = resolveBoleProfilePatchConflict(current, patch, state.boleConflictStrategy);
+  if (conflict.conflicts.length) {
+    if (state.boleConflictStrategy === "last_decision") {
+      applyResolvedBoleProfile(conflict.profile, { persist: true });
+      return;
+    }
+    openBoleProfileConflictDialog(suggestion, current, patch, conflict.conflicts);
+    return;
+  }
+  if (boleDraftSuggestionBodyEl) {
+    const positive = (patch.positive_interests || []).map((item) => item.label).filter(Boolean);
+    const negative = (patch.negative_interests || []).map((item) => item.label).filter(Boolean);
+    const labels = [...positive, ...negative].slice(0, 3);
+    boleDraftSuggestionBodyEl.innerHTML = labels.length
+      ? labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")
+      : "<span>新的偏好线索</span>";
+  }
+  boleDraftSuggestionDialogEl.hidden = false;
+  document.body.classList.add("bole-draft-suggestion-open");
+  window.requestAnimationFrame(() => boleDraftSuggestionDialogEl.classList.add("open"));
+}
+
+function closeBoleProfileConflictDialog() {
+  if (!boleProfileConflictDialogEl) return;
+  boleProfileConflictDialogEl.classList.remove("open");
+  boleProfileConflictDialogEl.hidden = true;
+  document.body.classList.remove("bole-profile-conflict-open");
+}
+
+async function applyResolvedBoleProfile(profile, options = {}) {
+  if (!profile || typeof profile !== "object") return;
+  const status = state.personalizationStatus || {};
+  state.boleDraftPreview = profile;
+  state.personalizationStatus = {
+    ...status,
+    state: "confirmed",
+    enabled: true,
+    active_profile: profile,
+  };
+  renderBoleWorkbench();
+  renderBolePicks();
+  if (!options.persist || !apiBaseUrl) return;
+  try {
+    await apiFetch("/api/personalization/draft", {
+      method: "POST",
+      body: JSON.stringify({
+        profile,
+        evidence: {
+          positive_count: (profile.positive_interests || []).length,
+          negative_count: (profile.negative_interests || []).length,
+        },
+      }),
+    });
+    const payload = await apiFetch("/api/personalization/confirm", { method: "POST" });
+    state.personalizationStatus = payload;
+    state.personalizationUnavailable = false;
+    state.boleDraftPreview = payload.active_profile || profile;
+    renderBoleWorkbench();
+    renderBolePicks();
+  } catch (err) {
+    // Keep the optimistic local result if the backend write fails this round.
+  }
+}
+
+function openBoleProfileConflictDialog(suggestion, baseProfile, profilePatch, conflicts) {
+  if (!boleProfileConflictDialogEl) return;
+  const conflict = conflicts[0];
+  if (!conflict) return;
+  state.bolePendingProfileConflict = { suggestion, baseProfile, profilePatch, conflict };
+  const label = conflict.label || "这个主题";
+  const incomingNegative = conflict.incoming === "negative";
+  if (boleProfileConflictLabelEl) boleProfileConflictLabelEl.textContent = `冲突主题：${label}`;
+  if (boleProfileConflictPolicyEl) boleProfileConflictPolicyEl.textContent = "策略：每次询问";
+  if (boleProfileConflictExistingTitleEl) {
+    boleProfileConflictExistingTitleEl.textContent = conflict.existing === "positive" ? "当前画像：多推荐" : "当前画像：少推荐";
+  }
+  if (boleProfileConflictIncomingTitleEl) {
+    boleProfileConflictIncomingTitleEl.textContent = incomingNegative ? "新反馈：少推荐" : "新反馈：多推荐";
+  }
+  if (boleProfileConflictExistingSourceEl) {
+    boleProfileConflictExistingSourceEl.textContent = `来源：${conflict.existing_entry?.source === "feedback" ? "过往反馈" : "已确认画像"}。`;
+  }
+  if (boleProfileConflictIncomingSourceEl) {
+    boleProfileConflictIncomingSourceEl.textContent = `来源：最近一次${incomingNegative ? "少看类似" : "多看类似"}反馈。`;
+  }
+  boleProfileConflictDialogEl.hidden = false;
+  document.body.classList.add("bole-profile-conflict-open");
+  window.requestAnimationFrame(() => boleProfileConflictDialogEl.classList.add("open"));
+}
+
+function uniqueBoleProfileEntries(entries) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const label = String(entry.label || "").trim();
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    result.push({ ...entry, label });
+  });
+  return result;
+}
+
+function boleProfileEntryConflictKey(entry) {
+  return String(entry?.label || "").trim().toLowerCase();
+}
+
+function removeBoleProfileEntryByLabel(entries, label) {
+  const key = String(label || "").trim().toLowerCase();
+  if (!key) return uniqueBoleProfileEntries(entries);
+  return uniqueBoleProfileEntries(entries).filter((entry) => boleProfileEntryConflictKey(entry) !== key);
+}
+
+function upsertBoleProfileEntry(entries, entry) {
+  const normalized = uniqueBoleProfileEntries([entry])[0];
+  if (!normalized) return uniqueBoleProfileEntries(entries);
+  return uniqueBoleProfileEntries([...removeBoleProfileEntryByLabel(entries, normalized.label), normalized]);
+}
+
+function uniqueBoleSourcePreferences(entries) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const source = String(entry.source || "").trim();
+    if (!source || seen.has(source)) return;
+    seen.add(source);
+    const weight = Number(entry.weight);
+    result.push({ source, weight: Number.isFinite(weight) ? weight : 0 });
+  });
+  return result;
+}
+
+function resolveBoleProfilePatchConflict(baseProfile = {}, profilePatch = {}, conflictStrategy = "ask") {
+  const base = baseProfile && typeof baseProfile === "object" ? baseProfile : {};
+  const patch = profilePatch && typeof profilePatch === "object" ? profilePatch : {};
+  let positive = uniqueBoleProfileEntries(base.positive_interests || []);
+  let negative = uniqueBoleProfileEntries(base.negative_interests || []);
+  const conflicts = [];
+  const strategy = conflictStrategy === "last_decision" ? "last_decision" : "ask";
+
+  const applyEntry = (entry, incoming) => {
+    const normalized = uniqueBoleProfileEntries([entry])[0];
+    if (!normalized) return;
+    const opposite = incoming === "positive" ? negative : positive;
+    const existing = opposite.find((item) => boleProfileEntryConflictKey(item) === boleProfileEntryConflictKey(normalized));
+    if (existing) {
+      conflicts.push({
+        label: normalized.label,
+        incoming,
+        existing: incoming === "positive" ? "negative" : "positive",
+        incoming_entry: normalized,
+        existing_entry: existing,
+      });
+      if (strategy !== "last_decision") return;
+      if (incoming === "positive") {
+        negative = removeBoleProfileEntryByLabel(negative, normalized.label);
+        positive = upsertBoleProfileEntry(positive, normalized);
+      } else {
+        positive = removeBoleProfileEntryByLabel(positive, normalized.label);
+        negative = upsertBoleProfileEntry(negative, normalized);
+      }
+      return;
+    }
+    if (incoming === "positive") positive = upsertBoleProfileEntry(positive, normalized);
+    else negative = upsertBoleProfileEntry(negative, normalized);
+  };
+
+  (patch.positive_interests || []).forEach((entry) => applyEntry(entry, "positive"));
+  (patch.negative_interests || []).forEach((entry) => applyEntry(entry, "negative"));
+
+  const profile = {
+    ...base,
+    ...patch,
+    positive_interests: positive,
+    negative_interests: negative,
+    source_preferences: uniqueBoleSourcePreferences([
+      ...(base.source_preferences || []),
+      ...(patch.source_preferences || []),
+    ]),
+    behavior_preferences: {
+      ...(base.behavior_preferences || {}),
+      ...(patch.behavior_preferences || {}),
+    },
+  };
+  return { profile, conflicts };
+}
+
+function applyBoleConflictDecision(baseProfile = {}, profilePatch = {}, decision = "ignore") {
+  if (decision === "positive") {
+    return mergeBoleProfilePatch(baseProfile, {
+      ...profilePatch,
+      positive_interests: [
+        ...(profilePatch.positive_interests || []),
+        ...(profilePatch.negative_interests || []),
+      ],
+      negative_interests: [],
+    }, { conflictStrategy: "last_decision" });
+  }
+  if (decision === "negative") {
+    return mergeBoleProfilePatch(baseProfile, {
+      ...profilePatch,
+      positive_interests: [],
+      negative_interests: [
+        ...(profilePatch.negative_interests || []),
+        ...(profilePatch.positive_interests || []),
+      ],
+    }, { conflictStrategy: "last_decision" });
+  }
+  return mergeBoleProfilePatch(baseProfile, {}, { conflictStrategy: "ask" });
+}
+
+function mergeBoleProfilePatch(baseProfile = {}, profilePatch = {}, options = {}) {
+  const base = baseProfile && typeof baseProfile === "object" ? baseProfile : {};
+  const patch = profilePatch && typeof profilePatch === "object" ? profilePatch : {};
+  const strategy = options.conflictStrategy === "last_decision" ? "last_decision" : "ask";
+  if ((patch.positive_interests || patch.negative_interests) && strategy) {
+    return resolveBoleProfilePatchConflict(base, patch, strategy).profile;
+  }
+  return {
+    ...base,
+    ...patch,
+    positive_interests: uniqueBoleProfileEntries([
+      ...(base.positive_interests || []),
+      ...(patch.positive_interests || []),
+    ]),
+    negative_interests: uniqueBoleProfileEntries([
+      ...(base.negative_interests || []),
+      ...(patch.negative_interests || []),
+    ]),
+    source_preferences: uniqueBoleSourcePreferences([
+      ...(base.source_preferences || []),
+      ...(patch.source_preferences || []),
+    ]),
+    behavior_preferences: {
+      ...(base.behavior_preferences || {}),
+      ...(patch.behavior_preferences || {}),
+    },
+  };
+}
+
+function baseBoleProfileForSuggestion() {
+  const status = state.personalizationStatus || {};
+  return state.boleDraftPreview
+    || status.draft_profile
+    || status.active_profile
+    || collectBoleDraftInput();
+}
+
+function currentBoleDraftProfile() {
+  return state.boleDraftPreview || collectBoleDraftInput();
+}
+
+function closeBoleDraftSuggestionDialog() {
+  if (!boleDraftSuggestionDialogEl) return;
+  boleDraftSuggestionDialogEl.classList.remove("open");
+  boleDraftSuggestionDialogEl.hidden = true;
+  document.body.classList.remove("bole-draft-suggestion-open");
+}
+
+function mergeDraftSuggestionIntoWorkbench() {
+  const suggestion = state.bolePendingDraftSuggestion;
+  if (!suggestion) return;
+  const patch = suggestion.profile_patch || {};
+  const current = baseBoleProfileForSuggestion();
+  state.boleDraftPreview = mergeBoleProfilePatch(current, patch);
+  state.boleStage = "draft";
+  closeBoleDraftSuggestionDialog();
+  openBoleWorkbench();
+}
+
+function handleBoleProfileConflictDecision(decision) {
+  const pending = state.bolePendingProfileConflict;
+  if (!pending) return;
+  if (decision === "ignore") {
+    state.bolePendingProfileConflict = null;
+    closeBoleProfileConflictDialog();
+    return;
+  }
+  const profile = applyBoleConflictDecision(pending.baseProfile, pending.profilePatch, decision);
+  applyResolvedBoleProfile(profile, { persist: true });
+  state.bolePendingProfileConflict = null;
+  closeBoleProfileConflictDialog();
+}
+
+function feedbackPayloadForItem(action, item) {
+  const matchedTargets = boleFeedbackMatchedTargetLabels({ item }).slice(0, 8);
+  const feedbackTarget = matchedTargets[0] || "";
+  return {
+    action,
+    item: {
+      id: item.item_id || item.id || "",
+      title: itemTitleText(item),
+      summary: item.summary || item.description || "",
+      site_name: item.site_name || "",
+      source: item.source || "",
+      url: item.url || "",
+      published_at: item.published_at || item.first_seen_at || "",
+      ai_label: item.ai_label || "",
+      ai_signals: Array.isArray(item.ai_signals) ? item.ai_signals : [],
+      feedback_target: feedbackTarget,
+      matched_targets: matchedTargets,
+    },
+  };
+}
+
+async function submitBoleFeedback(action, item, options = {}) {
+  if (!item || !action) return null;
+  const localFeedback = recordBoleSessionFeedback({
+    action,
+    item,
+    created_at: new Date().toISOString(),
+  });
+  if (localFeedback) {
+    state.boleFeedbackItems = [localFeedback, ...(state.boleFeedbackItems || []).filter((entry) => boleFeedbackItemKey(entry.item) !== localFeedback.item_key)];
+    renderBoleFeedbackList();
+    renderBolePicks();
+  }
+  closeReaderFeedbackPopover();
+  closeBoleTunePopover();
+  if (!apiBaseUrl) return localFeedback;
+  try {
+    const payload = await apiFetch("/api/personalization/feedback", {
+      method: "POST",
+      body: JSON.stringify(feedbackPayloadForItem(action, item)),
+    });
+    if (payload.feedback) {
+      recordBoleSessionFeedback(payload.feedback);
+      state.boleFeedbackItems = [payload.feedback, ...(state.boleFeedbackItems || []).filter((entry) => entry.id !== payload.feedback.id && boleFeedbackItemKey(entry.item) !== boleFeedbackItemKey(payload.feedback.item))];
+      renderBoleFeedbackList();
+      renderBolePicks();
+    }
+    if (payload.draft_suggestion) openBoleDraftSuggestionDialog(payload.draft_suggestion);
+    return payload.feedback || localFeedback;
+  } catch (err) {
+    return localFeedback;
+  }
+}
+
+async function undoBoleFeedback(feedbackId) {
+  const id = String(feedbackId || "");
+  if (!id) return;
+  const feedback = (state.boleFeedbackItems || []).find((entry) => boleFeedbackRecordId(entry) === id);
+  if (!feedback) return;
+  rememberBoleFeedbackUndo(feedback);
+  removeBoleSessionFeedback(feedback);
+  state.boleFeedbackItems = (state.boleFeedbackItems || []).filter((entry) => boleFeedbackRecordId(entry) !== id);
+  renderBoleFeedbackList();
+  renderBolePicks();
+  if (!apiBaseUrl || !boleFeedbackIsServerId(id)) return;
+  try {
+    await apiFetch(`/api/personalization/feedback/${encodeURIComponent(feedbackId)}`, { method: "DELETE" });
+  } catch (_) {
+    renderBoleFeedbackList();
+    renderBolePicks();
+  }
+}
+
 function scorePercent(item) {
   const score = Number(item.priority_score ?? item.ai_score ?? item.score ?? 0);
   if (!Number.isFinite(score) || score <= 0) return 0;
@@ -3654,13 +5086,18 @@ function normalizedEventText(text) {
     .replace(/[，。、“”‘’：:；;！!？?（）()\[\]【】《》<>·.,/\\|_-]/g, "");
 }
 
+function eventTitleText(item) {
+  if (!item || typeof item !== "object") return "";
+  return String(item.title_original || item.title_en || item.title || item.title_zh || itemTitleText(item)).trim();
+}
+
 function eventActionToken(normalized) {
   const action = normalized.match(/(pricing|price|benchmark|coding|release|launch|shipping|upgrade|update|outage|policy|funding|acquisition|收购|融资|发布|上线|升级|更新|降价|定价|价格|评测|榜单|基准|故障|政策)/);
   return action ? action[1] : "";
 }
 
 function eventKey(item) {
-  const raw = itemTitleText(item);
+  const raw = eventTitleText(item);
   const bracket = raw.match(/《([^》]{4,40})》/);
   if (bracket) return `book:${normalizedEventText(bracket[1]).slice(0, 36)}`;
 
@@ -3672,6 +5109,14 @@ function eventKey(item) {
   }
 
   return `title:${normalized.slice(0, 34)}`;
+}
+
+function bestBoleFeedbackTargetForRows(rows) {
+  return uniqueBolePickStrings(
+    (Array.isArray(rows) ? rows : [])
+      .map((row) => boleFeedbackSpecificTargetLabel({ item: row?.item }))
+      .filter(Boolean),
+  )[0] || "";
 }
 
 function sourceSignal(item) {
@@ -3716,26 +5161,58 @@ function clusterBoleEvents(rows) {
   return Array.from(clusters.values()).map((cluster) => {
     const signals = Array.from(cluster.signals);
     const maxScore = Math.max(...cluster.rows.map((row) => row.score));
+    const feedbackTarget = bestBoleFeedbackTargetForRows(cluster.rows);
+    const primaryItem = feedbackTarget
+      ? { ...cluster.primary.item, feedback_target: feedbackTarget }
+      : cluster.primary.item;
+    const profileMatches = {
+      positive: uniqueBolePickStrings(cluster.rows.flatMap((row) => row.profileMatches?.positive || [])),
+      negative: uniqueBolePickStrings(cluster.rows.flatMap((row) => row.profileMatches?.negative || [])),
+      sourcePositive: uniqueBolePickStrings(cluster.rows.flatMap((row) => row.profileMatches?.sourcePositive || [])),
+      sourceNegative: uniqueBolePickStrings(cluster.rows.flatMap((row) => row.profileMatches?.sourceNegative || [])),
+      behaviorPositive: uniqueBolePickStrings(cluster.rows.flatMap((row) => row.profileMatches?.behaviorPositive || [])),
+    };
+    const profileAdjustment = Math.max(...cluster.rows.map((row) => row.profileAdjustment || 0));
+    const feedbackRow = cluster.rows.find((row) => row.feedbackAdjustment) || null;
     const sourceBonus = Math.min(12, Math.max(0, signals.length - 1) * 6);
     const candidateBonus = signals.some((s) => s === "AI HOT精选") ? 8
       : signals.some((s) => s === "HN热议" || s === "GitHub趋势") ? 6
       : signals.some((s) => s === "官方更新") ? 5
       : 0;
     return {
-      item: cluster.primary.item,
+      item: primaryItem,
       index: cluster.primary.index,
       rows: cluster.rows,
       sourceSignals: signals,
       sourceCount: signals.length,
       mergedCount: cluster.rows.length,
+      profileMatches,
+      profileAdjustment,
+      feedback: feedbackRow?.feedback || null,
+      feedbackAdjustment: feedbackRow?.feedbackAdjustment || 0,
       score: Math.min(100, Math.round(maxScore + sourceBonus + candidateBonus)),
     };
   });
 }
 
-function pickBoleItems(items) {
+function pickBoleItems(items, profile = activeBolePersonalizationProfile()) {
   const ranked = [...items]
-    .map((item, index) => ({ item, index, score: scorePercent(item) }))
+    .map((item, index) => {
+      const baseScore = scorePercent(item);
+      const personalized = personalizedBoleScore(item, baseScore, profile);
+      const feedback = currentBoleFeedbackForItem(item);
+      const feedbackAdjustment = boleFeedbackAdjustment(feedback?.action);
+      return {
+        item,
+        index,
+        baseScore,
+        score: Math.max(1, Math.min(100, personalized.score + feedbackAdjustment)),
+        profileMatches: personalized.matches,
+        profileAdjustment: personalized.matches.adjustment,
+        feedback,
+        feedbackAdjustment,
+      };
+    })
     .filter((row) => row.score > 0)
     .sort((a, b) => {
       const byScore = b.score - a.score;
@@ -3744,27 +5221,48 @@ function pickBoleItems(items) {
     });
 
   const sorted = clusterBoleEvents(ranked).sort((a, b) => {
+    const byFeedback = (b.feedbackAdjustment || 0) - (a.feedbackAdjustment || 0);
+    const byProfile = (b.profileAdjustment || 0) - (a.profileAdjustment || 0);
     const byMultiSource = b.sourceCount - a.sourceCount;
     const byScore = b.score - a.score;
-    return byMultiSource || byScore || timelineMs(b.item) - timelineMs(a.item) || a.index - b.index;
+    return byFeedback || byProfile || byMultiSource || byScore || timelineMs(b.item) - timelineMs(a.item) || a.index - b.index;
   });
 
   const picked = [];
   const addPick = (cluster) => {
     if (cluster && !picked.includes(cluster) && picked.length < BOLE_PICK_LIMIT) picked.push(cluster);
   };
-  ["AI HOT精选", "HN热议", "GitHub趋势"].forEach((signal) => {
-    addPick(sorted.find((cluster) => cluster.sourceSignals.includes(signal)));
-  });
+  if (!profile) {
+    ["AI HOT精选", "HN热议", "GitHub趋势"].forEach((signal) => {
+      addPick(sorted.find((cluster) => cluster.sourceSignals.includes(signal)));
+    });
+  }
   sorted.forEach(addPick);
   return picked;
+}
+
+function boleProfileReasonText(row) {
+  if (row.feedbackAdjustment > 0) return `已按反馈提升：${boleFeedbackActionLabel(row.feedback?.action)}`;
+  if (row.feedbackAdjustment < 0) return `已按反馈降权：${boleFeedbackActionLabel(row.feedback?.action)}`;
+  const positive = row.profileMatches?.positive || [];
+  const negative = row.profileMatches?.negative || [];
+  const sourcePositive = row.profileMatches?.sourcePositive || [];
+  const sourceNegative = row.profileMatches?.sourceNegative || [];
+  const behaviorPositive = row.profileMatches?.behaviorPositive || [];
+  if (positive.length) return `符合您的画像：${positive.slice(0, 2).join(" / ")}`;
+  if (negative.length) return `已按画像降权：${negative.slice(0, 2).join(" / ")}`;
+  if (sourcePositive.length) return `符合您的来源偏好：${sourcePositive.slice(0, 2).join(" / ")}`;
+  if (sourceNegative.length) return `已按来源偏好降权：${sourceNegative.slice(0, 2).join(" / ")}`;
+  if (behaviorPositive.length) return `符合阅读偏好：${behaviorPositive.slice(0, 2).join(" / ")}`;
+  return "";
 }
 
 function boleReasonText(row) {
   const signals = row.sourceSignals || [];
   const sourceText = signals.length ? `多源命中：${signals.join(" / ")}` : "来源命中：单源";
   const mergeText = row.mergedCount > 1 ? `合并${row.mergedCount}条同事件` : "单条事件";
-  return `精选理由：${sourceText} · ${mergeText} · ${reasonText(row.item)}`;
+  const profileText = boleProfileReasonText(row);
+  return `精选理由：${profileText ? `${profileText} · ` : ""}${sourceText} · ${mergeText} · ${reasonText(row.item)}`;
 }
 
 function buildBoleLead(row) {
@@ -3826,15 +5324,36 @@ function buildBoleTimelineRow(row, rank) {
   const reason = document.createElement("div");
   reason.className = "bole-row-reason";
   reason.textContent = boleReasonText(row);
-  body.append(meta, title, reason);
 
+  const tune = document.createElement("button");
+  tune.type = "button";
+  tune.className = "bole-row-tune-button";
+  if (tune.setAttribute) tune.setAttribute("aria-label", "调整推荐");
+  else tune.ariaLabel = "调整推荐";
+  tune.innerHTML = `
+    <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="1"></circle>
+      <circle cx="12" cy="5" r="1"></circle>
+      <circle cx="12" cy="19" r="1"></circle>
+    </svg>
+  `;
+  if (tune.addEventListener) {
+    tune.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openBoleTunePopover(tune, item);
+    });
+  }
+
+  body.append(meta, title, reason, tune);
   link.append(time, body);
   return link;
 }
 
 function renderBolePicks() {
   if (!bolePicksListEl || !bolePicksMetaEl) return;
-  const picks = pickBoleItems(state.itemsAi || []);
+  const activeProfile = activeBolePersonalizationProfile();
+  const picks = pickBoleItems(state.itemsAi || [], activeProfile);
   bolePicksListEl.innerHTML = "";
   bolePicksListEl.className = "bole-board";
   if (!picks.length) {
@@ -3847,24 +5366,19 @@ function renderBolePicks() {
   }
 
   const topScore = Math.max(...picks.map((row) => row.score));
-  const timelinePicks = [...picks].sort((a, b) => {
-    const byTime = timelineMs(b.item) - timelineMs(a.item);
-    if (byTime !== 0) return byTime;
-    return b.score - a.score || a.index - b.index;
-  });
-  bolePicksMetaEl.textContent = `按时间倒序 · Top ${fmtNumber(picks.length)} · 最高 ${topScore} 分`;
-
-  const explainer = document.createElement("div");
-  explainer.className = "bole-explainer";
-  explainer.textContent = "伯乐精选依据：多源命中优先，其次看官方源、AI 分、HN/GitHub/AI HOT 热度和发布时间；同一事件会合并，只保留最值得点开的来源。";
+  const displayPicks = state.boleSortMode === "time"
+    ? [...picks].sort((a, b) => timelineMs(b.item) - timelineMs(a.item) || b.score - a.score || a.index - b.index)
+    : picks;
+  const sortLabel = state.boleSortMode === "time" ? "按时间排序" : "按得分排序";
+  const profileLabel = activeProfile ? " · 已应用画像" : "";
+  bolePicksMetaEl.textContent = `${sortLabel}${profileLabel} · Top ${fmtNumber(picks.length)} · 最高 ${topScore} 分`;
 
   const list = document.createElement("div");
   list.className = "bole-compact-list";
-  timelinePicks.forEach((row, index) => {
+  displayPicks.forEach((row, index) => {
     list.appendChild(buildBoleTimelineRow(row, index + 1));
   });
 
-  bolePicksListEl.appendChild(explainer);
   bolePicksListEl.appendChild(list);
 }
 
@@ -4336,18 +5850,11 @@ async function loadSourceStatusData() {
 }
 
 async function init() {
-  const [newsResult, waytoagiResult, statusResult, taxonomyResult, verificationResult] = await Promise.allSettled([
+  const [newsResult, waytoagiResult, statusResult] = await Promise.allSettled([
     loadNewsData(),
     loadWaytoagiData(),
     loadSourceStatusData(),
-    loadTaxonomy(),
-    loadVerificationSummary(),
   ]);
-
-  state.taxonomy = taxonomyResult.status === "fulfilled" ? taxonomyResult.value : fallbackTaxonomy;
-  state.verificationPayload = verificationResult.status === "fulfilled"
-    ? verificationResult.value
-    : { items: [], unavailable: true, error: verificationResult.reason?.message || "核验数据加载失败" };
 
   if (newsResult.status === "fulfilled") {
     const payload = newsResult.value;
@@ -4395,6 +5902,7 @@ async function init() {
 
   renderCategoryView(state.taxonomy, state.itemsAi);
   renderVerificationView(state.verificationPayload);
+  loadOptionalBackendData();
   loadSettings();
 }
 
@@ -4494,27 +6002,128 @@ if (sourceHiddenDialogEl) {
     if (event.target === sourceHiddenDialogEl) closeSourceHiddenDialog();
   });
 }
+if (boleSortButtonEl) {
+  boleSortButtonEl.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleBoleSortPopover();
+  });
+}
+if (boleSortPopoverEl) {
+  boleSortPopoverEl.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-bole-sort-mode]");
+    if (!button) return;
+    event.stopPropagation();
+    setBoleSortMode(button.dataset.boleSortMode);
+    closeBoleSortPopover();
+  });
+}
+if (boleFeedbackButtonEl) boleFeedbackButtonEl.addEventListener("click", openBoleFeedbackDialog);
+if (boleFeedbackCloseEl) boleFeedbackCloseEl.addEventListener("click", closeBoleFeedbackDialog);
+if (boleFeedbackDialogEl) {
+  boleFeedbackDialogEl.addEventListener("click", (event) => {
+    if (event.target === boleFeedbackDialogEl) closeBoleFeedbackDialog();
+  });
+}
+if (boleFeedbackSearchEl) boleFeedbackSearchEl.addEventListener("input", () => setBoleFeedbackFilter("query", boleFeedbackSearchEl.value));
+if (boleFeedbackTopicFilterEl) boleFeedbackTopicFilterEl.addEventListener("change", () => setBoleFeedbackFilter("topic", boleFeedbackTopicFilterEl.value));
+if (boleFeedbackActionFilterEl) boleFeedbackActionFilterEl.addEventListener("change", () => setBoleFeedbackFilter("action", boleFeedbackActionFilterEl.value));
+if (boleFeedbackSortSelectEl) boleFeedbackSortSelectEl.addEventListener("change", () => setBoleFeedbackFilter("sort", boleFeedbackSortSelectEl.value));
+if (boleFeedbackActionOrderEl) {
+  boleFeedbackActionOrderEl.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-bole-feedback-action-order]");
+    if (!button) return;
+    moveBoleFeedbackActionOrder(button.dataset.boleFeedbackActionOrder, button.dataset.direction);
+  });
+}
+if (boleFeedbackListEl) {
+  boleFeedbackListEl.addEventListener("click", (event) => {
+    const undo = event.target.closest?.("[data-bole-feedback-undo]");
+    if (undo) undoBoleFeedback(undo.dataset.boleFeedbackUndo);
+  });
+}
+if (boleTunePopoverEl) {
+  boleTunePopoverEl.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-bole-tune-action]");
+    if (!button) return;
+    submitBoleFeedback(button.dataset.boleTuneAction, state.boleTuneItem);
+  });
+}
+if (boleDraftSuggestionCloseEl) boleDraftSuggestionCloseEl.addEventListener("click", closeBoleDraftSuggestionDialog);
+if (boleDraftSuggestionDismissEl) boleDraftSuggestionDismissEl.addEventListener("click", closeBoleDraftSuggestionDialog);
+if (boleDraftSuggestionSaveEl) boleDraftSuggestionSaveEl.addEventListener("click", mergeDraftSuggestionIntoWorkbench);
+if (boleDraftSuggestionDialogEl) {
+  boleDraftSuggestionDialogEl.addEventListener("click", (event) => {
+    if (event.target === boleDraftSuggestionDialogEl) closeBoleDraftSuggestionDialog();
+  });
+}
+if (boleProfileConflictCloseEl) boleProfileConflictCloseEl.addEventListener("click", closeBoleProfileConflictDialog);
+if (boleProfileConflictDialogEl) {
+  boleProfileConflictDialogEl.addEventListener("click", (event) => {
+    if (event.target === boleProfileConflictDialogEl) closeBoleProfileConflictDialog();
+    const button = event.target.closest?.("[data-bole-conflict-decision]");
+    if (button) handleBoleProfileConflictDecision(button.dataset.boleConflictDecision);
+  });
+}
+document.addEventListener("pointerdown", (event) => {
+  if (!boleSortPopoverEl?.hidden && !event.target.closest?.(".bole-sort-popover, .bole-sort-button")) closeBoleSortPopover();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (boleTunePopoverEl?.hidden) return;
+  if (event.target.closest?.(".bole-tune-popover, .bole-row-tune-button")) return;
+  closeBoleTunePopover();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (readerFeedbackPopoverEl?.hidden) return;
+  if (event.target.closest?.(".reader-feedback-popover, .reader-feedback-trigger")) return;
+  closeReaderFeedbackPopover();
+});
 document.addEventListener("pointerup", handleSourceSortPointerEnd);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   closeDataDrawer();
   closeSourceSortDialog();
   closeSourceHiddenDialog();
+  closeBoleSortPopover();
+  closeBoleFeedbackDialog();
+  closeBoleTunePopover();
+  closeReaderFeedbackPopover();
+  closeBoleDraftSuggestionDialog();
+  closeBoleProfileConflictDialog();
+  closeAiConfigDialog();
   closeBoleWorkbench();
 });
 
 if (boleWorkbenchOpenEl) {
   boleWorkbenchOpenEl.addEventListener("click", async () => {
     if (!state.personalizationStatus && apiBaseUrl) await loadPersonalization({ quiet: true });
-    openBoleWorkbench();
+    openBolePersonalizationEntry();
   });
 }
 if (boleSettingsOpenEl) {
   boleSettingsOpenEl.addEventListener("click", async () => {
     if (!state.personalizationStatus && apiBaseUrl) await loadPersonalization({ quiet: true });
-    openBoleWorkbench();
+    openBolePersonalizationEntry();
   });
 }
+if (aiConfigDialogEl) {
+  aiConfigDialogEl.addEventListener("click", (event) => {
+    if (event.target === aiConfigDialogEl) closeAiConfigDialog();
+  });
+}
+if (aiConfigPanelEl) {
+  aiConfigPanelEl.addEventListener("click", (event) => event.stopPropagation());
+}
+if (aiConfigAdvancedToggleEl) {
+  aiConfigAdvancedToggleEl.addEventListener("click", () => {
+    if (!aiConfigAdvancedPanelEl) return;
+    aiConfigAdvancedPanelEl.hidden = !aiConfigAdvancedPanelEl.hidden;
+    if (aiConfigAdvancedStateEl) aiConfigAdvancedStateEl.textContent = aiConfigAdvancedPanelEl.hidden ? "展开" : "收起";
+    aiConfigPanelEl?.classList.toggle("advanced-open", !aiConfigAdvancedPanelEl.hidden);
+  });
+}
+if (aiConfigSkipButtonEl) aiConfigSkipButtonEl.addEventListener("click", skipAiConfigDialog);
+if (aiConfigSaveButtonEl) aiConfigSaveButtonEl.addEventListener("click", saveAiConfigAndContinue);
+if (aiConfigTestButtonEl) aiConfigTestButtonEl.addEventListener("click", testAiConfigConnection);
 if (boleWorkbenchCloseEl) boleWorkbenchCloseEl.addEventListener("click", closeBoleWorkbench);
 if (boleWorkbenchEl) {
   boleWorkbenchEl.addEventListener("click", (event) => {
@@ -4528,55 +6137,66 @@ boleStageButtons.forEach((button) => {
     setBoleStage(stage);
   });
 });
-if (boleDialogueTurnsEl) {
-  boleDialogueTurnsEl.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-bole-question-choice]");
-    if (!button) {
-      const turn = event.target.closest("[data-bole-question-id]");
-      if (turn) activateBoleQuestion(turn.dataset.boleQuestionId);
-      return;
-    }
-    const questionId = button.dataset.boleQuestionChoice;
-    const choice = button.dataset.boleChoice || button.textContent;
-    activateBoleQuestion(questionId);
-    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
-    const choices = answer.choices.includes(choice)
+function handleBoleQuestionChoiceClick(button) {
+  const questionId = button.dataset.boleQuestionChoice;
+  const question = boleQuestionById(questionId);
+  const choice = button.dataset.boleChoice || button.textContent;
+  activateBoleQuestion(questionId);
+  const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
+  const choices = question?.multiple === false
+    ? (answer.choices.includes(choice) ? [] : [choice])
+    : answer.choices.includes(choice)
       ? answer.choices.filter((item) => item !== choice)
       : uniqueBoleLabels([...answer.choices, choice]);
-    mergeBoleAnswer(questionId, { choices });
-    state.boleDraftPreview = collectBoleDraftInput();
-    renderBoleWorkbench();
-    if (choices.length) scheduleBoleAdvance(questionId, BOLE_CHOICE_ADVANCE_DELAY_MS);
-    else clearBoleAdvanceTimer();
-  });
+  mergeBoleAnswer(questionId, { choices });
+  state.boleDraftPreview = collectBoleDraftInput();
+  renderBoleWorkbench();
+}
+
+function handleBoleQuestionAreaClick(event) {
+  const dot = event.target.closest("[data-bole-question-dot]");
+  if (dot) {
+    transitionBoleQuestion(dot.dataset.boleQuestionDot);
+    return;
+  }
+  const button = event.target.closest("[data-bole-question-choice]");
+  if (button) {
+    handleBoleQuestionChoiceClick(button);
+    return;
+  }
+  const turn = event.target.closest("[data-bole-question-id]");
+  if (turn && turn.classList.contains("answered")) transitionBoleQuestion(turn.dataset.boleQuestionId);
+}
+
+if (boleDialogueTurnsEl) {
+  boleDialogueTurnsEl.addEventListener("click", handleBoleQuestionAreaClick);
 }
 if (boleReadingTurnsEl) {
-  boleReadingTurnsEl.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-bole-question-choice]");
-    if (!button) {
-      const turn = event.target.closest("[data-bole-question-id]");
-      if (turn) activateBoleQuestion(turn.dataset.boleQuestionId);
-      return;
-    }
-    const questionId = button.dataset.boleQuestionChoice;
-    const choice = button.dataset.boleChoice || button.textContent;
-    activateBoleQuestion(questionId);
-    const answer = normalizeBoleAnswer(state.boleAnswers[questionId]);
-    const choices = answer.choices.includes(choice)
-      ? answer.choices.filter((item) => item !== choice)
-      : uniqueBoleLabels([...answer.choices, choice]);
-    mergeBoleAnswer(questionId, { choices });
-    state.boleDraftPreview = collectBoleDraftInput();
-    renderBoleWorkbench();
-    if (choices.length) scheduleBoleAdvance(questionId, BOLE_CHOICE_ADVANCE_DELAY_MS);
-    else clearBoleAdvanceTimer();
-  });
+  boleReadingTurnsEl.addEventListener("click", handleBoleQuestionAreaClick);
 }
+boleQuestionDotGroups.forEach((group) => group.addEventListener("click", handleBoleQuestionAreaClick));
 if (boleChatFormEl) {
   boleChatFormEl.addEventListener("submit", async (event) => {
     event.preventDefault();
     const text = boleChatInputEl?.value || "";
     await advanceBoleQuestion(text);
+  });
+}
+if (boleChatInputEl) {
+  boleChatInputEl.addEventListener("input", () => {
+    const question = activeBoleQuestion(state.boleStage);
+    if (!question) return;
+    const answer = normalizeBoleAnswer(state.boleAnswers[question.id]);
+    mergeBoleAnswer(question.id, {
+      choices: answer.choices,
+      text: boleChatInputEl.value,
+      ai_labels: [],
+      ai_note: "",
+      follow_up: "",
+    });
+    state.boleDraftPreview = collectBoleDraftInput();
+    renderBoleRecognizedProfile();
+    syncBoleActionButtons();
   });
 }
 if (boleRecognizedProfileEl) {
@@ -4623,6 +6243,20 @@ if (readerPanelEl) {
 if (readerTranslateButtonEl) readerTranslateButtonEl.addEventListener("click", translateReaderArticle);
 if (readerSummaryButtonEl) readerSummaryButtonEl.addEventListener("click", summarizeReaderArticle);
 if (readerFactCheckButtonEl) readerFactCheckButtonEl.addEventListener("click", factCheckReaderArticle);
+if (readerFeedbackTriggerEl) {
+  readerFeedbackTriggerEl.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleReaderFeedbackPopover();
+  });
+}
+if (readerFeedbackPopoverEl) {
+  readerFeedbackPopoverEl.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-bole-feedback-action]");
+    if (!button) return;
+    event.stopPropagation();
+    submitBoleFeedback(button.dataset.boleFeedbackAction, state.readerItem);
+  });
+}
 if (readerAskButtonEl) {
   readerAskButtonEl.addEventListener("click", async () => {
     const item = state.readerItem || {};
@@ -4683,6 +6317,12 @@ if (translationProviderSelectEl) {
 if (readingAssistantProviderSelectEl) {
   readingAssistantProviderSelectEl.addEventListener("change", () => {
     state.readingAssistantProviderId = readingAssistantProviderSelectEl.value || "env";
+    saveSettings();
+  });
+}
+if (boleConflictStrategySelectEl) {
+  boleConflictStrategySelectEl.addEventListener("change", () => {
+    state.boleConflictStrategy = boleConflictStrategySelectEl.value === "last_decision" ? "last_decision" : "ask";
     saveSettings();
   });
 }

@@ -494,3 +494,383 @@ Prevention:
   ```bash
   python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_dialogue or bole_custom or bole_right_rail or bole_stage_actions or personalized_bole"
   ```
+
+## 2026-06-21: Visual Companion Preview Was Not Production-Faithful
+
+Symptoms:
+
+- A 伯乐画像工作台 visual companion preview showed the overall layout and card
+  animation, but important production controls were not wired.
+- Clicking top stage tabs did nothing.
+- Clicking question choices changed the card state but did not update the right
+  profile rail, so the preview hid a production-critical interaction problem.
+
+Root causes:
+
+- The preview was treated as a visual animation demo instead of a production-like
+  interaction contract.
+- Agent-side browser checks covered one happy-path card transition, but did not
+  exercise every visible control that the user would naturally click.
+
+Prevention:
+
+- Visual companion previews for production UI must be complete enough to act as
+  the implementation contract for the reviewed workflow.
+- Wire and verify stage tabs, option selection, free text, confirmation,
+  right-rail synchronization, delete actions, save/continue/skip actions, and
+  the requested animation before presenting a preview.
+- Do not present partial mockups as if they represent the final production
+  behavior. If a control is intentionally inert, remove it from the preview or
+  clearly keep the preview out of the production-equivalence path.
+- Regression/verification command for visual companion work:
+
+  ```bash
+  # Use Chromium/CDP or Playwright to click all visible controls in the preview:
+  # stage tabs, choices, free text, confirm, right-rail delete, continue, skip,
+  # save/save-profile, desktop and mobile viewports when responsive behavior is
+  # part of the reviewed UI.
+  ```
+
+## 2026-06-23: Visual Preview Detached From Existing UI
+
+Symptoms:
+
+- A phase 2 伯乐反馈 visual companion preview was drawn as a new standalone
+  layout instead of sitting inside the already implemented AI News Radar UI.
+- A `最近反馈` panel was technically collapsed but still reserved a large right
+  column, so the collapsed state did not reduce visual weight.
+- The preview added a separate `阅读` button even though current news rows already
+  open the reader by clicking the item.
+- The feedback control opened a blunt mini-panel with little motion, making the
+  interaction feel bolted on instead of part of the existing product.
+- A later revision moved collapsed content under 伯乐精选 as in-flow strips and
+  used a row-expanded tuner, so secondary controls still pushed the page around
+  instead of behaving like the existing data/settings overlays.
+- The preview showed extra saved-state copy such as `画像草稿已保存...`, adding
+  unnecessary UI text that the user had not asked for.
+
+Root causes:
+
+- The preview optimized for showing the feature parts instead of preserving the
+  production surface, existing row click behavior, and current visual hierarchy.
+- Collapsed state was treated as hidden content only, not as a layout constraint
+  that should stop occupying large space.
+- Motion and interaction polish were not treated as part of the review contract.
+
+Prevention:
+
+- Build visual companions on top of the real surrounding UI unless the user
+  explicitly asks for a large redesign.
+- When previewing dialogs, drawers, feedback, or controls for an existing page,
+  include the real entry point and existing click path. Do not add redundant
+  action buttons such as `阅读` when the current title/card click already opens
+  the reader.
+- Collapsed controls must be spatially collapsed too: they may occupy a compact
+  chip/button, not a full side column or empty panel.
+- Secondary controls such as `最近反馈`, row-level recommendation tuning, and
+  profile-draft suggestions should open an overlay dialog, sheet, or anchored
+  floating panel consistent with existing app controls. Do not insert bulky
+  in-flow panels under 伯乐精选 or expand rows downward unless the user explicitly
+  chooses that pattern.
+- Do not show completion or confirmation copy that adds no user decision value.
+  Keep save/confirm feedback as a subtle state change or a short reversible
+  toast only when needed.
+- For interaction work, include motion states in the preview and verify them
+  with browser checks: open/close, row-to-reader transition, feedback apply,
+  undo, and mobile behavior.
+- Regression/verification command for related visual previews:
+
+  ```bash
+  # Use Chromium/CDP or Playwright to verify the preview:
+  # the surrounding production UI is present, collapsed controls do not reserve
+  # large empty columns, existing row/title click opens the reader, no redundant
+  # reader button is visible, secondary controls open overlays instead of
+  # in-flow panels, unnecessary saved-state copy is absent, feedback motion
+  # states are exercised, and desktop plus mobile viewports have no horizontal
+  # overflow.
+  ```
+
+## 2026-06-22: Personalized Bole Picks Were Re-Sorted After Selection
+
+Symptoms:
+
+- 已确认伯乐画像能影响 `pickBoleItems()` 的候选选择，但渲染层又按分数重排。
+- 低基础分但命中画像的新闻可能被高基础分泛 AI 新闻压回下面。
+- 草稿或停用画像如果误用，也会让用户误以为未确认设置已经影响推荐。
+
+Root causes:
+
+- `renderBolePicks()` 在 active profile 存在时对 `pickBoleItems()` 的结果二次排序。
+- 画像匹配测试只覆盖了排序函数，没有覆盖真实渲染路径。
+
+Prevention:
+
+- 已确认且启用的 `active_profile` 才能影响伯乐精选；草稿和停用画像不能参与排序或理由。
+- 有画像时，渲染层必须保留 `pickBoleItems()` 的画像优先顺序；无画像时才按时间倒序展示。
+- 画像匹配不能读取 URL path/query；只使用标题、摘要、AI 标签、信号、来源等语义字段。
+- Bump changed frontend asset queries in `index.html` whenever this behavior changes.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_picks or cache_busted"
+  ```
+
+## 2026-06-23: Mobile Row Tune Popover Drifted Away From Its Trigger
+
+Symptoms:
+
+- The 伯乐精选 row `⋯` control opened a floating tuner, but on mobile the
+  control could sit in the left time column while the popover was clamped to the
+  screen edge.
+- The popover was technically visible and did not expand the row, but it no
+  longer felt attached to the button the user tapped.
+
+Root causes:
+
+- The desktop Bole row was changed to `time / body / tune`, but the mobile CSS
+  still overrode it to a two-column grid.
+- CSS grid auto-placement put the time, body, and tune elements into a layout
+  that moved the tune button away from the news body.
+
+Prevention:
+
+- Mobile Bole rows must explicitly place time, body, and tune controls: time
+  spans the full row, body occupies the main content columns, and the tune
+  button stays in the right action column beside the item body.
+- Browser validation for anchored popovers must check both vertical and
+  horizontal proximity to the trigger on desktop and mobile, not only that the
+  popover is visible.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_feedback or session_feedback or cache_busted"
+  ```
+
+## 2026-06-23: Feedback Icons Were Hand-Drawn Instead Of Using Mature Assets
+
+Symptoms:
+
+- A feedback-button visual preview used crude self-drawn icon shapes, making the
+  control feel unfinished even after the placement and motion model improved.
+- Feedback options looked like selectable radio rows instead of direct action
+  rows with clear semantic icons.
+- The reader feedback UI still risked drifting away from the accepted product
+  surface if production implementation invented new icon treatments instead of
+  matching the confirmed Lucide-based preview.
+
+Root causes:
+
+- Icon quality was treated as a small CSS detail instead of part of the user
+  visible interaction contract.
+- The preview did not first search for or adopt a mature icon system, despite
+  the project already being able to inline simple SVG assets without adding a
+  runtime dependency.
+
+Prevention:
+
+- For reader-facing icons and visual assets, search for suitable mature assets
+  first and prefer the existing project icon system or proven open-source icon
+  libraries such as Lucide. Hand-draw only when the user explicitly asks for it
+  or no suitable mature asset exists.
+- Feedback choices should be direct clickable actions with semantic icons, not
+  pseudo-radio controls unless the workflow genuinely requires selection before
+  confirmation.
+- Lock the accepted reader feedback surface with frontend contract tests:
+  single feedback trigger, Lucide-style inline SVG icons, positive/negative
+  color distinction, no old four-button inline feedback block, and no bulky
+  in-flow explanation strip under 伯乐精选.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_feedback or selection_criteria_copy or cache_busted"
+  ```
+
+## 2026-06-23: Optional Backend Startup Requests Blocked Static News Rendering
+
+Symptoms:
+
+- Local production preview loaded `data/latest-24h.json` successfully, but the
+  homepage still showed `更新时间 加载中...`, `AI 信号流 0 条`, and an empty
+  伯乐精选 area.
+- Browser diagnostics showed `state.itemsAi` and `state.generatedAt` were still
+  empty even though the static JSON fetch returned 200 with hundreds of items.
+
+Root causes:
+
+- `init()` awaited `Promise.allSettled()` for public static JSON and optional
+  backend-dependent requests together.
+- If a backend request such as taxonomy or verification summary stayed pending,
+  the app did not enter the static-news render path, even though the public
+  static data was already available.
+
+Prevention:
+
+- Initial render must wait only for public static JSON needed by the default
+  reader surface: latest news, WaytoAGI data, and source status.
+- Optional backend-enhanced data such as taxonomy and verification summaries
+  should load after the static news render and update their own views when they
+  settle.
+- Keep a regression test that verifies `loadTaxonomy()` and
+  `loadVerificationSummary()` are not part of the initial `Promise.allSettled()`
+  gate before `renderList()`.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "static_news_render or cache_busted"
+  ```
+
+## 2026-06-23: Recent Feedback Undo Used Empty Local IDs
+
+Symptoms:
+
+- 最近反馈列表里点击 `撤销` 后没有任何变化。
+- 未登录、后端不可用或反馈 API 失败时，本地 session feedback 会显示在最近反馈里，但撤销按钮不能移除它。
+
+Root causes:
+
+- 本地 feedback 记录被规范化为 `id: ""`。
+- 最近反馈列表把撤销按钮的 `data-bole-feedback-undo` 绑定到空 id。
+- `undoBoleFeedback()` 收到空 id 后直接返回，只支持服务端 feedback id。
+- 后端 DELETE 失败时前端把刚撤销的记录恢复回来，违背了用户对本轮页面撤销结果的预期。
+
+Prevention:
+
+- 本地 session feedback 必须有稳定的可撤销 id，例如基于 `item_key` 的 `session:*` id。
+- 撤销逻辑要同时支持服务端 id 和本地 id；本地 id 不应调用后端 DELETE。
+- 后端 DELETE 失败时，本轮页面应保留用户已经撤销的本地状态，并用 session tombstone 防止静默重新出现。
+- 最近反馈的作用点推断不能读取 URL path/query，只能使用标题、摘要、AI 标签、信号、来源等语义字段。
+- Bump changed frontend asset queries in `index.html` whenever this behavior changes.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_feedback or cache_busted"
+  ```
+
+## 2026-06-23: Recent Feedback Positive Thumb Icon Was Still Visually Clipped
+
+Symptoms:
+
+- 最近反馈弹窗里存在 `感兴趣` 记录时，左侧绿色大拇指图标左边缘看起来缺失。
+- 只给通用 `.lucide-icon` 设置 `overflow: visible` 后，真实页面中仍能看到
+  16px thumbs-up 图标在小尺寸下贴近 SVG viewBox 边界。
+
+Root causes:
+
+- 最近反馈列表的正反馈图标使用了内联 SVG，小尺寸渲染时没有给 stroke 留出
+  自身 viewBox 安全边距。
+- Reader 反馈弹层的正反馈按钮父级有 `overflow: hidden`，依赖子 SVG
+  overflow 不足以作为长期防护。
+
+Prevention:
+
+- 正反馈 thumbs-up 图标必须使用 Lucide 风格路径，并在 SVG 自身使用带安全边距
+  的 viewBox，例如 `-1 -1 26 26`。
+- 不要只用父级或通用图标 `overflow` 作为防裁切手段；有语义图标靠近边界时，
+  回归测试要锁定图标自身 viewBox。
+- Bump changed frontend asset queries in `index.html` whenever this behavior changes.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "cache_busted or positive_thumb_icons"
+  ```
+
+## 2026-06-24: Bole Conflict Last Decision Was Easy To Misinterpret
+
+Symptoms:
+
+- `画像冲突策略` 的 `最后决断` 容易被实现成冲突弹窗里的默认选中项，而不是直接按用户最新反馈改写同一主题画像方向。
+- 冲突弹窗视觉稿里的右上角 `已选` 白色胶囊被带入生产风险较高，用户反馈它像多余的白色操场形按钮。
+- 手机端冲突弹窗如果沿用桌面两列来源和三列按钮，会在窄屏显得拥挤。
+
+Root causes:
+
+- “最后决断”的产品语义没有被测试锁定为“不弹窗、最新反馈覆盖旧方向、并通过画像草稿确认路径持久化”。
+- 视觉伴随里的选中角标没有明确区分为预览状态，不应复制到生产 UI。
+- 冲突弹窗新增时只覆盖了桌面形态，缺少移动端 sheet 化布局约束。
+
+Prevention:
+
+- `last_decision` 策略必须跳过 `openBoleProfileConflictDialog()`，同名标签按最新反馈方向从正向/负向画像之间移动，并走现有
+  `/api/personalization/draft` + `/api/personalization/confirm` 持久化；静态无后端时只做本地乐观更新。
+- `ask` 策略下用户手动选择 `多推荐` / `少推荐` 也必须持久化；`暂不处理` 不应持久化或改变画像。
+- 生产冲突弹窗不要出现 `已选` 胶囊或 999px pill 角标。
+- 移动端冲突弹窗使用底部 sheet，来源和操作按钮改成单列，并且 overlay 不能使用 `data-mobile-view`。
+- Bump changed frontend asset queries in `index.html` whenever this behavior changes.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "bole_profile_conflict or conflict_dialog or settings_view_contract_exists or cache_busted"
+  python3 -m pytest -q tests/test_ai_backend_settings.py -k "bole_conflict or default"
+  ```
+
+## 2026-06-24: Recent Feedback Used Generic Whole-Item Targets For Weak Metadata
+
+Symptoms:
+
+- `最近反馈` could show entries such as `多看类似：整条新闻`, which did not
+  explain what topic or entity the user had actually reinforced.
+- The same English article could appear twice in 伯乐精选 when two sources had
+  different Chinese title translations, so feedback on the weaker-metadata copy
+  lost the better source's topic signal.
+
+Root causes:
+
+- Recent feedback inferred its visible target at render time and fell back to
+  `整条新闻` whenever item metadata did not match the limited profile labels.
+- Event clustering used `itemTitleText()`, which prefers translated Chinese
+  titles, instead of a stable original/English title when available.
+- Feedback payloads did not persist an explicit `feedback_target`, so the
+  backend could not preserve a cluster-level target or use it for later draft
+  suggestions.
+
+Prevention:
+
+- Infer specific feedback targets from semantic item fields such as title,
+  summary, AI signals, labels, and known AI entities; do not use URL path/query
+  as topic evidence.
+- For event clustering, prefer `title_original` / `title_en` / raw `title`
+  before translated display text so translation variants of the same story
+  merge conservatively.
+- When a clustered 伯乐精选 row has any non-generic target, pass it as
+  `feedback_target` and persist it through the feedback API.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "feedback_target or translation_variants or cache_busted"
+  python3 -m pytest -q tests/test_ai_backend_personalization.py -k "feedback_target"
+  ```
+
+## 2026-06-24: Feedback Persisted Only One Target For Multi-Entity News
+
+Symptoms:
+
+- A story could mention multiple meaningful entities or topics, such as OpenAI
+  and Amazon in the same partnership story, but feedback persisted only one
+  `feedback_target`.
+- 最近反馈显示 stayed readable, but later profile draft suggestions could learn
+  from only the visible primary target and lose secondary but still relevant
+  semantic context.
+
+Root causes:
+
+- `boleFeedbackTargetLabel()` returned a single label and `feedbackPayloadForItem()`
+  sent only that label to the backend.
+- The backend feedback sanitizer did not preserve a multi-target field, so
+  repeated feedback could not generate profile patches with more than one
+  concrete label.
+
+Prevention:
+
+- Keep the reader-facing recent-feedback target single for clarity, but persist
+  non-generic `matched_targets` alongside `feedback_target`.
+- Filter out generic labels such as `整条新闻` / `这条新闻`, dedupe targets, and
+  cap the saved list so weak metadata cannot flood profile suggestions.
+- Draft suggestions from repeated strong feedback should prefer saved
+  `matched_targets` before falling back to `feedback_target`, `ai_signals`, or
+  `ai_label`.
+- Regression command:
+
+  ```bash
+  python3 -m pytest -q tests/test_mobile_frontend_contract.py -k "feedback_payload or cache_busted"
+  python3 -m pytest -q tests/test_ai_backend_personalization.py -k "feedback_target"
+  ```

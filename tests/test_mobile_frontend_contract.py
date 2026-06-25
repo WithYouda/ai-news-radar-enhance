@@ -88,10 +88,169 @@ def test_hidden_mobile_sections_cannot_be_overridden_by_component_css():
 
 def test_mobile_fix_assets_are_cache_busted():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
-    assert "./assets/styles.css?v=personalized-bole-dialogue-0620" in html
+    assert "./assets/styles.css?v=personalized-bole-feedback-multitag-0624" in html
     assert "./assets/config.js?v=info-arch-0602" in html
     assert "./assets/api-client.js?v=frontend-arch-0610" in html
-    assert "./assets/app.js?v=personalized-bole-dialogue-0620" in html
+    assert "./assets/app.js?v=personalized-bole-feedback-multitag-0624" in html
+
+
+def test_static_news_render_does_not_wait_for_optional_backend_data():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    init = js[js.index("async function init()") : js.index('searchInputEl.addEventListener("input"', js.index("async function init()"))]
+
+    assert "const [newsResult, waytoagiResult, statusResult]" in init
+    assert "Promise.allSettled([\n    loadNewsData(),\n    loadWaytoagiData(),\n    loadSourceStatusData()," in init
+    assert "loadTaxonomy()" not in init[init.index("Promise.allSettled([") : init.index("]);", init.index("Promise.allSettled(["))]
+    assert "loadVerificationSummary()" not in init[init.index("Promise.allSettled([") : init.index("]);", init.index("Promise.allSettled(["))]
+    render_list_index = init.index("renderList();")
+    taxonomy_index = init.index("loadOptionalBackendData();")
+    assert render_list_index < taxonomy_index
+
+
+def test_ai_config_dialog_starts_hidden_and_not_mobile_view():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    dialog = html[html.index('id="aiConfigDialog"') : html.index('id="boleWorkbench"')]
+
+    assert 'id="aiConfigDialog" class="ai-config-dialog" hidden' in html
+    assert 'id="aiConfigDialog" class="ai-config-dialog" data-mobile-view' not in html
+    assert 'role="dialog" aria-modal="true"' in dialog
+    assert "连接模型" in dialog
+    assert "名称" in dialog
+    assert 'id="aiConfigNameInput" type="text" placeholder="默认 AI"' in dialog
+    assert 'id="aiConfigNameInput" type="text" value=' not in dialog
+    assert "Base URL" in dialog
+    assert 'id="aiConfigBaseUrlInput" type="url" placeholder="https://api.openai.com/v1"' in dialog
+    assert 'id="aiConfigBaseUrlInput" type="url" value=' not in dialog
+    assert "模型" in dialog
+    assert 'id="aiConfigModelInput" type="text" placeholder="gpt5.5"' in dialog
+    assert 'id="aiConfigModelInput" type="text" value=' not in dialog
+    assert "API Key" in dialog
+    assert "请求头 JSON" in dialog
+    assert "超时秒数" in dialog
+    assert 'id="aiConfigAdvancedPanel" class="ai-config-advanced-panel" hidden' in dialog
+
+
+def test_ai_config_dialog_actions_match_confirmed_preview():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    dialog = html[html.index('id="aiConfigDialog"') : html.index('id="boleWorkbench"')]
+
+    assert "可跳过进入画像工作台。" in dialog
+    assert dialog.index('id="aiConfigSkipButton"') < dialog.index('id="aiConfigStatus"')
+    assert dialog.index('id="aiConfigStatus"') < dialog.index('id="aiConfigTestButton"')
+    assert dialog.index('id="aiConfigTestButton"') < dialog.index('id="aiConfigSaveButton"')
+    assert 'id="aiConfigTestButton" class="ai-config-secondary-button" type="button">测试</button>' in dialog
+    assert 'id="aiConfigSaveButton" class="ai-config-secondary-button" type="button">保存并继续</button>' in dialog
+    assert "保存并继续" in dialog
+
+    save_rule = css[
+        css.index(".ai-config-secondary-button {") :
+        css.index(".ai-config-ghost-button", css.index(".ai-config-secondary-button {"))
+    ]
+    assert "color: var(--accent);" in save_rule
+    assert "background: var(--surface-soft);" in save_rule
+    assert "background: var(--accent);" not in save_rule
+    assert "background: #111" not in save_rule
+    assert "background: #000" not in save_rule
+
+
+def test_ai_config_dialog_advanced_layout_stays_aligned_on_desktop_and_mobile():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    desktop_rule = css[
+        css.index(".ai-config-advanced-panel {") :
+        css.index(".ai-config-advanced-panel[hidden]")
+    ]
+    desktop_input_rule = css[
+        css.index(".ai-config-advanced-panel .field textarea,") :
+        css.index(".ai-config-actions", css.index(".ai-config-advanced-panel .field textarea,"))
+    ]
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+    mobile_advanced_rule = mobile_css[
+        mobile_css.index(".ai-config-form-grid,") :
+        mobile_css.index(".ai-config-actions", mobile_css.index(".ai-config-form-grid,"))
+    ]
+    mobile_actions_rule = mobile_css[
+        mobile_css.index(".ai-config-actions {") :
+        mobile_css.index(".ai-config-action-right", mobile_css.index(".ai-config-actions {"))
+    ]
+
+    assert "grid-template-columns: minmax(0, 1fr) 150px;" in desktop_rule
+    assert "align-items: stretch;" in desktop_rule
+    assert "min-height: 120px;" in desktop_input_rule
+    assert "grid-template-columns: 1fr;" in mobile_advanced_rule
+    assert "grid-template-columns: auto minmax(0, 1fr) auto auto;" in mobile_actions_rule
+    assert "calc(18px + env(safe-area-inset-bottom))" in mobile_css
+
+
+def test_ai_config_frontend_wires_existing_ai_profile_api_before_bole_workbench():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "aiConfigSkipped" in js
+    assert "aiConfigProfileId" in js
+    assert "hasSavedAiConfigProfile" in js
+    assert "shouldPromptForAiConfigBeforeBole" in js
+    assert "openAiConfigDialog" in js
+    assert "closeAiConfigDialog" in js
+    assert "openBolePersonalizationEntry" in js
+    assert "aiConfigProfilePayload" in js
+    assert "saveAiConfigAndContinue" in js
+    assert "testAiConfigConnection" in js
+    assert 'apiFetch("/api/ai-profiles"' in js
+    assert 'apiFetch(`/api/ai-profiles/${encodeURIComponent(profileId)}`' in js
+    assert 'apiFetch(`/api/ai-profiles/${encodeURIComponent(profile.id)}/test`' in js
+    assert "state.aiConfigProfileId = profile.id" in js
+    assert "const profileId = state.aiConfigProfileId;" in js
+    assert "openBolePersonalizationEntry({ auto: Boolean(options.autoOpen) })" in js
+    assert "openBoleWorkbench();" in js[js.index("function skipAiConfigDialog") : js.index("async function saveAiConfigAndContinue")]
+    assert ".ai-config-dialog" in css
+    assert ".ai-config-advanced-panel" in css
+    assert ".ai-config-dialog-open" in css
+
+
+def test_ai_config_prompt_only_for_first_bole_entry_without_saved_profile():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function hasSavedAiConfigProfile");
+        const end = js.indexOf("function aiProviderOptions", start);
+        if (start < 0 || end < 0) {{
+          throw new Error("missing AI config prompt helper slice");
+        }}
+        function evaluate(apiBaseUrl, aiProfiles, personalizationStatus, skipped) {{
+          const sandbox = {{
+            apiBaseUrl,
+            state: {{
+              aiProfiles,
+              personalizationStatus,
+              aiConfigSkipped: skipped,
+            }},
+            result: null,
+          }};
+          vm.createContext(sandbox);
+          vm.runInContext(js.slice(start, end) + `
+            result = shouldPromptForAiConfigBeforeBole();
+          `, sandbox);
+          return sandbox.result;
+        }}
+        const cases = {{
+          staticFallback: evaluate("", [], {{ state: "not_started" }}, false),
+          envOnlyFirstUse: evaluate("https://api.example.com", [{{ id: "env", readonly: true, has_api_key: true }}], {{ state: "not_started" }}, false),
+          savedProfile: evaluate("https://api.example.com", [{{ id: "custom", readonly: false, has_api_key: true }}], {{ state: "not_started" }}, false),
+          skippedThisSession: evaluate("https://api.example.com", [{{ id: "env", readonly: true }}], {{ state: "not_started" }}, true),
+          alreadyConfirmed: evaluate("https://api.example.com", [{{ id: "env", readonly: true }}], {{ state: "confirmed" }}, false),
+        }};
+        if (cases.staticFallback !== false) throw new Error("static frontend should open workbench directly");
+        if (cases.envOnlyFirstUse !== true) throw new Error("env-only first use should prompt for user AI config");
+        if (cases.savedProfile !== false) throw new Error("saved custom AI profile should skip prompt");
+        if (cases.skippedThisSession !== false) throw new Error("session skip should enter workbench directly");
+        if (cases.alreadyConfirmed !== false) throw new Error("confirmed personalization should not show first-use prompt");
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
 
 
 def test_personalized_bole_workbench_starts_hidden_and_not_mobile_view():
@@ -141,7 +300,10 @@ def test_personalized_bole_workbench_uses_serial_b2_stage_layout():
     assert ".bole-dialogue" in css
     assert ".bole-profile-rail" in css
     assert "grid-template-columns: minmax(0, 1fr) minmax(280px, 316px);" in css
-    assert "transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);" in css
+    assert "transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1);" in css
+    assert ".bole-dialogue-turns.is-transitioning .bole-turn-deck-card.two" in css
+    assert "@keyframes bole-card-exit" in css
+    assert "@keyframes bole-deck-rise-two" in css
 
 
 def test_bole_interest_and_reading_questions_are_separate_with_single_ai_input():
@@ -154,6 +316,14 @@ def test_bole_interest_and_reading_questions_are_separate_with_single_ai_input()
     assert "<textarea" not in workbench
     assert "const BOLE_PROFILE_QUESTIONS" in js
     question_bank = js[js.index("const BOLE_PROFILE_QUESTIONS") : js.index("function parseBoleTerms")]
+    question_ids = re.findall(r'id: "([^"]+)"', question_bank)
+    assert question_ids[:5] == [
+        "attention_goal",
+        "negative_preferences",
+        "ai_domains",
+        "deep_reading_policy",
+        "reading_depth",
+    ]
 
     expected_stages = {
         "attention_goal": "interest",
@@ -208,14 +378,15 @@ def test_personalized_bole_frontend_wires_authenticated_api_without_static_break
     assert "boleShownQuestionIds" in js
     assert "boleConfirmedQuestionIds" in js
     assert "boleAnswerInterpretations" in js
-    assert "boleAdvanceTimer" in js
+    assert "boleQuestionTransitionTimer" in js
     assert "loadPersonalization" in js
     assert "openBoleWorkbench" in js
     assert "closeBoleWorkbench" in js
     assert "setBoleStage" in js
     assert "renderBoleConversation" in js
     assert "renderBoleRecognizedProfile" in js
-    assert "scheduleBoleAdvance" in js
+    assert "transitionBoleQuestion" in js
+    assert "primaryBoleActionLabel" in js
     assert "interpretBoleInput" in js
     assert "buildBoleConversationContext" in js
     assert "buildBoleProfileDraft" in js
@@ -233,6 +404,260 @@ def test_personalized_bole_frontend_wires_authenticated_api_without_static_break
     assert ".bole-stage-track" in css
     assert ".bole-dialogue" in css
     assert ".bole-profile-rail" in css
+
+
+def test_bole_question_progression_requires_explicit_next_action_after_ready():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        if (start < 0 || end < 0) {{
+          throw new Error("missing bole helper slice");
+        }}
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal"]),
+            boleConfirmedQuestionIds: new Set(),
+            boleAnswerInterpretations: {{}},
+            boleActiveQuestionId: "attention_goal",
+            boleQuestionTransitionTimer: null,
+          }},
+          setTimeout,
+          clearTimeout,
+          renderBoleWorkbench: () => {{}},
+          syncBoleStage: () => {{}},
+          renderBoleConversation: () => {{}},
+          renderBoleDraftPreview: () => {{}},
+          renderBoleRecommendationPreview: () => {{}},
+          renderBoleRecognizedProfile: () => {{}},
+          renderBoleSettingsStatus: () => {{}},
+          syncBoleActionButtons: () => {{}},
+          boleChatInputEl: null,
+          boleDialogueTurnsEl: null,
+          boleReadingTurnsEl: null,
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          mergeBoleAnswer("attention_goal", {{ choices: ["产品与工具"] }});
+          const before = {{
+            active: state.boleActiveQuestionId,
+            ready: isBoleQuestionReady("attention_goal"),
+            label: primaryBoleActionLabel("attention_goal"),
+            shown: Array.from(state.boleShownQuestionIds),
+          }};
+          transitionBoleQuestion("ai_domains", {{ animate: false }});
+          const after = {{
+            active: state.boleActiveQuestionId,
+            label: primaryBoleActionLabel("ai_domains"),
+            shown: Array.from(state.boleShownQuestionIds),
+          }};
+          result = {{ before, after }};
+        `, sandbox);
+        if (sandbox.result.before.active !== "attention_goal") {{
+          throw new Error("choice selection should not auto-advance active question");
+        }}
+        if (!sandbox.result.before.ready || sandbox.result.before.label !== "下一题") {{
+          throw new Error(`ready question should show 下一题, got ${{sandbox.result.before.label}}`);
+        }}
+        if (sandbox.result.before.shown.includes("ai_domains")) {{
+          throw new Error("next question should not be shown before explicit next action");
+        }}
+        if (sandbox.result.after.active !== "ai_domains") {{
+          throw new Error("explicit next action should activate ai_domains");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_last_question_ready_action_moves_to_next_stage_not_auto_advance():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal", "negative_preferences", "ai_domains"]),
+            boleConfirmedQuestionIds: new Set(["attention_goal", "negative_preferences"]),
+            boleAnswerInterpretations: {{}},
+            boleActiveQuestionId: "ai_domains",
+            boleQuestionTransitionTimer: null,
+          }},
+          setTimeout,
+          clearTimeout,
+          renderBoleWorkbench: () => {{}},
+          syncBoleStage: () => {{}},
+          renderBoleConversation: () => {{}},
+          renderBoleDraftPreview: () => {{}},
+          renderBoleRecommendationPreview: () => {{}},
+          renderBoleRecognizedProfile: () => {{}},
+          renderBoleSettingsStatus: () => {{}},
+          syncBoleActionButtons: () => {{}},
+          boleChatInputEl: null,
+          boleDialogueTurnsEl: null,
+          boleReadingTurnsEl: null,
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          mergeBoleAnswer("ai_domains", {{ choices: ["Agent"] }});
+          const before = {{
+            stage: state.boleStage,
+            active: state.boleActiveQuestionId,
+            label: primaryBoleActionLabel("ai_domains"),
+          }};
+          advanceBoleQuestionFrom("ai_domains", {{ animate: false }});
+          result = {{
+            before,
+            afterStage: state.boleStage,
+            afterActive: state.boleActiveQuestionId,
+            shown: Array.from(state.boleShownQuestionIds),
+          }};
+        `, sandbox);
+        if (sandbox.result.before.label !== "下一环节") {{
+          throw new Error(`last question should show 下一环节, got ${{sandbox.result.before.label}}`);
+        }}
+        if (sandbox.result.before.stage !== "calibration" || sandbox.result.before.active !== "ai_domains") {{
+          throw new Error("last question should stay active before explicit action");
+        }}
+        if (sandbox.result.afterStage !== "preferences" || sandbox.result.afterActive !== "deep_reading_policy") {{
+          throw new Error(`expected preferences/deep_reading_policy, got ${{sandbox.result.afterStage}}/${{sandbox.result.afterActive}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_free_text_with_selected_choice_still_requires_interpretation():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal"]),
+            boleConfirmedQuestionIds: new Set(),
+            boleAnswerInterpretations: {{}},
+            boleActiveQuestionId: "attention_goal",
+            boleQuestionTransitionTimer: null,
+          }},
+          setTimeout,
+          clearTimeout,
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          mergeBoleAnswer("attention_goal", {{
+            choices: ["产品与工具"],
+            text: "只看本地部署和量化，不想看泛泛工具盘点",
+            ai_labels: [],
+            ai_note: "",
+          }});
+          const before = {{
+            ready: isBoleQuestionReady("attention_goal"),
+            label: primaryBoleActionLabel("attention_goal"),
+          }};
+          mergeBoleAnswer("attention_goal", {{
+            choices: ["产品与工具"],
+            text: "只看本地部署和量化，不想看泛泛工具盘点",
+            ai_labels: ["本地部署"],
+            ai_note: "伯乐理解为：本地部署",
+          }});
+          result = {{
+            before,
+            afterReady: isBoleQuestionReady("attention_goal"),
+            afterLabel: primaryBoleActionLabel("attention_goal"),
+          }};
+        `, sandbox);
+        if (sandbox.result.before.ready || sandbox.result.before.label !== "确认回答") {{
+          throw new Error(`free text with choices must wait for interpretation, got ${{sandbox.result.before.label}}`);
+        }}
+        if (!sandbox.result.afterReady || sandbox.result.afterLabel !== "下一题") {{
+          throw new Error(`interpreted answer should become 下一题, got ${{sandbox.result.afterLabel}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_question_dot_or_answer_click_uses_card_transition():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert "transitionBoleQuestion(turn.dataset.boleQuestionId" in js
+    assert "transitionBoleQuestion(nextQuestion.id" in js
+    assert "bole-turn-deck-card one" in js
+    assert "bole-turn-deck-card two" in js
+    assert "is-transitioning" in js
+    assert "exiting" in js
+    assert ".bole-turn.exiting" in css
+    assert ".bole-turn.entering" in css
+    assert ".bole-dialogue-turns.is-transitioning" in css
+
+
+def test_bole_choice_rerender_does_not_replay_card_enter_animation():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("const BOLE_PROFILE_QUESTIONS");
+        const end = js.indexOf("function renderBoleWorkbench", start);
+        const sandbox = {{
+          state: {{
+            boleStage: "calibration",
+            boleAnswers: {{}},
+            boleShownQuestionIds: new Set(["attention_goal"]),
+            boleConfirmedQuestionIds: new Set(),
+            boleAnswerInterpretations: {{}},
+            boleActiveQuestionId: "attention_goal",
+            boleQuestionTransitionTimer: null,
+            boleEnteringQuestionId: "",
+          }},
+          escapeHtml: (value) => String(value || ""),
+          result: null,
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(js.slice(start, end) + `
+          const question = boleQuestionById("attention_goal");
+          mergeBoleAnswer("attention_goal", {{ choices: ["产品与工具"] }});
+          const stable = renderBoleQuestionTurn(question);
+          state.boleEnteringQuestionId = "attention_goal";
+          const entering = renderBoleQuestionTurn(question);
+          result = {{
+            stableHasEntering: stable.includes("entering"),
+            enteringHasEntering: entering.includes("entering"),
+          }};
+        `, sandbox);
+        if (sandbox.result.stableHasEntering) {{
+          throw new Error("ordinary choice rerender should not replay card enter animation");
+        }}
+        if (!sandbox.result.enteringHasEntering) {{
+          throw new Error("real question transition should mark the next card as entering");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
 
 
 def test_bole_workbench_can_open_for_static_frontend_preview_without_backend():
@@ -267,7 +692,7 @@ def test_bole_dialogue_progression_preserves_later_questions_when_editing():
             boleShownQuestionIds: new Set(["attention_goal"]),
             boleConfirmedQuestionIds: new Set(),
             boleAnswerInterpretations: {{}},
-            boleAdvanceTimer: null,
+            boleQuestionTransitionTimer: null,
           }},
           setTimeout,
           clearTimeout,
@@ -289,7 +714,7 @@ def test_bole_dialogue_progression_preserves_later_questions_when_editing():
             active: activeBoleQuestion("calibration").id,
           }};
         `, sandbox);
-        if (sandbox.result.visible.join("|") !== "attention_goal|ai_domains|negative_preferences") {{
+        if (sandbox.result.visible.join("|") !== "attention_goal|negative_preferences|ai_domains") {{
           throw new Error(`editing a previous question hid later questions: ${{sandbox.result.visible.join("|")}}`);
         }}
         if (!sandbox.result.confirmed.includes("negative_preferences")) {{
@@ -319,7 +744,7 @@ def test_bole_custom_input_uses_ai_interpretation_instead_of_raw_text_tags():
             boleShownQuestionIds: new Set(["attention_goal"]),
             boleConfirmedQuestionIds: new Set(),
             boleAnswerInterpretations: {{}},
-            boleAdvanceTimer: null,
+            boleQuestionTransitionTimer: null,
           }},
           setTimeout,
           clearTimeout,
@@ -389,9 +814,11 @@ def test_bole_stage_actions_are_minimal_and_contextual():
 def test_bole_motion_is_stable_and_rail_scrollbar_is_compact():
     css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
 
-    turn_rule = css[css.index(".bole-turn {") : css.index(".bole-turn.answered")]
     profile_rule = css[css.index(".bole-profile-card {") : css.index(".bole-profile-card.avoid")]
-    assert "animation:" not in turn_rule
+    assert ".bole-turn.entering" in css
+    assert ".bole-turn.exiting" in css
+    assert "@keyframes bole-card-enter" in css
+    assert "@keyframes bole-card-exit" in css
     assert "animation:" not in profile_rule
     assert ".bole-profile-list::-webkit-scrollbar" in css
     rail_scrollbar = css[css.index(".bole-profile-list::-webkit-scrollbar") : css.index(".bole-profile-card", css.index(".bole-profile-list::-webkit-scrollbar"))]
@@ -700,14 +1127,15 @@ def test_category_cards_open_news_collection_and_scope_ask_ai():
     assert ".category-card.active" in css
 
 
-def test_bole_picks_explain_selection_criteria():
+def test_bole_picks_selection_criteria_copy_is_not_rendered_inline():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
-    assert "为什么精选" in html
-    assert "bole-explainer" in js
-    assert "多源命中" in js
-    assert "官方源" in js
-    assert "AI 分" in js
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    assert "为什么精选" not in html
+    assert "伯乐精选依据：" not in js
+    assert "bole-explainer" not in js
+    assert ".bole-explainer" not in css
+    assert ".bole-picks-sub" not in css
 
 
 def test_bole_picks_show_top_ten_candidates():
@@ -790,6 +1218,457 @@ def test_bole_picks_prefers_priority_score_over_ai_score():
         vm.runInContext(code, sandbox);
         if (sandbox.result !== "Lower relevance but higher priority") {{
           throw new Error(`expected priority_score winner, got ${{sandbox.result}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_confirmed_profile_promotes_matching_interests():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', personalizationStatus: {{ state: 'confirmed', enabled: true, active_profile: {{ positive_interests: [{{ label: 'Agent' }}], negative_interests: [] }} }} }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nconst pick = pickBoleItems(items)[0];"
+          + "\\nresult = {{ title: pick.item.title, reason: boleReasonText(pick), score: pick.score }};";
+        const items = [
+          {{
+            title: "Generic AI market update",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.95,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Agent framework reaches production teams",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.82,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result.title !== "Agent framework reaches production teams") {{
+          throw new Error(`expected Agent profile match first, got ${{sandbox.result.title}}`);
+        }}
+        if (!sandbox.result.reason.includes("符合您的画像：Agent")) {{
+          throw new Error(`expected personalized reason, got ${{sandbox.result.reason}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_render_bole_picks_keeps_profile_priority_order():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("\\nfunction itemImageUrl", start);
+        function createElement(tagName) {{
+          return {{
+            tagName,
+            className: "",
+            textContent: "",
+            innerHTML: "",
+            children: [],
+            append(...nodes) {{ this.children.push(...nodes); }},
+            appendChild(node) {{ this.children.push(node); return node; }}
+          }};
+        }}
+        const items = [
+          {{
+            title: "Generic AI market update",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.95,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Agent framework reaches production teams",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.82,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const root = createElement("div");
+        const meta = createElement("div");
+        const document = {{ createElement }};
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "function fmtNumber(value) {{ return String(value); }}\\n"
+          + "function bindReaderLink() {{}}\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + "const bolePicksListEl = root;\\n"
+          + "const bolePicksMetaEl = meta;\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', itemsAi: items, personalizationStatus: {{ state: 'confirmed', enabled: true, active_profile: {{ positive_interests: [{{ label: 'Agent' }}], negative_interests: [] }} }} }};\\n"
+          + js.slice(start, end)
+          + "\\nrenderBolePicks();"
+          + "\\nconst list = root.children.find((child) => child.className === 'bole-compact-list');"
+          + "\\nresult = list.children.map((row) => row.children[1].children[1].textContent);"
+          + "\\nmetaText = meta.textContent;";
+        const sandbox = {{ document, items, root, meta, result: null, metaText: "" }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result[0] !== "Agent framework reaches production teams") {{
+          throw new Error(`expected rendered Agent profile match first, got ${{sandbox.result[0]}}`);
+        }}
+        if (!sandbox.metaText.includes("按得分排序") || !sandbox.metaText.includes("已应用画像")) {{
+          throw new Error(`expected personalized score-order meta text, got ${{sandbox.metaText}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_confirmed_profile_downranks_negative_interests_without_url_noise():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', personalizationStatus: {{ state: 'confirmed', enabled: true, active_profile: {{ positive_interests: [{{ label: 'Agent' }}], negative_interests: [{{ label: '营销稿' }}] }} }} }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = pickBoleItems(items).map((row) => ({{ title: row.item.title, score: row.score, reason: boleReasonText(row) }}));";
+        const items = [
+          {{
+            title: "Agent vendor marketing roundup",
+            title_zh: "Agent 厂商营销稿汇总",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.96,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Production Agent runtime adds local deployment controls",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.86,
+            published_at: "2026-06-18T09:00:00Z"
+          }},
+          {{
+            title: "Insurance market update",
+            site_name: "Business Wire",
+            source: "Source C",
+            url: "https://example.com/agent-ai-launch",
+            priority_score: 0.84,
+            published_at: "2026-06-18T08:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result[0].title !== "Production Agent runtime adds local deployment controls") {{
+          throw new Error(`expected non-marketing Agent item first, got ${{sandbox.result[0].title}}`);
+        }}
+        const urlNoise = sandbox.result.find((row) => row.title === "Insurance market update");
+        if (urlNoise.reason.includes("符合您的画像")) {{
+          throw new Error(`URL path should not create a profile match: ${{urlNoise.reason}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_confirmed_profile_applies_source_preferences_without_url_noise():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', personalizationStatus: {{ state: 'confirmed', enabled: true, active_profile: {{ positive_interests: [], negative_interests: [], source_preferences: [{{ source: 'OpenAI News', weight: 0.9 }}, {{ source: 'Low Quality Wire', weight: -0.9 }}] }} }} }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = pickBoleItems(items).map((row) => ({{ title: row.item.title, score: row.score, reason: boleReasonText(row) }}));";
+        const items = [
+          {{
+            title: "Generic AI market update",
+            site_name: "Generic Tech",
+            source: "Daily Feed",
+            priority_score: 0.94,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Official Agent SDK release notes",
+            site_name: "OpenAI News",
+            source: "Official Updates",
+            priority_score: 0.82,
+            published_at: "2026-06-18T09:00:00Z"
+          }},
+          {{
+            title: "Speculative AI rumor roundup",
+            site_name: "Low Quality Wire",
+            source: "Low Quality Wire",
+            priority_score: 0.98,
+            published_at: "2026-06-18T08:00:00Z"
+          }},
+          {{
+            title: "AI market brief",
+            site_name: "Generic Tech",
+            source: "Daily Feed",
+            url: "https://example.com/openai-news/agent",
+            priority_score: 0.83,
+            published_at: "2026-06-18T07:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result[0].title !== "Official Agent SDK release notes") {{
+          throw new Error(`expected preferred source first, got ${{sandbox.result[0].title}}`);
+        }}
+        if (!sandbox.result[0].reason.includes("符合您的来源偏好：OpenAI News")) {{
+          throw new Error(`expected source preference reason, got ${{sandbox.result[0].reason}}`);
+        }}
+        const downranked = sandbox.result.find((row) => row.title === "Speculative AI rumor roundup");
+        if (!downranked || !downranked.reason.includes("已按来源偏好降权：Low Quality Wire")) {{
+          throw new Error(`expected source downrank reason, got ${{downranked && downranked.reason}}`);
+        }}
+        const urlNoise = sandbox.result.find((row) => row.title === "AI market brief");
+        if (urlNoise.reason.includes("来源偏好")) {{
+          throw new Error(`URL path should not trigger source preference: ${{urlNoise.reason}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_confirmed_profile_applies_reading_behavior_preferences_without_url_noise():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', personalizationStatus: {{ state: 'confirmed', enabled: true, active_profile: {{ positive_interests: [], negative_interests: [], source_preferences: [], behavior_preferences: {{ summary_depth: 'deep', reading_depth: ['工程细节'] }} }} }} }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = pickBoleItems(items).map((row) => ({{ title: row.item.title, score: row.score, reason: boleReasonText(row) }}));";
+        const items = [
+          {{
+            title: "Generic AI market update",
+            site_name: "Generic Tech",
+            source: "Daily Feed",
+            priority_score: 0.94,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Agent SDK adds API integration controls",
+            summary: "Engineering teams can inspect workflow traces and deployment hooks.",
+            ai_label: "developer_tooling",
+            ai_signals: ["Agent SDK"],
+            site_name: "Developer Blog",
+            source: "Engineering",
+            priority_score: 0.83,
+            published_at: "2026-06-18T09:00:00Z"
+          }},
+          {{
+            title: "AI market brief",
+            site_name: "Generic Tech",
+            source: "Daily Feed",
+            url: "https://example.com/sdk/api/engineering",
+            priority_score: 0.84,
+            published_at: "2026-06-18T08:00:00Z"
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result[0].title !== "Agent SDK adds API integration controls") {{
+          throw new Error(`expected engineering-depth item first, got ${{sandbox.result[0].title}}`);
+        }}
+        if (!sandbox.result[0].reason.includes("符合阅读偏好：工程细节")) {{
+          throw new Error(`expected behavior preference reason, got ${{sandbox.result[0].reason}}`);
+        }}
+        const urlNoise = sandbox.result.find((row) => row.title === "AI market brief");
+        if (urlNoise.reason.includes("阅读偏好")) {{
+          throw new Error(`URL path should not trigger behavior preference: ${{urlNoise.reason}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_ignore_draft_and_disabled_profiles():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const items = [
+          {{
+            title: "Generic AI market update",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.95,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            title: "Agent framework reaches production teams",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.82,
+            published_at: "2026-06-18T09:00:00Z"
+          }}
+        ];
+        const statuses = [
+          {{
+            state: "draft",
+            enabled: true,
+            draft_profile: {{ positive_interests: [{{ label: "Agent" }}], negative_interests: [] }}
+          }},
+          {{
+            state: "confirmed",
+            enabled: false,
+            active_profile: {{ positive_interests: [{{ label: "Agent" }}], negative_interests: [] }}
+          }}
+        ];
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nresult = statuses.map((personalizationStatus) => {{"
+          + "\\n  state.personalizationStatus = personalizationStatus;"
+          + "\\n  const pick = pickBoleItems(items)[0];"
+          + "\\n  return {{ title: pick.item.title, reason: boleReasonText(pick) }};"
+          + "\\n}});";
+        const sandbox = {{
+          items,
+          statuses,
+          state: {{ generatedAt: "2026-06-19T00:00:00Z", personalizationStatus: null }},
+          result: null
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        sandbox.result.forEach((row) => {{
+          if (row.title !== "Generic AI market update") {{
+            throw new Error(`inactive profile should not personalize ranking, got ${{row.title}}`);
+          }}
+          if (row.reason.includes("符合您的画像")) {{
+            throw new Error(`inactive profile should not appear in reason: ${{row.reason}}`);
+          }}
+        }});
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_picks_rerender_after_confirmed_profile_status_changes():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    for name in (
+        "loadPersonalization",
+        "confirmBoleProfile",
+        "skipBolePersonalization",
+        "resetBolePersonalization",
+        "disableBolePersonalization",
+    ):
+        match = re.search(rf"async function {name}\([^)]*\) \{{(?P<body>.*?)\n\}}", js, re.S)
+        assert match, f"missing {name}()"
+        body = match.group("body")
+        assert "renderBolePicks();" in body, f"{name}() must refresh personalized Bole Picks"
+
+
+def test_render_bole_picks_can_switch_between_score_and_time_order():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("\\nfunction itemImageUrl", start);
+        function createElement(tagName) {{
+          return {{
+            tagName,
+            className: "",
+            textContent: "",
+            _innerHTML: "",
+            get innerHTML() {{ return this._innerHTML; }},
+            set innerHTML(value) {{ this._innerHTML = value; this.children = []; }},
+            dataset: {{}},
+            children: [],
+            append(...nodes) {{ this.children.push(...nodes); }},
+            appendChild(node) {{ this.children.push(node); return node; }},
+            setAttribute(name, value) {{ this[name] = value; }},
+            addEventListener() {{}}
+          }};
+        }}
+        const items = [
+          {{
+            id: "high-old",
+            title: "High scoring older AI release",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.96,
+            published_at: "2026-06-18T08:00:00Z"
+          }},
+          {{
+            id: "fresh-low",
+            title: "Fresh lower scoring AI update",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.72,
+            published_at: "2026-06-18T12:00:00Z"
+          }}
+        ];
+        const root = createElement("div");
+        const meta = createElement("div");
+        const document = {{ createElement }};
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "function fmtNumber(value) {{ return String(value); }}\\n"
+          + "function bindReaderLink() {{}}\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + "const bolePicksListEl = root;\\n"
+          + "const bolePicksMetaEl = meta;\\n"
+          + "const boleSortPopoverEl = null;\\n"
+          + "const state = {{ generatedAt: '2026-06-19T00:00:00Z', itemsAi: items, personalizationStatus: null, boleFeedbackByKey: new Map(), boleSortMode: 'score' }};\\n"
+          + js.slice(start, end)
+          + "\\nrenderBolePicks();"
+          + "\\nconst byScore = root.children.find((child) => child.className === 'bole-compact-list').children.map((row) => row.children[1].children[1].textContent);"
+          + "\\nconst scoreMeta = meta.textContent;"
+          + "\\nsetBoleSortMode('time');"
+          + "\\nconst byTime = root.children.find((child) => child.className === 'bole-compact-list').children.map((row) => row.children[1].children[1].textContent);"
+          + "\\nconst timeMeta = meta.textContent;"
+          + "\\nresult = {{ byScore, scoreMeta, byTime, timeMeta }};";
+        const sandbox = {{ document, items, root, meta, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result.byScore[0] !== "High scoring older AI release") {{
+          throw new Error(`expected score order first, got ${{sandbox.result.byScore[0]}}`);
+        }}
+        if (sandbox.result.byTime[0] !== "Fresh lower scoring AI update") {{
+          throw new Error(`expected time order first, got ${{sandbox.result.byTime[0]}}`);
+        }}
+        if (!sandbox.result.scoreMeta.includes("按得分排序") || !sandbox.result.timeMeta.includes("按时间排序")) {{
+          throw new Error(`unexpected meta text: ${{JSON.stringify(sandbox.result)}}`);
         }}
         """
     )
@@ -1065,9 +1944,14 @@ def test_settings_view_contract_exists():
     assert 'id="settingsView"' in html
     assert 'id="adminPasswordInput"' in html
     assert 'id="askSystemPromptInput"' in html
+    assert 'id="boleConflictStrategySelect"' in html
+    assert "画像冲突策略" in html
+    assert 'value="ask">每次询问' in html
+    assert 'value="last_decision">最后决断' in html
     assert "loginAdmin" in js
     assert "saveSettings" in js
     assert "ask_system_prompt" in js
+    assert "bole_conflict_strategy" in js
 
 
 def test_settings_view_adapts_to_desktop_wide_layout_and_mobile_single_column():
@@ -1318,6 +2202,811 @@ def test_news_title_click_opens_clean_reader_instead_of_original_page():
     assert "event.preventDefault()" in js[js.index("function bindReaderLink") :]
     assert "bindReaderLink(titleEl, item)" in js[js.index("function renderItemNode") :]
     assert "bindReaderLink(link, item)" in js[js.index("function buildBoleTimelineRow") :]
+
+
+def test_bole_feedback_surfaces_match_confirmed_overlay_design():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    reader = html[html.index('id="readerSheet"') : html.index('id="askAiSheet"')]
+    header = html[html.index('class="bole-picks-head"') : html.index('id="bolePicksList"')]
+
+    assert 'id="boleSortButton"' in header
+    assert "排序" in header
+    assert 'id="boleSortPopover" class="bole-sort-popover" hidden' in html
+    assert 'id="boleSortPopover" class="bole-sort-popover" data-mobile-view' not in html
+    assert 'data-bole-sort-mode="score"' in html
+    assert 'data-bole-sort-mode="time"' in html
+    assert 'id="boleFeedbackButton"' in header
+    assert "最近反馈" in header
+    assert 'id="boleWorkbenchOpen"' in header
+    assert "画像" in header
+    assert "为你推荐" not in header
+    assert 'id="boleFeedbackDialog" class="bole-feedback-dialog" hidden' in html
+    assert 'id="boleFeedbackDialog" class="bole-feedback-dialog" data-mobile-view' not in html
+    assert 'id="boleTunePopover" class="bole-tune-popover" hidden' in html
+    assert 'id="boleTunePopover" class="bole-tune-popover" data-mobile-view' not in html
+    assert 'id="boleDraftSuggestionDialog" class="bole-draft-suggestion-dialog" hidden' in html
+    assert 'id="readerFeedbackTrigger" class="reader-feedback-trigger"' in reader
+    assert 'id="readerFeedbackPopover" class="reader-feedback-popover" hidden' in reader
+    assert 'id="readerFeedbackPopover" class="reader-feedback-popover" data-mobile-view' not in html
+    assert 'aria-controls="readerFeedbackPopover"' in reader
+    assert 'class="lucide-icon"' in reader
+    assert 'data-bole-feedback-action="more_like_this"' in reader
+    assert 'data-bole-feedback-action="less_relevant"' in reader
+    assert 'data-bole-feedback-action="not_interested"' in reader
+    assert 'data-bole-feedback-action="more_relevant"' not in reader
+    assert 'id="readerFeedback" class="reader-feedback"' not in reader
+    assert "更相关" not in reader
+    assert "多看类似" not in reader
+    assert "感兴趣" in reader
+    assert 'class="feedback-option positive"' in reader
+    assert 'class="feedback-option negative"' in reader
+    assert 'class="feedback-option negative strong"' in reader
+    assert "feedback-glyph" not in reader
+    assert "画像草稿已保存" not in html
+    assert ".bole-feedback-dialog" in css
+    assert ".bole-sort-popover" in css
+    assert ".bole-tune-popover" in css
+    assert ".reader-feedback-trigger" in css
+    assert ".reader-feedback-popover" in css
+    assert ".feedback-option.positive" in css
+    assert ".feedback-option.negative" in css
+    assert ".bole-draft-suggestion-dialog" in css
+
+
+def test_bole_feedback_uses_dialogs_and_anchored_popover_not_inline_panels():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    row_builder = js[js.index("function buildBoleTimelineRow") : js.index("function renderBolePicks")]
+
+    assert "openBoleSortPopover" in js
+    assert "setBoleSortMode" in js
+    assert "openBoleFeedbackDialog" in js
+    assert "closeBoleFeedbackDialog" in js
+    assert "openBoleTunePopover" in js
+    assert "positionBoleTunePopover" in js
+    assert "toggleReaderFeedbackPopover" in js
+    assert "closeReaderFeedbackPopover" in js
+    assert "getBoundingClientRect()" in js[js.index("function positionBoleTunePopover") :]
+    assert "submitBoleFeedback" in js
+    assert "undoBoleFeedback" in js
+    assert "loadBoleFeedback" in js
+    assert 'apiFetch("/api/personalization/feedback"' in js
+    assert 'apiFetch(`/api/personalization/feedback/${encodeURIComponent(feedbackId)}`' in js
+    assert 'className = "bole-row-tune-button"' in row_builder
+    assert "body.append(meta, title, reason, tune)" in row_builder
+    assert "link.append(time, body)" in row_builder
+    assert "link.append(time, body, tune)" not in row_builder
+    assert 'data-bole-feedback-action="less_relevant"' not in row_builder
+    assert "阅读" not in row_builder
+    assert "readerFeedbackTriggerEl.addEventListener" in js
+    assert "readerFeedbackPopoverEl.addEventListener" in js
+    assert "submitBoleFeedback(button.dataset.boleFeedbackAction, state.readerItem)" in js
+    assert "closeReaderFeedbackPopover();" in js[js.index("async function submitBoleFeedback") :]
+    assert "removeBoleSessionFeedback(localFeedback)" not in js[js.index("async function submitBoleFeedback") : js.index("async function undoBoleFeedback")]
+    assert ".bole-tune-popover {\n  position: fixed;" in css
+    assert ".bole-sort-popover {\n  position: absolute;" in css
+    assert ".bole-feedback-dialog {\n  position: fixed;" in css
+    assert ".reader-feedback-popover {\n  position: absolute;" in css
+    assert ".bole-draft-suggestion-dialog {\n  position: fixed;" in css
+    assert ".bole-row-feedback-panel" not in css
+    assert ".bole-feedback-inline" not in css
+
+
+def test_bole_feedback_draft_suggestion_merges_with_existing_profile_before_save():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "function mergeBoleProfilePatch" in js
+    assert "function baseBoleProfileForSuggestion" in js
+    assert "function currentBoleDraftProfile" in js
+
+    save_body = js[js.index("async function saveBoleDraft") : js.index("async function confirmBoleProfile")]
+    merge_body = js[js.index("function mergeDraftSuggestionIntoWorkbench") : js.index("function feedbackPayloadForItem")]
+    assert "currentBoleDraftProfile()" in save_body
+    assert "baseBoleProfileForSuggestion()" in merge_body
+
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function uniqueBoleProfileEntries");
+        const end = js.indexOf("function closeBoleDraftSuggestionDialog", start);
+        const code = js.slice(start, end)
+          + "\\nresult = mergeBoleProfilePatch(base, patch);";
+        const base = {{
+          positive_interests: [{{ label: "Agent", weight: 0.85, source: "user" }}],
+          negative_interests: [{{ label: "融资", weight: 0.8, source: "user" }}],
+          source_preferences: [{{ source: "OpenAI News", weight: 0.7 }}],
+          behavior_preferences: {{ summary_depth: "concise", verification_strictness: "standard" }}
+        }};
+        const patch = {{
+          positive_interests: [{{ label: "Agent", weight: 0.65, source: "feedback" }}],
+          negative_interests: [{{ label: "营销稿", weight: 0.75, source: "feedback" }}]
+        }};
+        const sandbox = {{ base, patch, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        const positive = sandbox.result.positive_interests.map((item) => item.label).join("|");
+        const negative = sandbox.result.negative_interests.map((item) => item.label).join("|");
+        if (positive !== "Agent") {{
+          throw new Error(`expected deduped positive interests, got ${{positive}}`);
+        }}
+        if (negative !== "融资|营销稿") {{
+          throw new Error(`expected merged negative interests, got ${{negative}}`);
+        }}
+        if (sandbox.result.source_preferences[0].source !== "OpenAI News") {{
+          throw new Error("source preferences should be preserved");
+        }}
+        if (sandbox.result.behavior_preferences.summary_depth !== "concise") {{
+          throw new Error("behavior preferences should be preserved");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_profile_conflict_strategy_resolves_same_label_by_policy():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    assert "function resolveBoleProfilePatchConflict" in js
+    assert "function mergeBoleProfilePatch" in js
+    assert "function applyBoleConflictDecision" in js
+
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function uniqueBoleProfileEntries");
+        const end = js.indexOf("function closeBoleDraftSuggestionDialog", start);
+        const code = js.slice(start, end)
+          + "\\nconst askResult = resolveBoleProfilePatchConflict(basePositive, negativePatch, 'ask');"
+          + "\\nconst lastNegative = mergeBoleProfilePatch(basePositive, negativePatch, {{ conflictStrategy: 'last_decision' }});"
+          + "\\nconst lastPositive = mergeBoleProfilePatch(baseNegative, positivePatch, {{ conflictStrategy: 'last_decision' }});"
+          + "\\nconst userPositive = applyBoleConflictDecision(basePositive, negativePatch, 'positive');"
+          + "\\nconst userIgnore = applyBoleConflictDecision(basePositive, negativePatch, 'ignore');"
+          + "\\nresult = {{ askResult, lastNegative, lastPositive, userPositive, userIgnore }};";
+        const basePositive = {{
+          positive_interests: [{{ label: "Agent", weight: 0.85, source: "user" }}],
+          negative_interests: [{{ label: "融资", weight: 0.8, source: "user" }}]
+        }};
+        const baseNegative = {{
+          positive_interests: [],
+          negative_interests: [{{ label: "Agent", weight: 0.8, source: "user" }}]
+        }};
+        const negativePatch = {{ negative_interests: [{{ label: "Agent", weight: 0.75, source: "feedback" }}] }};
+        const positivePatch = {{ positive_interests: [{{ label: "Agent", weight: 0.7, source: "feedback" }}] }};
+        const sandbox = {{ basePositive, baseNegative, negativePatch, positivePatch, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        const result = sandbox.result;
+        const askConflict = result.askResult.conflicts[0];
+        if (!askConflict || askConflict.label !== "Agent" || askConflict.incoming !== "negative") {{
+          throw new Error(`expected ask conflict for Agent negative patch: ${{JSON.stringify(result.askResult)}}`);
+        }}
+        if (result.askResult.profile.positive_interests.map((item) => item.label).join("|") !== "Agent") {{
+          throw new Error("ask strategy should keep the existing profile until the user decides");
+        }}
+        if (result.askResult.profile.negative_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("ask strategy should not add the conflicting negative label before decision");
+        }}
+        if (result.lastNegative.positive_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("last_decision should remove Agent from positive interests");
+        }}
+        if (!result.lastNegative.negative_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("last_decision should add Agent to negative interests");
+        }}
+        if (!result.lastPositive.positive_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("last_decision should add Agent back to positive interests");
+        }}
+        if (result.lastPositive.negative_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("last_decision should remove Agent from negative interests");
+        }}
+        if (!result.userPositive.positive_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("positive user decision should keep Agent positive");
+        }}
+        if (result.userPositive.negative_interests.map((item) => item.label).includes("Agent")) {{
+          throw new Error("positive user decision should not leave Agent negative");
+        }}
+        if (result.userIgnore.positive_interests.map((item) => item.label).join("|") !== "Agent") {{
+          throw new Error("ignore decision should keep existing positive profile");
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_last_decision_conflict_path_persists_without_dialog():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    last_decision_branch = js[
+        js.index('if (state.boleConflictStrategy === "last_decision")') :
+        js.index("openBoleProfileConflictDialog", js.index('if (state.boleConflictStrategy === "last_decision")'))
+    ]
+    assert "openBoleProfileConflictDialog" not in last_decision_branch
+    assert "applyResolvedBoleProfile(conflict.profile, { persist: true })" in last_decision_branch
+
+    apply_resolved_body = js[
+        js.index("async function applyResolvedBoleProfile") :
+        js.index("function openBoleProfileConflictDialog")
+    ]
+    assert 'apiFetch("/api/personalization/draft"' in apply_resolved_body
+    assert 'apiFetch("/api/personalization/confirm"' in apply_resolved_body
+    # Static/offline guard: optimistic local render and the persist/apiBaseUrl
+    # early return must come before any backend write, so a no-backend reader and
+    # a non-persisting caller never hit personalization APIs.
+    guard_index = apply_resolved_body.index("if (!options.persist || !apiBaseUrl) return;")
+    assert guard_index < apply_resolved_body.index('apiFetch("/api/personalization/draft"')
+    assert apply_resolved_body.index("renderBolePicks();") < guard_index
+
+
+def test_bole_manual_conflict_decision_persists_selected_direction():
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+
+    handler_body = js[
+        js.index("function handleBoleProfileConflictDecision") :
+        js.index("function feedbackPayloadForItem")
+    ]
+    assert "applyBoleConflictDecision" in handler_body
+    assert "applyResolvedBoleProfile(profile, { persist: true })" in handler_body
+    ignore_branch = handler_body[
+        handler_body.index('if (decision === "ignore")') :
+        handler_body.index("const profile = applyBoleConflictDecision")
+    ]
+    assert "applyResolvedBoleProfile" not in ignore_branch
+
+
+def test_bole_conflict_dialog_has_no_selected_pill_badge():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="boleProfileConflictDialog" class="bole-profile-conflict-dialog" hidden' in html
+    assert "data-bole-conflict-decision=\"positive\"" in html
+    assert "data-bole-conflict-decision=\"negative\"" in html
+    assert "data-bole-conflict-decision=\"ignore\"" in html
+    conflict_css = css[css.index(".bole-profile-conflict-dialog {") :]
+    assert "已选" not in conflict_css
+    assert "border-radius: 999px" not in conflict_css[: conflict_css.index(".bole-profile-conflict-result")]
+
+
+def test_bole_conflict_dialog_mobile_layout_is_sheet_not_cramped_columns():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+
+    assert 'id="boleProfileConflictDialog" class="bole-profile-conflict-dialog" hidden' in html
+    assert 'id="boleProfileConflictDialog" class="bole-profile-conflict-dialog" data-mobile-view' not in html
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+    assert ".bole-profile-conflict-dialog {" in mobile_css
+    assert ".bole-profile-conflict-panel {" in mobile_css
+    assert ".bole-profile-conflict-sources," in mobile_css
+    assert ".bole-profile-conflict-actions {" in mobile_css
+    conflict_mobile = mobile_css[mobile_css.index(".bole-profile-conflict-dialog {") :]
+    assert "place-items: end center;" in conflict_mobile[:260]
+    assert "grid-template-columns: 1fr;" in conflict_mobile
+
+
+def test_bole_mobile_tune_button_stays_beside_item_body_not_time_column():
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+    row_rule = mobile_css[
+        mobile_css.index(".bole-compact-list .bole-row {") :
+        mobile_css.index(".bole-compact-list .bole-row::before")
+    ]
+    time_rule = mobile_css[
+        mobile_css.index(".bole-compact-list .bole-row-time {") :
+        mobile_css.index(".bole-compact-list .bole-row-body")
+    ]
+    body_rule = mobile_css[
+        mobile_css.index(".bole-compact-list .bole-row-body {") :
+        mobile_css.index(".bole-compact-list .bole-row-tune-button")
+    ]
+    tune_rule = mobile_css[
+        mobile_css.index(".bole-compact-list .bole-row-tune-button {") :
+        mobile_css.index(".bole-lead-card", mobile_css.index(".bole-compact-list .bole-row-tune-button"))
+    ]
+
+    assert "grid-template-columns: 1fr;" in row_rule
+    assert "grid-column: 1 / -1;" in time_rule
+    assert "grid-column: 1;" in body_rule
+    assert "position: absolute;" in tune_rule
+    assert "top: 8px;" in tune_rule
+    assert "right: 8px;" in tune_rule
+
+
+def test_bole_session_feedback_promotes_and_downranks_without_url_path_noise():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nrecordBoleSessionFeedback({{ action: 'more_like_this', item: items[1] }});"
+          + "\\nrecordBoleSessionFeedback({{ action: 'not_interested', item: items[2] }});"
+          + "\\nresult = pickBoleItems(items).map((row) => ({{ title: row.item.title, score: row.score, reason: boleReasonText(row) }}));";
+        const items = [
+          {{
+            id: "generic",
+            title: "Generic AI market update",
+            site_name: "TechURLs",
+            source: "Source A",
+            priority_score: 0.94,
+            published_at: "2026-06-18T10:00:00Z"
+          }},
+          {{
+            id: "agent-runtime",
+            title: "Agent runtime reaches production teams",
+            site_name: "TechURLs",
+            source: "Source B",
+            priority_score: 0.74,
+            published_at: "2026-06-18T09:00:00Z"
+          }},
+          {{
+            id: "insurance",
+            title: "Insurance market update",
+            site_name: "Business Wire",
+            source: "Source C",
+            url: "https://example.com/agent-ai-launch?topic=agent",
+            priority_score: 0.90,
+            published_at: "2026-06-18T08:00:00Z"
+          }}
+        ];
+        const sandbox = {{
+          items,
+          state: {{
+            generatedAt: "2026-06-19T00:00:00Z",
+            personalizationStatus: null,
+            boleFeedbackByKey: new Map()
+          }},
+          result: null
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result[0].title !== "Agent runtime reaches production teams") {{
+          throw new Error(`expected positive feedback winner, got ${{sandbox.result[0].title}}`);
+        }}
+        const insurance = sandbox.result.find((row) => row.title === "Insurance market update");
+        if (!insurance || !insurance.reason.includes("已按反馈降权")) {{
+          throw new Error(`expected explicit feedback downrank, got ${{insurance && insurance.reason}}`);
+        }}
+        if (insurance.reason.includes("符合您的画像")) {{
+          throw new Error(`URL path should not create a profile match: ${{insurance.reason}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_feedback_api_failure_keeps_session_feedback_visible():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("async function undoBoleFeedback", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const document = {{ createElement() {{ return {{ className: '', textContent: '', dataset: {{}}, append() {{}}, appendChild() {{}} }}; }} }};\\n"
+          + "const boleFeedbackListEl = {{ innerHTML: '', appendChild() {{}} }};\\n"
+          + "const bolePicksListEl = null;\\n"
+          + "const bolePicksMetaEl = null;\\n"
+          + "const readerFeedbackPopoverEl = null;\\n"
+          + "const boleTunePopoverEl = null;\\n"
+          + "function renderBolePicks() {{ picksRendered += 1; }}\\n"
+          + "function openBoleDraftSuggestionDialog() {{ throw new Error('should not open draft suggestion'); }}\\n"
+          + "const apiBaseUrl = 'https://api.example.test';\\n"
+          + "async function apiFetch() {{ throw new Error('unauthorized'); }}\\n"
+          + js.slice(start, end)
+          + "\\nresultPromise = submitBoleFeedback('not_interested', item);";
+        const item = {{
+          id: "agent-story",
+          title: "Agent story",
+          site_name: "TechURLs",
+          source: "Source A",
+          priority_score: 0.7,
+          published_at: "2026-06-18T10:00:00Z"
+        }};
+        const sandbox = {{
+          item,
+          state: {{ boleFeedbackItems: [], boleFeedbackByKey: new Map() }},
+          picksRendered: 0,
+          readerClosed: 0,
+          tuneClosed: 0,
+          resultPromise: null
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        sandbox.resultPromise.then((result) => {{
+          if (!result || result.action !== "not_interested") {{
+            throw new Error(`expected local feedback result, got ${{JSON.stringify(result)}}`);
+          }}
+          if (sandbox.state.boleFeedbackItems.length !== 1) {{
+            throw new Error(`expected session feedback to remain visible, got ${{sandbox.state.boleFeedbackItems.length}}`);
+          }}
+        }});
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_feedback_undo_removes_local_and_failed_api_records():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function scorePercent", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const document = {{ createElement() {{ return {{ className: '', textContent: '', dataset: {{}}, append() {{}}, appendChild() {{}} }}; }} }};\\n"
+          + "const boleFeedbackListEl = null;\\n"
+          + "const bolePicksListEl = null;\\n"
+          + "const bolePicksMetaEl = null;\\n"
+          + "const apiBaseUrl = 'https://api.example.test';\\n"
+          + "let deleteCalls = 0;\\n"
+          + "async function apiFetch(path, options) {{ deleteCalls += 1; throw new Error('offline'); }}\\n"
+          + "function renderBolePicks() {{ picksRendered += 1; }}\\n"
+          + js.slice(start, end)
+          + "\\n(async () => {{"
+          + "\\n  const local = recordBoleSessionFeedback({{ action: 'not_interested', item, created_at: '2026-06-23T12:00:00Z' }});"
+          + "\\n  state.boleFeedbackItems = [local];"
+          + "\\n  await undoBoleFeedback(local.id);"
+          + "\\n  const afterLocal = {{ id: local.id, length: state.boleFeedbackItems.length, byKey: state.boleFeedbackByKey.size, deleteCalls }};"
+          + "\\n  const server = recordBoleSessionFeedback({{ id: 42, action: 'less_relevant', item, created_at: '2026-06-23T12:01:00Z' }});"
+          + "\\n  state.boleFeedbackItems = [server];"
+          + "\\n  await undoBoleFeedback('42');"
+          + "\\n  result = {{ afterLocal, afterServer: {{ length: state.boleFeedbackItems.length, byKey: state.boleFeedbackByKey.size, deleteCalls }} }};"
+          + "\\n}})();";
+        const item = {{
+          id: "agent-story",
+          title: "Agent story",
+          site_name: "TechURLs",
+          source: "Source A",
+          priority_score: 0.7,
+          published_at: "2026-06-18T10:00:00Z"
+        }};
+        const sandbox = {{
+          item,
+          state: {{ boleFeedbackItems: [], boleFeedbackByKey: new Map(), boleFeedbackUndoTombstones: new Set() }},
+          picksRendered: 0,
+          result: null
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        setTimeout(() => {{
+          const {{ afterLocal, afterServer }} = sandbox.result || {{}};
+          if (!afterLocal?.id) {{
+            throw new Error(`local feedback needs stable undo id, got ${{JSON.stringify(afterLocal)}}`);
+          }}
+          if (afterLocal.length !== 0 || afterLocal.byKey !== 0) {{
+            throw new Error(`local undo did not remove feedback: ${{JSON.stringify(afterLocal)}}`);
+          }}
+          if (afterLocal.deleteCalls !== 0) {{
+            throw new Error(`local undo should not call backend delete: ${{JSON.stringify(afterLocal)}}`);
+          }}
+          if (afterServer.length !== 0 || afterServer.byKey !== 0 || afterServer.deleteCalls !== 1) {{
+            throw new Error(`failed API delete should stay undone in this session: ${{JSON.stringify(afterServer)}}`);
+          }}
+        }}, 0);
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_feedback_history_shows_time_target_filters_search_and_sorting():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    dialog = html[html.index('id="boleFeedbackDialog"') : html.index('id="boleTunePopover"')]
+
+    assert 'id="boleFeedbackSearch"' in dialog
+    assert 'id="boleFeedbackTopicFilter"' in dialog
+    assert 'id="boleFeedbackActionFilter"' in dialog
+    assert 'id="boleFeedbackSortSelect"' in dialog
+    assert 'id="boleFeedbackActionOrder"' in dialog
+    assert 'id="boleFeedbackDialog" class="bole-feedback-dialog" data-mobile-view' not in html
+    assert "boleFeedbackVisibleItems" in js
+    assert "boleFeedbackTargetLabel" in js
+    assert "boleFeedbackTopicOptions" in js
+    assert "formatBoleFeedbackTime" in js
+    assert "setBoleFeedbackFilter" in js
+    assert "moveBoleFeedbackActionOrder" in js
+    assert ".bole-feedback-tools" in css
+    assert ".bole-feedback-action-order" in css
+    lucide_rule = css[css.index(".lucide-icon {") : css.index(".feedback-caret", css.index(".lucide-icon {"))]
+    assert "overflow: visible;" in lucide_rule
+    mobile_css = css[css.index("@media (max-width: 760px)") :]
+    assert ".bole-feedback-tools" in mobile_css
+    assert ".bole-feedback-panel" in mobile_css
+
+
+def test_bole_feedback_positive_thumb_icons_have_svg_padding_against_clipping():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/styles.css").read_text(encoding="utf-8")
+    reader = html[html.index('id="readerFeedbackPopover"') : html.index('data-bole-feedback-action="less_relevant"')]
+    feedback_render = js[js.index("function renderBoleFeedbackList()") : js.index("function syncBoleFeedbackFilterControls()")]
+
+    padded_thumb_svg = 'class="lucide-icon feedback-thumb-icon" viewBox="-1 -1 26 26"'
+    assert padded_thumb_svg in reader
+    assert padded_thumb_svg in feedback_render
+    assert ".bole-feedback-row .mark .feedback-thumb-icon" in css
+    assert ".feedback-option .mark .feedback-thumb-icon" in css
+
+
+def test_bole_feedback_history_filtering_sorting_and_target_inference_ignores_url_noise():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function scorePercent", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + js.slice(start, end)
+          + "\\nstate.boleFeedbackItems = feedback.map(recordBoleSessionFeedback);"
+          + "\\nconst display = state.boleFeedbackItems.map((item) => ({{ action: item.action, target: boleFeedbackTargetLabel(item), time: formatBoleFeedbackTime(item.created_at) }}));"
+          + "\\nconst topicOptions = boleFeedbackTopicOptions();"
+          + "\\nstate.boleFeedbackFilters.query = 'code';"
+          + "\\nconst searchTitles = boleFeedbackVisibleItems().map((item) => item.item.title);"
+          + "\\nstate.boleFeedbackFilters.query = '';"
+          + "\\nstate.boleFeedbackFilters.topic = 'Agent';"
+          + "\\nconst topicTargets = boleFeedbackVisibleItems().map(boleFeedbackTargetLabel);"
+          + "\\nstate.boleFeedbackFilters.topic = '';"
+          + "\\nstate.boleFeedbackFilters.action = 'not_interested';"
+          + "\\nconst actionLabels = boleFeedbackVisibleItems().map((item) => item.action);"
+          + "\\nstate.boleFeedbackFilters.action = '';"
+          + "\\nstate.boleFeedbackFilters.sort = 'topic';"
+          + "\\nconst topicOrder = boleFeedbackVisibleItems().map(boleFeedbackTargetLabel);"
+          + "\\nstate.boleFeedbackFilters.sort = 'action';"
+          + "\\nstate.boleFeedbackFilters.actionOrder = ['not_interested', 'more_like_this', 'less_relevant'];"
+          + "\\nconst actionOrder = boleFeedbackVisibleItems().map((item) => item.action);"
+          + "\\nresult = {{ display, topicOptions, searchTitles, topicTargets, actionLabels, topicOrder, actionOrder }};";
+        const feedback = [
+          {{
+            action: "less_relevant",
+            created_at: "2026-06-23T12:00:00Z",
+            item: {{
+              id: "agent-runtime",
+              title: "Agent runtime reaches production teams",
+              summary: "Tool-use controls for agents",
+              site_name: "OpenAI Developers",
+              source: "Official",
+              ai_signals: ["Agent", "官方更新"]
+            }}
+          }},
+          {{
+            action: "more_like_this",
+            created_at: "2026-06-23T11:00:00Z",
+            item: {{
+              id: "code-ai",
+              title: "Code AI benchmark tracks repository edits",
+              summary: "Evaluation for coding agents",
+              site_name: "GitHub",
+              source: "Trending",
+              ai_signals: ["Code AI"]
+            }}
+          }},
+          {{
+            action: "not_interested",
+            created_at: "2026-06-23T10:00:00Z",
+            item: {{
+              id: "funding",
+              title: "AI startup funding roundup",
+              summary: "Late-stage financing news",
+              site_name: "Business Wire",
+              source: "Newswire",
+              ai_signals: ["融资"]
+            }}
+          }},
+          {{
+            action: "less_relevant",
+            created_at: "2026-06-23T09:00:00Z",
+            item: {{
+              id: "insurance",
+              title: "Insurance market update",
+              summary: "Agency channel news",
+              site_name: "Business Wire",
+              source: "Newswire",
+              url: "https://example.com/agent-ai-launch?topic=agent"
+            }}
+          }}
+        ];
+        const sandbox = {{
+          feedback,
+          state: {{
+            boleFeedbackItems: [],
+            boleFeedbackByKey: new Map(),
+            boleFeedbackUndoTombstones: new Set(),
+            boleFeedbackFilters: {{
+              query: "",
+              topic: "",
+              action: "",
+              sort: "time",
+              actionOrder: ["more_like_this", "less_relevant", "not_interested"]
+            }}
+          }},
+          result: null
+        }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        const result = sandbox.result;
+        const agent = result.display.find((item) => item.action === "less_relevant" && item.target === "Agent");
+    if (!agent || !agent.time.includes("06-23") || !agent.time.includes(":")) {{
+      throw new Error(`expected target and time in display data: ${{JSON.stringify(result.display)}}`);
+    }}
+        const urlNoise = result.display.find((item) => item.action === "less_relevant" && item.target !== "Agent");
+    if (!urlNoise || urlNoise.target !== "整条新闻") {{
+      throw new Error(`URL path must not infer Agent target: ${{JSON.stringify(result.display)}}`);
+    }}
+    if (result.topicOptions.includes("这条新闻") || result.topicOptions.includes("整条新闻")) {{
+      throw new Error(`generic item scope must not appear as a topic filter: ${{JSON.stringify(result.topicOptions)}}`);
+    }}
+        if (result.searchTitles.length !== 1 || !result.searchTitles[0].includes("Code AI")) {{
+          throw new Error(`search failed: ${{JSON.stringify(result.searchTitles)}}`);
+        }}
+        if (result.topicTargets.length !== 1 || result.topicTargets[0] !== "Agent") {{
+          throw new Error(`topic filter failed: ${{JSON.stringify(result.topicTargets)}}`);
+        }}
+        if (result.actionLabels.length !== 1 || result.actionLabels[0] !== "not_interested") {{
+          throw new Error(`action filter failed: ${{JSON.stringify(result.actionLabels)}}`);
+        }}
+        if (result.topicOrder.slice(0, 3).join("|") !== "Agent|Code AI|融资") {{
+          throw new Error(`topic sort should use pinyin/latin initials: ${{JSON.stringify(result.topicOrder)}}`);
+        }}
+        if (result.actionOrder[0] !== "not_interested") {{
+          throw new Error(`custom action sort failed: ${{JSON.stringify(result.actionOrder)}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_feedback_target_uses_ai_entity_for_curated_hotlist_items():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function uniqueBolePickStrings", start);
+        const code = "const state = {{ boleFeedbackByKey: new Map(), boleFeedbackUndoTombstones: new Set() }};\\n"
+          + js.slice(start, end)
+          + "\\nresult = boleFeedbackTargetLabel({{ action: 'more_like_this', item }});";
+        const item = {{
+          id: "zeli-openai-movie",
+          title: "Amazon drops Sam Altman movie after announcing OpenAI partnership",
+          title_en: "Amazon drops Sam Altman movie after announcing OpenAI partnership",
+          title_zh: "亚马逊在宣布与OpenAI合作后，撤下萨姆·阿尔特曼的传记电影",
+          summary: "",
+          site_name: "Zeli",
+          source: "Hacker News · 24h最热",
+          ai_label: "curated_hotlist",
+          ai_signals: ["zeli_24h_hot"],
+          url: "https://example.com/path/agent-noise"
+        }};
+        const sandbox = {{ item, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result !== "OpenAI") {{
+          throw new Error(`expected OpenAI target, got ${{sandbox.result}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_feedback_payload_keeps_primary_target_and_matched_targets():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function scorePercent", start);
+        const code = "const state = {{ boleFeedbackByKey: new Map(), boleFeedbackUndoTombstones: new Set() }};\\n"
+          + js.slice(start, end)
+          + "\\nconst payload = feedbackPayloadForItem('more_like_this', item);"
+          + "\\nconst searchable = boleFeedbackSearchText({{ action: 'more_like_this', item: {{ title: 'OpenAI partnership update', feedback_target: payload.item.feedback_target, matched_targets: payload.item.matched_targets }} }});"
+          + "\\nresult = {{ target: payload.item.feedback_target, matched: payload.item.matched_targets, searchable }};";
+        const item = {{
+          id: "zeli-openai-movie",
+          title: "Amazon drops Sam Altman movie after announcing OpenAI partnership",
+          title_en: "Amazon drops Sam Altman movie after announcing OpenAI partnership",
+          title_zh: "亚马逊在宣布与OpenAI合作后，撤下萨姆·阿尔特曼的传记电影",
+          summary: "",
+          site_name: "Zeli",
+          source: "Hacker News · 24h最热",
+          ai_label: "curated_hotlist",
+          ai_signals: ["zeli_24h_hot"],
+          url: "https://example.com/path/agent-noise"
+        }};
+        const sandbox = {{ item, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result.target !== "OpenAI") {{
+          throw new Error(`expected primary target OpenAI, got ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        const joined = (sandbox.result.matched || []).join("|");
+        if (joined !== "OpenAI|Amazon") {{
+          throw new Error(`expected multi-target context without URL noise, got ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        if (!sandbox.result.searchable.includes("amazon")) {{
+          throw new Error(`secondary target should be searchable: ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
+
+
+def test_bole_events_merge_same_english_title_despite_chinese_translation_variants_and_keep_target():
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+        const js = fs.readFileSync({str(ROOT / "assets/app.js")!r}, "utf8");
+        const start = js.indexOf("function itemTitleText");
+        const end = js.indexOf("function buildBoleLead", start);
+        const code = "function fmtTime() {{ return ''; }}\\n"
+          + "const state = {{ generatedAt: '2026-06-20T13:56:43Z', personalizationStatus: null, boleFeedbackByKey: new Map(), boleFeedbackUndoTombstones: new Set() }};\\n"
+          + "const BOLE_PICK_LIMIT = 10;\\n"
+          + js.slice(start, end)
+          + "\\nconst picks = pickBoleItems(items);"
+          + "\\nresult = picks.map((row) => ({{ title: row.item.title, mergedCount: row.mergedCount, target: boleFeedbackTargetLabel({{ action: 'more_like_this', item: row.item }}), payloadTarget: feedbackPayloadForItem('more_like_this', row.item).item.feedback_target, signals: row.sourceSignals }}));";
+        const englishTitle = "Amazon drops Sam Altman movie after announcing OpenAI partnership";
+        const items = [
+          {{
+            id: "newsnow-openai-movie",
+            site_id: "newsnow",
+            site_name: "NewsNow",
+            source: "hackernews",
+            title: englishTitle,
+            title_original: englishTitle,
+            title_en: englishTitle,
+            title_zh: "亚马逊在宣布与 OpenAI 合作后放弃了山姆·奥特曼电影",
+            published_at: "2026-06-19T21:40:15Z",
+            priority_score: 0.71,
+            ai_label: "ai_product_update",
+            ai_signals: ["openai"]
+          }},
+          {{
+            id: "zeli-openai-movie",
+            site_id: "zeli",
+            site_name: "Zeli",
+            source: "Hacker News · 24h最热",
+            title: englishTitle,
+            title_original: englishTitle,
+            title_en: englishTitle,
+            title_zh: "亚马逊在宣布与OpenAI合作后，撤下萨姆·阿尔特曼的传记电影",
+            published_at: "2026-06-19T20:03:16Z",
+            priority_score: 0.71,
+            ai_label: "curated_hotlist",
+            ai_signals: ["zeli_24h_hot"]
+          }}
+        ];
+        const sandbox = {{ items, result: null }};
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        if (sandbox.result.length !== 1) {{
+          throw new Error(`expected one merged event, got ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        if (sandbox.result[0].mergedCount !== 2 || sandbox.result[0].target !== "OpenAI" || sandbox.result[0].payloadTarget !== "OpenAI") {{
+          throw new Error(`expected merged OpenAI target, got ${{JSON.stringify(sandbox.result)}}`);
+        }}
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True, cwd=ROOT)
 
 
 def test_deep_verify_preserves_item_metadata_in_verification_payload():

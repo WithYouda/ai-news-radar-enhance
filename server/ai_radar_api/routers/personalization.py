@@ -11,8 +11,11 @@ from ..ai_profiles import get_ai_profile_for_use
 from ..config import AppConfig
 from ..personalization import (
     confirm_profile_draft,
+    delete_recommendation_feedback,
     disable_personalization,
     get_personalization_status,
+    list_recommendation_feedback,
+    record_recommendation_feedback,
     reset_personalization,
     save_profile_draft,
     skip_personalization,
@@ -32,6 +35,12 @@ class ProfileInterpretRequest(BaseModel):
     answer_text: str = ""
     selected_choices: list[str] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class FeedbackRequest(BaseModel):
+    action: str
+    item: Any = Field(default_factory=dict)
+    reason: str = ""
 
 
 def _unique_labels(values: Any, limit: int = 8) -> list[str]:
@@ -156,5 +165,25 @@ def build_personalization_router(config: AppConfig, require_session: Callable[..
     def disable_profile(session: dict = Depends(require_session)) -> dict:
         del session
         return disable_personalization(config.db_path)
+
+    @router.get("/api/personalization/feedback")
+    def recommendation_feedback(session: dict = Depends(require_session)) -> dict:
+        del session
+        return list_recommendation_feedback(config.db_path)
+
+    @router.post("/api/personalization/feedback")
+    def create_recommendation_feedback(payload: FeedbackRequest, session: dict = Depends(require_session)) -> dict:
+        del session
+        try:
+            return record_recommendation_feedback(config.db_path, payload.action, payload.item, payload.reason)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.delete("/api/personalization/feedback/{feedback_id}")
+    def remove_recommendation_feedback(feedback_id: int, session: dict = Depends(require_session)) -> dict:
+        del session
+        if not delete_recommendation_feedback(config.db_path, feedback_id):
+            raise HTTPException(status_code=404, detail="feedback not found")
+        return {"ok": True}
 
     return router

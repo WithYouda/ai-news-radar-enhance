@@ -32,6 +32,21 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
 - Iron law: for any UI design or layout change, offer and use the visual
   companion workflow before implementation so the user can inspect mockups or
   previews instead of judging from text alone.
+- Iron law: visual companion previews for production UI must be production-faithful
+  and fully interactive for the workflow being reviewed. Do not show a static,
+  partial, or semi-interactive mockup when the real feature depends on tabs,
+  choices, side panels, deletion, save/continue/skip actions, animation, or
+  responsive state. Before presenting a preview, agents must click through the
+  same controls a user will rely on and verify that visible state updates match
+  the intended production behavior.
+- Iron law: visual companion previews must be drawn on top of the already
+  implemented UI surface unless the user explicitly asks for a large redesign.
+  If the user asks for a dialog, drawer, feedback control, or interaction inside
+  an existing page, simulate the real surrounding page, layout constraints,
+  entry points, row/card clicks, and motion. Do not invent detached panels,
+  reserve large empty space for collapsed controls, add redundant buttons for an
+  action that the current UI already supports, or replace established interaction
+  patterns without explicit approval.
 - Iron law: reader-facing UI and visual companion mockups must stay concise.
   Do not add filler explanations, duplicated guidance, or decorative text that
   does not help the user make a decision or complete the workflow. Responsive
@@ -45,6 +60,18 @@ GitHub Actions refresh jobs, and GitHub Pages publishing.
   decorative details, or explanatory copy that the user did not explicitly ask
   for or clearly imply. If the intent is ambiguous, ask a concise clarification
   instead of inventing extra UI.
+- Iron law: for reader-facing icons and visual assets, search for suitable
+  mature assets first and prefer the project's existing icon system or proven
+  open-source icon libraries. Only hand-draw icons or visual elements when the
+  user explicitly asks for custom drawing or no suitable mature asset can be
+  found.
+- Iron law: do not blindly mirror every user idea as implementation. Treat user
+  ideas as product input, evaluate whether they solve the real workflow, and
+  give practical pushback or a better recommendation when appropriate. During
+  planning, actively ask whether a simpler, clearer, or more durable approach
+  exists. After the user confirms a direction, execute it decisively; stop to
+  re-evaluate only when implementation reveals a material constraint or risk
+  that was not visible during planning.
 - Iron law: any user-customizable capability must have a corresponding
   reader-facing, highly readable setting inside the app. Do not add hidden-only
   customization through environment variables, code constants, undocumented
