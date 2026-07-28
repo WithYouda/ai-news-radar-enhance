@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-07-28T13:19:58.709604Z",
+  "generated_at": "2026-07-28T15:54:07.109101Z",
   "timezone": "Asia/Shanghai",
   "root_url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview",
   "history_url": "https://waytoagi.feishu.cn/wiki/FjiOwWp2giA7hRk6jjfcPioCnAc",
   "window_days": 7,
   "latest_date": "2026-07-28",
-  "count_today": 2,
+  "count_today": 3,
   "updates_today": [
     {
       "date": "2026-07-28",
@@ -14,15 +14,25 @@
     },
     {
       "date": "2026-07-28",
+      "title": "Agent 技术现在太多了：Harness框架、MCP、Skills、浏览器、桌面宿主、一眼看过去很容易乱。如果你也有这个烦恼，这篇文章或许会帮助到你。作者讲清了Prompt、Context、Loop、Graph、Skill、Harness的边界，也拆解了 Goal、Memory、Subagent、Handoff这些关键模块该怎么设计。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-07-28",
       "title": "22,580，这是 2019 年的 GPT-2 能装进 2026 年 Kimi K3 的数量。七年间，模型规模放大了 22,580 倍。但这段演进真的只是“堆参数”吗？这篇文章沿着 GPT-2、线性注意力、DeltaNet、Gated Delta Net、Kimi Linear 到 Kimi K3 的路径，看看模型架构到底改变了什么，又有哪些核心问题始终没有消失。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     }
   ],
-  "count_7d": 39,
+  "count_7d": 40,
   "updates_7d": [
     {
       "date": "2026-07-28",
       "title": "猫叔整理了 500 个可拆分、可组合、可本地化改写的欧美短剧情节模板。一半保持强情感商业性，另一半用于拓展更符合欧美长线审美的类型混合与人物复杂度。如果你也在做海外短剧，没灵感时可以借鉴下！",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-07-28",
+      "title": "Agent 技术现在太多了：Harness框架、MCP、Skills、浏览器、桌面宿主、一眼看过去很容易乱。如果你也有这个烦恼，这篇文章或许会帮助到你。作者讲清了Prompt、Context、Loop、Graph、Skill、Harness的边界，也拆解了 Goal、Memory、Subagent、Handoff这些关键模块该怎么设计。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
