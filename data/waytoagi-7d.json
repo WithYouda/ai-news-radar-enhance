@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-10-19T01:22:50.653481Z",
+  "generated_at": "2026-10-19T06:54:28.924145Z",
   "timezone": "Asia/Shanghai",
   "root_url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview",
   "history_url": "https://waytoagi.feishu.cn/wiki/FjiOwWp2giA7hRk6jjfcPioCnAc",
   "window_days": 7,
   "latest_date": "2026-10-18",
-  "count_today": 4,
+  "count_today": 5,
   "updates_today": [
     {
       "date": "2026-10-18",
@@ -19,7 +19,12 @@
     },
     {
       "date": "2026-10-18",
-      "title": "《",
+      "title": "想搭建可复用的AI视频生产流水线？这份指南介绍了依托Claude Opus 5.5打造单智能体动效工作室的思路，也就是动态工程。智能体分导演、美术、动画、渲染、审片五大角色，搭配Remotion生成代码动画。依靠分层审批、预览校验、局部迭代修复，产出多版本适配视频，整套流程可封装成Skill持续沉淀，持续积累可复用的动效资产。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-10-18",
+      "title": "作者这篇合集囊括了本周AI领域的实用落地技巧与前沿研究。既有 Grok Bot 搭建的实操经验，也有 ATAS 视频智能体、OmniCompass 评测基准等论文成果，剖析大模型时空感知短板。文中还包含强化学习能力迁移，以及 Kimi K3 解码提速 1.5—2 倍的工程实践。想快速补齐本周 AI 进展，可以从这期开始。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
@@ -28,7 +33,7 @@
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     }
   ],
-  "count_7d": 32,
+  "count_7d": 33,
   "updates_7d": [
     {
       "date": "2026-10-18",
@@ -42,7 +47,12 @@
     },
     {
       "date": "2026-10-18",
-      "title": "《",
+      "title": "想搭建可复用的AI视频生产流水线？这份指南介绍了依托Claude Opus 5.5打造单智能体动效工作室的思路，也就是动态工程。智能体分导演、美术、动画、渲染、审片五大角色，搭配Remotion生成代码动画。依靠分层审批、预览校验、局部迭代修复，产出多版本适配视频，整套流程可封装成Skill持续沉淀，持续积累可复用的动效资产。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-10-18",
+      "title": "作者这篇合集囊括了本周AI领域的实用落地技巧与前沿研究。既有 Grok Bot 搭建的实操经验，也有 ATAS 视频智能体、OmniCompass 评测基准等论文成果，剖析大模型时空感知短板。文中还包含强化学习能力迁移，以及 Kimi K3 解码提速 1.5—2 倍的工程实践。想快速补齐本周 AI 进展，可以从这期开始。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
