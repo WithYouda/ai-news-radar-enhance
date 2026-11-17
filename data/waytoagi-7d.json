@@ -1,15 +1,40 @@
 {
-  "generated_at": "2026-11-16T17:28:48.940659Z",
+  "generated_at": "2026-11-17T01:05:40.028155Z",
   "timezone": "Asia/Shanghai",
   "root_url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview",
   "history_url": "https://waytoagi.feishu.cn/wiki/FjiOwWp2giA7hRk6jjfcPioCnAc",
   "window_days": 7,
   "latest_date": "2026-11-16",
-  "count_today": 2,
+  "count_today": 7,
   "updates_today": [
     {
       "date": "2026-11-16",
+      "title": "豆包工作上新多模型消费倍率机制，DeepSeek V4.1 Flash限时低至0.01倍额度，低成本兼顾速度与效果。梦飞实测过程中发现它独立完成可交互3D沙盘、品牌提案PPT、水下滚动演示等高复杂度任务，整体消耗极低，签到的额度就足以覆盖。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "自媒体博主麦当开源了一套面向多平台创作者的自动化运营方案，帮你告别跨平台分发、数据分散的麻烦。它聚合了多平台数据，支持同期播放对比、流量转化漏斗复盘，直观判断渠道价值。此外还支持一行命令快速部署，可对接独立站、付费产品，适合想搭建低成本自动化内容运营链路的创作者。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "不少人长期用AI做项目都会卡在上下文丢失：换对话就要反复交代背景，AI还会反复拿出早已否决的方案。作者转变文档思路，把AI视作文档读者，借鉴软件工程规范搭建分层目录，靠README、规则文件、决策归档区分有效方案与废弃版本。文中还给出了可直接使用的整理提示词，帮你把存量项目梳理成AI能读懂的结构，大幅减少重复沟通，搭建可长期运转的AI项目工作流。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
       "title": "《AI 工具站 SEO 小册子：图解入门》——从认知到基建，从内容到外链，再到规模化与增长复盘。全书按实际执行顺序展开，可以从头读到尾，也可以在遇到问题时直接翻对应章节。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "AI音乐赛道这周风波不断，版权诉讼持续拉扯，Suno当庭质疑老牌唱片合约缺少AI训练授权，高额索赔持续加码。多款生产力工具更新落地，ACE人声模型拿下盲测榜首，Suno Bridge、Mirelo插件无缝对接专业剪辑编曲软件。韩流AI曲目登顶主流榜单却卡在版税确权，SIQA搭建独立AI音乐奖项生态，还有8篇前沿论文，可以帮创作者看清合规红线、快速挑选趁手工具。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "AI时代真正的瓶颈在于注意力与Token消耗，卡尔把Anthropic常驻Agent设计思路转化为了通用提示词。最后实测大幅减少了无效调用，直接省下55%使用额度，给多Personal Agent使用者一套低成本控费方案。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
@@ -18,11 +43,36 @@
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     }
   ],
-  "count_7d": 32,
+  "count_7d": 37,
   "updates_7d": [
     {
       "date": "2026-11-16",
+      "title": "豆包工作上新多模型消费倍率机制，DeepSeek V4.1 Flash限时低至0.01倍额度，低成本兼顾速度与效果。梦飞实测过程中发现它独立完成可交互3D沙盘、品牌提案PPT、水下滚动演示等高复杂度任务，整体消耗极低，签到的额度就足以覆盖。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "自媒体博主麦当开源了一套面向多平台创作者的自动化运营方案，帮你告别跨平台分发、数据分散的麻烦。它聚合了多平台数据，支持同期播放对比、流量转化漏斗复盘，直观判断渠道价值。此外还支持一行命令快速部署，可对接独立站、付费产品，适合想搭建低成本自动化内容运营链路的创作者。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "不少人长期用AI做项目都会卡在上下文丢失：换对话就要反复交代背景，AI还会反复拿出早已否决的方案。作者转变文档思路，把AI视作文档读者，借鉴软件工程规范搭建分层目录，靠README、规则文件、决策归档区分有效方案与废弃版本。文中还给出了可直接使用的整理提示词，帮你把存量项目梳理成AI能读懂的结构，大幅减少重复沟通，搭建可长期运转的AI项目工作流。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
       "title": "《AI 工具站 SEO 小册子：图解入门》——从认知到基建，从内容到外链，再到规模化与增长复盘。全书按实际执行顺序展开，可以从头读到尾，也可以在遇到问题时直接翻对应章节。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "AI音乐赛道这周风波不断，版权诉讼持续拉扯，Suno当庭质疑老牌唱片合约缺少AI训练授权，高额索赔持续加码。多款生产力工具更新落地，ACE人声模型拿下盲测榜首，Suno Bridge、Mirelo插件无缝对接专业剪辑编曲软件。韩流AI曲目登顶主流榜单却卡在版税确权，SIQA搭建独立AI音乐奖项生态，还有8篇前沿论文，可以帮创作者看清合规红线、快速挑选趁手工具。",
+      "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
+    },
+    {
+      "date": "2026-11-16",
+      "title": "AI时代真正的瓶颈在于注意力与Token消耗，卡尔把Anthropic常驻Agent设计思路转化为了通用提示词。最后实测大幅减少了无效调用，直接省下55%使用额度，给多Personal Agent使用者一套低成本控费方案。",
       "url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e?fromScene=spaceOverview"
     },
     {
